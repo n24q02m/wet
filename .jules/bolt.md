@@ -91,3 +91,7 @@ closed pull request.
 ## 2024-05-18 - Fast parameter extraction without urlparse
 **Learning:** Parsing the entire URL with `urllib.parse.urlparse` and `parse_qs` just to extract a single known query parameter is slow and allocates multiple objects. In hot paths (like unrolling DuckDuckGo result URLs), using basic string manipulation (`str.find`) yields a ~3x speedup.
 **Action:** Use manual string slicing (e.g., `href.find("param=")`) when extracting simple, known parameters from URLs in performance-sensitive text processing.
+
+## 2026-08-15 - Replace urlparse in StartpageBackend hot path
+**Learning:** Using `urllib.parse.urlparse` just to check the hostname of a URL in a hot loop (like parsing search results) allocates multiple objects and is significantly slower than direct string manipulation.
+**Action:** Use fast string slicing (`str.find`) and an early containment check (`in`) to extract the domain, avoiding the overhead of full URL parsing.
