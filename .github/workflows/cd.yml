@@ -229,7 +229,17 @@ jobs:
         run: ./mcp-publisher login github-oidc
 
       - name: Publish to MCP Registry
-        run: ./mcp-publisher publish
+        run: |
+          set +e
+          out=$(./mcp-publisher publish 2>&1)
+          rc=$?
+          echo "$out"
+          set -e
+          if [ $rc -ne 0 ] && echo "$out" | grep -q "cannot publish duplicate version"; then
+            echo "duplicate version already in registry - idempotent recovery, treating as success"
+            exit 0
+          fi
+          exit $rc
 
   # ============================================================================
   # Sync to Plugin Marketplace
