@@ -2,7 +2,7 @@
 
 mcp-name: io.github.n24q02m/wet-mcp
 
-> **Renamed (2026-09-13):** package/repo is now `wet` (CLI-first). Install: `pip install wet`. The MCP server remains available as `wet serve-mcp` / the `wet-mcp` legacy name.
+> **Renamed (2026-09-13):** package/repo is now `wet` (CLI-first). Install: `pip install wet`. The MCP server remains available: run `wet` with no subcommand (bare = MCP passthrough); legacy package name `wet-mcp` still installs the old CLI.
 
 **Open-source MCP server for AI agents: web search, content extraction, and library docs.**
 

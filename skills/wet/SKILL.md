@@ -5,7 +5,7 @@ description: Dùng wet CLI để tải/đọc/nén tài liệu web & library doc
 
 # wet — CLI-first web docs fetcher
 
-Wet là CLI/API hạng-1; MCP server là surface phụ (`wet serve-mcp`).
+Wet là CLI/API hạng-1; MCP server là surface phụ: chạy `wet` không subcommand → passthrough vào MCP server (flags như `--http` đi thẳng).
 
 ## Lệnh chính
 - `wet --help` — xem toàn bộ subcommands
@@ -18,4 +18,4 @@ Wet là CLI/API hạng-1; MCP server là surface phụ (`wet serve-mcp`).
 
 ## Ghi chú
 - Package PyPI: `wet` (đổi tên từ `wet-mcp` 2026-09-13); data dir cũ `~/.wet-mcp` giữ nguyên.
-- MCP surface: `wet serve-mcp` hoặc server entry legacy khi cần gắn vào MCP host.
+- MCP surface: `wet` (bare) — passthrough MCP server; legacy entry `wet-mcp` của bản cũ vẫn chạy.
