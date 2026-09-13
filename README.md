@@ -295,18 +295,21 @@ In-repo references (Spec F single source of truth: setup docs live in
 
 ## CLI
 
-The `wet-mcp` console script starts the server and also exposes a few one-shot
-operator subcommands. A bare invocation (or any leading-dash flag) starts the
-server; a leading positional argument is dispatched as a subcommand.
+The package installs two console scripts: **`wet`** (primary) and `wet-mcp`
+(legacy alias kept so existing `uvx wet-mcp` configs keep working). A bare
+invocation (or any leading-dash flag) starts the server; a leading positional
+argument is dispatched as a subcommand.
 
 ```bash
-wet-mcp                        # start the server over stdio (default transport)
-wet-mcp --http                 # start the server over Streamable HTTP (self-host mode)
+uvx --from wet-mcp wet warmup   # try a subcommand without a persistent install
 
-wet-mcp auth google            # authorize the Google credential provider for Drive sync
-wet-mcp logout                 # clear the local Google Drive sync token
-wet-mcp warmup                 # pre-download local models + run auto-setup (SearXNG, browser) to avoid first-run delays
-wet-mcp docs reindex <library> # drop the cached docs index for <library>; the next docs search re-indexes it
+wet                             # start the server over stdio (default transport)
+wet --http                      # start the server over Streamable HTTP (self-host mode)
+
+wet auth google                 # authorize the Google credential provider for Drive sync
+wet logout                      # clear the local Google Drive sync token
+wet warmup                      # pre-download local models + run auto-setup (SearXNG, browser) to avoid first-run delays
+wet docs reindex <library>      # drop the cached docs index for <library>; the next docs search re-indexes it
 ```
 
 `auth google` accepts an optional bring-your-own OAuth client via `--client-id`
