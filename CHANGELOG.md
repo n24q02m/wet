@@ -2,6 +2,24 @@
 
 <!-- version list -->
 
+## v3.14.0 (2026-09-13)
+
+### Bug Fixes
+
+- Update dist metadata lookups to new package name wet (CLI-first rename follow-up)
+  ([`0835550`](https://github.com/n24q02m/wet/commit/08355504c9049643ea634fa60ecef6b91e3adaee))
+
+### Documentation
+
+- Correct MCP surface invocation (bare wet = passthrough, no serve-mcp subcommand)
+  ([`879d5b8`](https://github.com/n24q02m/wet/commit/879d5b86175882a1e8a3a1cc225706e16db51d43))
+
+### Features
+
+- Add wet skill citizen (SKILL.md) per TOOL-2 L1.5
+  ([`7e01124`](https://github.com/n24q02m/wet/commit/7e01124322fc66a1c1d75c465e9af9b466e9bdc9))
+
+
 ## v3.13.0 (2026-09-13)
 
 ### Documentation
