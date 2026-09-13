@@ -2,6 +2,20 @@
 
 <!-- version list -->
 
+## v3.14.1 (2026-09-13)
+
+### Bug Fixes
+
+- **tests**: Metadata lookups + stdio spawn use new package name wet; allowlist fastretrieval 1.4.0
+  (verified genuine PyPI stable)
+  ([`5c1c715`](https://github.com/n24q02m/wet/commit/5c1c71508d255f9d4b6c493d6f18d0fb1dc6f8e1))
+
+### Code Style
+
+- Ruff format renamed-package test edits
+  ([`032ac30`](https://github.com/n24q02m/wet/commit/032ac30759ba9048cf45c950a2d1bf3f9cbb12db))
+
+
 ## v3.14.0 (2026-09-13)
 
 ### Bug Fixes
