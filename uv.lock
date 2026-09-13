@@ -3454,7 +3454,7 @@ wheels = [
 
 [[package]]
 name = "wet"
-version = "3.12.1"
+version = "3.14.0"
 source = { editable = "." }
 dependencies = [
     { name = "aiolimiter" },

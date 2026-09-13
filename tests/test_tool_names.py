@@ -1,4 +1,4 @@
-"""Protocol contract for the tool names exposed by wet-mcp."""
+"""Protocol contract for the tool names exposed by wet (f. wet-mcp)."""
 
 import os
 
@@ -30,7 +30,7 @@ async def _list_tool_names() -> list[str]:
         # The contract probe must not let uv mutate/sync the workspace while
         # it is opening the real stdio server. Tool registration does not need
         # remote D1 bindings; the CF selector is covered separately.
-        args=["run", "--no-sync", "wet-mcp"],
+        args=["run", "--no-sync", "wet"],
         env={
             **os.environ,
             "LOG_LEVEL": "WARNING",
