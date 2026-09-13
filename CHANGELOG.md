@@ -2,6 +2,14 @@
 
 <!-- version list -->
 
+## v3.12.1 (2026-09-13)
+
+### Bug Fixes
+
+- Bump mcp-core to 1.24.1 ([#1778](https://github.com/n24q02m/wet-mcp/pull/1778),
+  [`882e070`](https://github.com/n24q02m/wet-mcp/commit/882e0708e9682517725c7afa009a6d5914745c06))
+
+
 ## v3.12.0 (2026-09-12)
 
 ### Features
