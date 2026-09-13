@@ -276,7 +276,11 @@ jobs:
     # this job (exit 1, no silent bad deploy). Live-image prev_ref for true CI
     # rollback is a tracked follow-up.
     needs: [release]
-    if: needs.release.outputs.released == 'true'
+    # Gated off 2026-09-13: the CF deploy token was removed as off-manifest
+    # (no entry in mcp-secret-routing.json = process violation). Re-enable =
+    # create a proper token (CF dashboard -> manifest entry -> repo secret
+    # CF_DEPLOY_TOKEN), then set the repo variable CF_DEPLOY_ENABLED=true.
+    if: vars.CF_DEPLOY_ENABLED == 'true' && needs.release.outputs.released == 'true'
     runs-on: ubuntu-latest
     steps:
       - name: Harden Runner

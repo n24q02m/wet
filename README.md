@@ -410,7 +410,8 @@ The earlier 768-dimension example is not a Cohere v4 compatibility guarantee.
 
 ### Deployment (maintained instance)
 
-Every tagged release deploys automatically: the CD `deploy-cf` job checks out
+Every tagged release deploys automatically (only while the `CF_DEPLOY_ENABLED`
+gate is on -- see the pause note below): the CD `deploy-cf` job checks out
 the released tag, builds the http-slim image, pushes it to the Cloudflare-managed
 registry as immutable `:<release-tag>`, deploys the Worker, and gates on a canary
 health check -- a release is live at exactly its own version. A beta dispatch
@@ -418,6 +419,12 @@ redeploys the beta; a stable dispatch is maintainer-gated. Manual `wrangler depl
 against the maintained instance is not permitted: it would break the
 release-tag ↔ live-image correspondence. Self-hosting on your own Cloudflare
 account (the button above) is unaffected.
+
+> **Paused 2026-09-13:** the CF deploy token was removed from the account as
+> off-manifest (process violation), so `deploy-cf` now no-ops behind the
+> `CF_DEPLOY_ENABLED` repo variable. The maintained instance stays frozen at
+> its last deployed release until a token is re-established via the documented
+> process and the variable is set to `true`.
 
 ## Smithery
 
