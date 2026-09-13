@@ -2,6 +2,19 @@
 
 <!-- version list -->
 
+## v3.13.0 (2026-09-13)
+
+### Documentation
+
+- Add mode badge, MCP client install matrix, and maintained-instance deployment note
+  ([`2632d34`](https://github.com/n24q02m/wet/commit/2632d346e49b10f5d4315cc3b79628c98e79c97a))
+
+### Features
+
+- Rename package wet-mcp -> wet, CLI-first (command: wet, MCP surface: wet serve-mcp)
+  ([`00f49c9`](https://github.com/n24q02m/wet/commit/00f49c9af4e968a1741eb70cddc7ca30a9990cbb))
+
+
 ## v3.12.1 (2026-09-13)
 
 ### Bug Fixes

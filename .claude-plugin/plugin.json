@@ -1,7 +1,7 @@
 {
   "name": "wet-mcp",
   "description": "Open-source MCP server for AI agents: web search, content extraction, and library docs.",
-  "version": "3.12.1",
+  "version": "3.13.0",
   "userConfig": {
     "EMBEDDING_MODELS": {
       "type": "string",
