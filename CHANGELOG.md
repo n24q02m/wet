@@ -2,6 +2,27 @@
 
 <!-- version list -->
 
+## v3.14.5 (2026-09-13)
+
+### Bug Fixes
+
+- Registry publish tolerates duplicate version on recovery dispatch (mcp registry rejects re-publish
+  of an already-published version with 400 cannot publish duplicate version; idempotent recovery
+  keeps deploy-cf + PyPI green) ([#1786](https://github.com/n24q02m/wet/pull/1786),
+  [`8067f79`](https://github.com/n24q02m/wet/commit/8067f79bf94522df5bd15fe180e315b6d0d56d99))
+
+### Continuous Integration
+
+- Gate deploy-cf behind CF_DEPLOY_ENABLED var (token removed as off-manifest); note paused
+  maintained instance in README
+  ([`1284504`](https://github.com/n24q02m/wet/commit/12845043ead280bdfc6980e587b7d569f0819bd4))
+
+### Documentation
+
+- **readme**: Lead CLI section with wet script, document wet-mcp legacy alias
+  ([`0457258`](https://github.com/n24q02m/wet/commit/04572587dd58fe52613e0018a9adcb1ecea8186a))
+
+
 ## v3.14.4 (2026-09-13)
 
 ### Bug Fixes
