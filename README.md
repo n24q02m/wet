@@ -2,6 +2,8 @@
 
 mcp-name: io.github.n24q02m/wet-mcp
 
+> **Renamed (2026-09-13):** package/repo is now `wet` (CLI-first). Install: `pip install wet`. The MCP server remains available as `wet serve-mcp` / the `wet-mcp` legacy name.
+
 **Open-source MCP server for AI agents: web search, content extraction, and library docs.**
 
 | Phase | Status | Scope |
@@ -18,8 +20,8 @@ mcp-name: io.github.n24q02m/wet-mcp
 
 <!-- Badge Row 1: Status -->
 [![Mode](https://img.shields.io/badge/mode-daemon_%C2%B7_http_remote_relay-5C6BC0)](https://mcp.n24q02m.com/get-started/modes-overview/)
-[![CI](https://github.com/n24q02m/wet-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/n24q02m/wet-mcp/actions/workflows/ci.yml)
-[![codecov](https://codecov.io/gh/n24q02m/wet-mcp/graph/badge.svg?token=JK19TRLPEX)](https://codecov.io/gh/n24q02m/wet-mcp)
+[![CI](https://github.com/n24q02m/wet/actions/workflows/ci.yml/badge.svg)](https://github.com/n24q02m/wet/actions/workflows/ci.yml)
+[![codecov](https://codecov.io/gh/n24q02m/wet/graph/badge.svg?token=JK19TRLPEX)](https://codecov.io/gh/n24q02m/wet)
 [![PyPI](https://img.shields.io/pypi/v/wet-mcp?logo=pypi&logoColor=white)](https://pypi.org/project/wet-mcp/)
 [![License: Apache-2.0](https://img.shields.io/github/license/n24q02m/wet-mcp)](LICENSE)
 
@@ -54,7 +56,7 @@ mcp-name: io.github.n24q02m/wet-mcp
 | [skret](https://github.com/n24q02m/skret) | Secrets without the server. | CLI |
 | [tacet](https://github.com/n24q02m/tacet) | A self-distilling neuro-symbolic cascade that amortises LLM cost across knowl... | Tooling |
 | [web-core](https://github.com/n24q02m/web-core) | Shared web infrastructure package for search, scraping, HTTP security, and st... | Library |
-| [wet-mcp](https://github.com/n24q02m/wet-mcp) | Open-source MCP server for AI agents: web search, content extraction, and lib... | MCP |
+| [wet-mcp](https://github.com/n24q02m/wet) | Open-source MCP server for AI agents: web search, content extraction, and lib... | MCP |
 
 </details>
 <!-- END: AUTO-GENERATED-CROSS-PROMO -->
@@ -329,7 +331,7 @@ the local store). Each subcommand prints a JSON result and exits.
 ## Build from Source
 
 ```bash
-git clone https://github.com/n24q02m/wet-mcp.git
+git clone https://github.com/n24q02m/wet.git
 cd wet-mcp
 uv sync
 uv run wet-mcp
@@ -337,13 +339,13 @@ uv run wet-mcp
 
 ## Deploy to Cloudflare
 
-[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/n24q02m/wet-mcp)
+[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/n24q02m/wet)
 
 Run your own single-user wet instance serverless on Cloudflare (Containers + D1 + Vectorize + KV).
 
 **Prerequisites:** a Cloudflare account on the **Workers Paid plan** — required for Containers, D1, and Vectorize (the Cloudflare free tier does not include them) — and the `wrangler` CLI.
 
-1. `git clone https://github.com/n24q02m/wet-mcp && cd wet-mcp`
+1. `git clone https://github.com/n24q02m/wet && cd wet-mcp`
 2. `wrangler login`
 3. Provision resources and apply the D1 schema:
    ```

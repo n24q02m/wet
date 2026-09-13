@@ -1,5 +1,5 @@
 [project]
-name = "wet-mcp"
+name = "wet"
 version = "3.12.1"
 description = "Open-source MCP server for AI agents: web search, content extraction, and library docs."
 readme = "README.md"
@@ -118,12 +118,12 @@ dev = [
 ]
 
 [project.scripts]
-wet-mcp = "wet_mcp.cli:main"
+wet = "wet_mcp.cli:main"
 
 [project.urls]
-Homepage = "https://github.com/n24q02m/wet-mcp"
-Repository = "https://github.com/n24q02m/wet-mcp.git"
-Issues = "https://github.com/n24q02m/wet-mcp/issues"
+Homepage = "https://github.com/n24q02m/wet"
+Repository = "https://github.com/n24q02m/wet.git"
+Issues = "https://github.com/n24q02m/wet/issues"
 
 [build-system]
 requires = ["hatchling"]
