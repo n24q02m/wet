@@ -2,6 +2,14 @@
 
 <!-- version list -->
 
+## v3.14.3 (2026-09-13)
+
+### Bug Fixes
+
+- Restore legacy wet-mcp command alias so existing uvx wet-mcp configs keep working
+  ([`1ae02c0`](https://github.com/n24q02m/wet/commit/1ae02c0cc31e2f79e316ba121119ee0cb35c44b0))
+
+
 ## v3.14.2 (2026-09-13)
 
 ### Bug Fixes
