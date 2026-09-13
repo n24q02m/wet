@@ -1,5 +1,5 @@
 [project]
-name = "wet"
+name = "wet-mcp"
 version = "3.14.1"
 description = "Open-source MCP server for AI agents: web search, content extraction, and library docs."
 readme = "README.md"

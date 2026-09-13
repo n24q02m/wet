@@ -23,7 +23,7 @@ def test_serverinfo_reports_wet_mcp_version() -> None:
     sys.modules.pop("wet_mcp.server", None)
     server = importlib.import_module("wet_mcp.server")
 
-    wet_version = version("wet")
+    wet_version = version("wet-mcp")
     server_version = (
         server.mcp._mcp_server.create_initialization_options().server_version
     )

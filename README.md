@@ -1,5 +1,7 @@
 # WET - Web Extended Toolkit MCP Server
 
+> **Renamed (2026-09-13):** repo is now `wet` — CLI-first (`wet` command). PyPI package stays `wet-mcp` (PyPI policy blocks new project `wet`); MCP server is a secondary surface: run `wet` with no subcommand.
+
 mcp-name: io.github.n24q02m/wet-mcp
 
 > **Renamed (2026-09-13):** package/repo is now `wet` (CLI-first). Install: `pip install wet`. The MCP server remains available: run `wet` with no subcommand (bare = MCP passthrough); legacy package name `wet-mcp` still installs the old CLI.
