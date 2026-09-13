@@ -17,6 +17,7 @@ mcp-name: io.github.n24q02m/wet-mcp
 > [`docs/migration.md`](docs/migration.md) for the upgrade recipe.
 
 <!-- Badge Row 1: Status -->
+[![Mode](https://img.shields.io/badge/mode-daemon_%C2%B7_http_remote_relay-5C6BC0)](https://mcp.n24q02m.com/get-started/modes-overview/)
 [![CI](https://github.com/n24q02m/wet-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/n24q02m/wet-mcp/actions/workflows/ci.yml)
 [![codecov](https://codecov.io/gh/n24q02m/wet-mcp/graph/badge.svg?token=JK19TRLPEX)](https://codecov.io/gh/n24q02m/wet-mcp)
 [![PyPI](https://img.shields.io/pypi/v/wet-mcp?logo=pypi&logoColor=white)](https://pypi.org/project/wet-mcp/)
@@ -112,6 +113,17 @@ docker run -d --name wet-mcp-http -p 8084:8080 \
 # Method 4 (remote): point a client at an HTTP deployment
 claude mcp add --transport http wet https://<your-host>/mcp
 ```
+
+Install matrix (stdio unless noted; see the [Setup](https://mcp.n24q02m.com/servers/wet-mcp/setup/) page for full steps):
+
+| Client | Install |
+|---|---|
+| Claude Code (plugin) | `/plugin marketplace add n24q02m/claude-plugins` then `/plugin install wet-mcp@n24q02m-plugins` |
+| Claude Code (stdio) | `claude mcp add wet -- uvx wet-mcp` |
+| Codex | register stdio command `uvx wet-mcp` under `mcp_servers` in `~/.codex/config.toml` |
+| Gemini CLI | add the `mcpServers` JSON below to `~/.gemini/settings.json` |
+| Cursor / Windsurf | add the `mcpServers` JSON below via the client's MCP settings (`mcp.json`) |
+| Any client (HTTP self-host) | point the client at `https://<your-host>/mcp` (Streamable HTTP, OAuth-gated) |
 
 Public OCI image publication is discontinued. Existing historical registry tags
 remain untouched; new container deployments build from source or use the
@@ -388,6 +400,17 @@ fallback. Cohere embedding/reranking and Browser Run may incur charges; obtain
 the required budget authorization before exercising them. Provision Vectorize
 and `EMBEDDING_DIMS` for a dimension supported by the selected embedding model.
 The earlier 768-dimension example is not a Cohere v4 compatibility guarantee.
+
+### Deployment (maintained instance)
+
+Every tagged release deploys automatically: the CD `deploy-cf` job checks out
+the released tag, builds the http-slim image, pushes it to the Cloudflare-managed
+registry as immutable `:<release-tag>`, deploys the Worker, and gates on a canary
+health check -- a release is live at exactly its own version. A beta dispatch
+redeploys the beta; a stable dispatch is maintainer-gated. Manual `wrangler deploy`
+against the maintained instance is not permitted: it would break the
+release-tag ↔ live-image correspondence. Self-hosting on your own Cloudflare
+account (the button above) is unaffected.
 
 ## Smithery
 
