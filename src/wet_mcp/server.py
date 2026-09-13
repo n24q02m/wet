@@ -913,7 +913,7 @@ mcp = FastMCP(
 # circular import: wet_mcp/__init__.py imports `mcp` from this module.
 from importlib.metadata import version as _pkgver  # noqa: E402
 
-mcp._mcp_server.version = _pkgver("wet-mcp")
+mcp._mcp_server.version = _pkgver("wet")
 
 # Register the standard `config__open_relay` MCP tool so an LLM can re-trigger
 # the relay form when the server is reachable over HTTP. Helper lives in

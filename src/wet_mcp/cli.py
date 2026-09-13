@@ -52,7 +52,7 @@ def _handle_auth(args: argparse.Namespace) -> int:
                 cli_secret=args.client_secret,
             )
         except ValueError as exc:
-            print(f"wet-mcp: {exc}", file=sys.stderr)
+            print(f"wet: {exc}", file=sys.stderr)
             return 2
         result = asyncio.run(
             run_setup_sync(
@@ -130,4 +130,4 @@ def _version() -> str:
 
 
 def main() -> int:
-    return build_cli("wet-mcp", serve=_serve, extra=_extras(), version=_version())(None)
+    return build_cli("wet", serve=_serve, extra=_extras(), version=_version())(None)
