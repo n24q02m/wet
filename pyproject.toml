@@ -119,6 +119,7 @@ dev = [
 
 [project.scripts]
 wet = "wet_mcp.cli:main"
+wet-mcp = "wet_mcp.cli:main"  # legacy command alias (uvx wet-mcp configs)
 
 [project.urls]
 Homepage = "https://github.com/n24q02m/wet"
