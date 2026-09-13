@@ -2,6 +2,14 @@
 
 <!-- version list -->
 
+## v3.14.4 (2026-09-13)
+
+### Bug Fixes
+
+- Point server.json + plugin metadata at renamed repo wet
+  ([`ad2e649`](https://github.com/n24q02m/wet/commit/ad2e649def2c1423c2bc222e849fc2f767f94a11))
+
+
 ## v3.14.3 (2026-09-13)
 
 ### Bug Fixes
