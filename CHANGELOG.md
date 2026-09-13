@@ -2,6 +2,14 @@
 
 <!-- version list -->
 
+## v3.14.2 (2026-09-13)
+
+### Bug Fixes
+
+- Keep PyPI package wet-mcp (PyPI policy blocks project name wet); repo+CLI stay wet
+  ([`b8ecb71`](https://github.com/n24q02m/wet/commit/b8ecb71415f7d889e15f41265f96b7f5ffbddc6c))
+
+
 ## v3.14.1 (2026-09-13)
 
 ### Bug Fixes
