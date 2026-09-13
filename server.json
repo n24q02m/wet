@@ -3,7 +3,7 @@
   "name": "io.github.n24q02m/wet-mcp",
   "description": "Open-source MCP server for AI agents: web search, content extraction, and library docs.",
   "repository": {
-    "url": "https://github.com/n24q02m/wet-mcp.git",
+    "url": "https://github.com/n24q02m/wet.git",
     "source": "github"
   },
   "version": "3.14.3",
