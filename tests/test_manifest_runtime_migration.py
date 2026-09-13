@@ -57,7 +57,12 @@ def test_dependency_specs_and_lock_use_stable_fastretrieval():
     dependencies = project["dependencies"]
 
     assert "fastretrieval>=1.1.0,<2" in dependencies
-    assert _locked_package("fastretrieval")["version"] in ("1.1.0", "1.2.0", "1.3.2", "1.4.0")
+    assert _locked_package("fastretrieval")["version"] in (
+        "1.1.0",
+        "1.2.0",
+        "1.3.2",
+        "1.4.0",
+    )
 
 
 async def test_local_embedding_uses_fastretrieval_output_contract(monkeypatch):
