@@ -60,7 +60,7 @@ dependencies = [
     # the shared D1 + Vectorize clients; 1.24.0b1 separates OAuth JWT signing
     # from CREDENTIAL_SECRET so tokens can be revoked without rekeying per-user
     # vault data or changing stable subject IDs.
-    "n24q02m-mcp-core[llm]==1.24.0b1",
+    "n24q02m-mcp-core[llm]==1.24.1",
     # Schema migrations (auto-migrate-on-startup with backup)
     "alembic>=1.18.5",
     # fastmcp arrives transitively via mcp-core; both bounds are pinned here,
