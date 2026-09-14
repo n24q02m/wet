@@ -6,12 +6,12 @@
     "url": "https://github.com/n24q02m/wet.git",
     "source": "github"
   },
-  "version": "3.14.5",
+  "version": "3.14.6",
   "packages": [
     {
       "registryType": "pypi",
       "identifier": "wet-mcp",
-      "version": "3.14.5",
+      "version": "3.14.6",
       "runtimeHint": "uvx",
       "runtimeArgs": [
         "--python",

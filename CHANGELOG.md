@@ -2,6 +2,19 @@
 
 <!-- version list -->
 
+## v3.14.6 (2026-09-14)
+
+### Bug Fixes
+
+- ⚡ bolt: replace urlparse in StartpageBackend to avoid allocations
+  ([#1782](https://github.com/n24q02m/wet/pull/1782),
+  [`1ab601b`](https://github.com/n24q02m/wet/commit/1ab601b9825bd80645f53f03b0eca73d95fd34ac))
+
+- ⚡ bolt: resolve CodeQL alert in startpage URL fast-path
+  ([#1782](https://github.com/n24q02m/wet/pull/1782),
+  [`1ab601b`](https://github.com/n24q02m/wet/commit/1ab601b9825bd80645f53f03b0eca73d95fd34ac))
+
+
 ## v3.14.5 (2026-09-13)
 
 ### Bug Fixes
