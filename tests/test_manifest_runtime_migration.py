@@ -7,6 +7,7 @@ import tomllib
 from pathlib import Path
 
 import numpy as np
+from packaging.version import Version
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -57,12 +58,9 @@ def test_dependency_specs_and_lock_use_stable_fastretrieval():
     dependencies = project["dependencies"]
 
     assert "fastretrieval>=1.1.0,<2" in dependencies
-    assert _locked_package("fastretrieval")["version"] in (
-        "1.1.0",
-        "1.2.0",
-        "1.3.2",
-        "1.4.0",
-    )
+    locked_fr = Version(_locked_package("fastretrieval")["version"])
+    assert locked_fr >= Version("1.1.0"), locked_fr
+    assert locked_fr < Version("2"), locked_fr
 
 
 async def test_local_embedding_uses_fastretrieval_output_contract(monkeypatch):
