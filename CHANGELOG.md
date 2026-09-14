@@ -2,6 +2,24 @@
 
 <!-- version list -->
 
+## v3.14.7 (2026-09-14)
+
+### Bug Fixes
+
+- Bump mcp-core to 1.24.6 and web-core to 2.7.3 ([#1787](https://github.com/n24q02m/wet/pull/1787),
+  [`e31d9df`](https://github.com/n24q02m/wet/commit/e31d9df2e12324f7221e7f1cd83be77250510d64))
+
+- Relax migration guard to fastretrieval floor range
+  ([#1781](https://github.com/n24q02m/wet/pull/1781),
+  [`95eeb6f`](https://github.com/n24q02m/wet/commit/95eeb6f895096799add9a55f4ebe94afebf6b4fb))
+
+- Sort packaging import for ruff I001 ([#1781](https://github.com/n24q02m/wet/pull/1781),
+  [`95eeb6f`](https://github.com/n24q02m/wet/commit/95eeb6f895096799add9a55f4ebe94afebf6b4fb))
+
+- **deps**: Lock file maintenance ([#1781](https://github.com/n24q02m/wet/pull/1781),
+  [`95eeb6f`](https://github.com/n24q02m/wet/commit/95eeb6f895096799add9a55f4ebe94afebf6b4fb))
+
+
 ## v3.14.6 (2026-09-14)
 
 ### Bug Fixes
