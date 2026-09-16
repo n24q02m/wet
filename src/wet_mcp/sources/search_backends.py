@@ -1061,13 +1061,30 @@ def chain_backend_names() -> list[str]:
     Reads the CSV ``SEARCH_BACKENDS``; empty -> the single ``SEARCH_BACKEND``
     (back-compat). Used to decide whether the embedded SearXNG must be started
     before running the chain.
+
+    Hosted multi-user mode: a subject whose saved config lacks
+    ``SEARCH_BACKENDS`` falls back to the process env var, then to the
+    credential-free default chain ``duckduckgo,startpage`` — without this the
+    per-sub bucket (which never carried the key) produced ``requested=[]`` and
+    every search returned "No search backend configured" (F1, 2026-09-16).
     """
     config = _request_search_config()
     raw = _config_value(config, "SEARCH_BACKENDS", settings.search_backends).strip()
     if not raw:
-        raw = _config_value(
-            config, "SEARCH_BACKEND", settings.search_backend or "searxng"
-        ).strip()
+        raw = _config_value(config, "SEARCH_BACKEND", settings.search_backend).strip()
+    if not raw:
+        # Hosted mode with a real subject whose bucket lacks the key: env var
+        # is an ops-level override; absent that, credential-free default so
+        # search works out of the box. A subject-less hosted request keeps
+        # the empty chain (no operator config leak). Single-user keeps the
+        # historical searxng default.
+        if config is not None:
+            from wet_mcp.credential_state import get_current_sub
+
+            if get_current_sub() is not None:
+                raw = os.getenv("SEARCH_BACKENDS", "").strip() or "duckduckgo,startpage"
+        else:
+            raw = "searxng"
     return [n.strip().lower() for n in raw.split(",") if n.strip()]
 
 
