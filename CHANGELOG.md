@@ -2,6 +2,15 @@
 
 <!-- version list -->
 
+## v3.14.8 (2026-09-16)
+
+### Bug Fixes
+
+- **search**: Credential-free default chain for hosted subs without saved SEARCH_BACKENDS
+  ([#1793](https://github.com/n24q02m/wet/pull/1793),
+  [`3e91eab`](https://github.com/n24q02m/wet/commit/3e91eabaa01210439afb23b51f4bcc5afa6f050b))
+
+
 ## v3.14.7 (2026-09-14)
 
 ### Bug Fixes
