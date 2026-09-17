@@ -2,6 +2,30 @@
 
 <!-- version list -->
 
+## v3.14.9 (2026-09-17)
+
+### Bug Fixes
+
+- **deps**: Lock file maintenance ([#1789](https://github.com/n24q02m/wet/pull/1789),
+  [`d1041bc`](https://github.com/n24q02m/wet/commit/d1041bc3e8846d79a23a22cd4d41129e04bd257e))
+
+- **deps**: Update dawidd6/action-send-mail action to v22
+  ([#1792](https://github.com/n24q02m/wet/pull/1792),
+  [`eb6fa4e`](https://github.com/n24q02m/wet/commit/eb6fa4e15b152656a113b5921cb52ac600294189))
+
+- **deps**: Update ghcr.io/astral-sh/uv:latest Docker digest to 62f8c04
+  ([#1790](https://github.com/n24q02m/wet/pull/1790),
+  [`57ca161`](https://github.com/n24q02m/wet/commit/57ca161851ea82c2c75ade5c088de6a488cd2934))
+
+- **deps**: Update minor dependencies ([#1791](https://github.com/n24q02m/wet/pull/1791),
+  [`b62ae69`](https://github.com/n24q02m/wet/commit/b62ae69ba7404782649163ba7caf68874f151ce6))
+
+### Continuous Integration
+
+- Consolidate workflows into ci.yml + cd.yml, drop opencode
+  ([`6f073fa`](https://github.com/n24q02m/wet/commit/6f073fa254c582e82dd03e1b2fb8e8318c8fadcc))
+
+
 ## v3.14.8 (2026-09-16)
 
 ### Bug Fixes
