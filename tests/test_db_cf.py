@@ -386,7 +386,7 @@ class CappedVectorizeHttp(FakeVectorizeHttp):
     ceiling, so any regression back to single-shot calls fails HERE instead of
     only on the deployed worker."""
 
-    MAX_MUTATION = 1000
+    MAX_MUTATION = 100
 
     def __init__(self) -> None:
         super().__init__()
@@ -433,8 +433,11 @@ def _seed_version(db, chunk_count):
 
 def test_clear_version_chunks_batches_1875_ids_under_binding_cap():
     """The 2026-09-17 incident: one deleteByIds call carrying all 1875 ids of
-    @modelcontextprotocol/sdk exceeded the binding's 1000-mutation cap, killed
-    the request before the D1 DELETE ran, and the reindex never landed."""
+    @modelcontextprotocol/sdk killed the request before the D1 DELETE ran and
+    the reindex never landed. Live bisect on v3.15.1 (2026-09-18) pinned the
+    failure between 382 and 1000 ids per call despite the docs' 1000 upsert
+    cap, so the batch is 100 -- and the chunk-id SELECT is paged at the same
+    size, since the multi-tens-of-KB read crosses the same route."""
     vec_http = CappedVectorizeHttp()
     db = _backend_with_vec(
         VectorizeBackend("http://vectorize.internal", idx="wet", http=vec_http)
@@ -445,7 +448,7 @@ def test_clear_version_chunks_batches_1875_ids_under_binding_cap():
 
     assert removed == 1875
     sizes = [n for kind, n in vec_http.mutation_calls if kind == "deleteByIds"]
-    assert sizes == [1000, 875]
+    assert sizes == [100] * 18 + [75]
     # Both vectors and D1 rows are actually gone: the mutation ordering is
     # vectors-first precisely so a refusal leaves the store merely stale.
     assert vec_http.vectors == {}
@@ -470,7 +473,7 @@ def test_add_chunks_batches_1875_vectors_under_binding_cap():
     db.add_chunks(ver_id, lib_id, chunks, embeddings=embeddings)
 
     sizes = [n for kind, n in vec_http.mutation_calls if kind == "upsert"]
-    assert sizes == [1000, 875]
+    assert sizes == [100] * 18 + [75]
     assert len(vec_http.vectors) == 1875
     hits = db.search("entry 1", limit=3)
     assert hits
