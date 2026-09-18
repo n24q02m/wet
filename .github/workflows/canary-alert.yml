@@ -1,0 +1,112 @@
+# Canary Alert — split back out of ci.yml (2026-09-18).
+#
+# History: canary-alert.yml was consolidated into ci.yml (6f073fa), but its
+# `workflow_run: workflows: [CI]` trigger made ci.yml listen to itself, which
+# GitHub rejects at workflow-parse time ("Workflow 'CI' cannot listen to
+# itself") — every ci.yml run failed with zero jobs from 2026-09-17 until this
+# split. The trigger is only dispatched from the copy of this file on the
+# default branch.
+name: Canary Alert
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+
+permissions:
+  contents: read
+
+jobs:
+  report-canary-failure:
+    name: Open or update the canary failure issue
+    # CI runs exactly one job on `schedule` (refresh-tier1, itself gated on
+    # `github.event_name == 'schedule'`), so a failed scheduled CI run is a
+    # failed canary. Filtering on the event as well as the conclusion keeps
+    # ordinary red PR and push runs out of this path.
+    if: >-
+      github.event.workflow_run.event == 'schedule'
+      && github.event.workflow_run.conclusion == 'failure'
+    runs-on: ubuntu-latest
+    permissions:
+      # `issues: write` covers both the issue and the label it is filed under.
+      issues: write
+      # `actions: read` is what lets `gh run view --log` read the run being
+      # reported; without it the issue would carry a link and no excerpt.
+      actions: read
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        with:
+          egress-policy: audit
+
+      - name: File or update the canary failure issue
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          RUN_ID: ${{ github.event.workflow_run.id }}
+          RUN_URL: ${{ github.event.workflow_run.html_url }}
+          RUN_SHA: ${{ github.event.workflow_run.head_sha }}
+          RUN_STARTED_AT: ${{ github.event.workflow_run.run_started_at }}
+          RUN_UPDATED_AT: ${{ github.event.workflow_run.updated_at }}
+          LABEL: canary-failure
+        run: |
+          set -euo pipefail
+
+          # Create the marker label first so the dedupe query below cannot fail
+          # on a repository that has never had a canary failure. Idempotent.
+          gh label create "$LABEL" --repo "$REPO" \
+            --color B60205 \
+            --description "Weekly Tier 1 canary run failed" \
+            2>/dev/null || true
+
+          # Prefer the failed step's log; a killed runner sometimes leaves no
+          # step marked failed, in which case the tail of the whole log is the
+          # only thing that shows what the run was doing when it stopped.
+          EXCERPT=$(gh run view "$RUN_ID" --repo "$REPO" --log-failed 2>/dev/null | tail -n 25 || true)
+          if [ -z "$EXCERPT" ]; then
+            EXCERPT=$(gh run view "$RUN_ID" --repo "$REPO" --log 2>/dev/null | tail -n 25 || true)
+          fi
+          if [ -z "$EXCERPT" ]; then
+            EXCERPT="(no log could be read; open the run and read it there)"
+          fi
+
+          BODY_FILE=$(mktemp)
+          {
+            echo "The weekly Tier 1 docs canary (\`refresh-tier1\` in CI) failed."
+            echo
+            echo "| field | value |"
+            echo "| --- | --- |"
+            echo "| run | $RUN_URL |"
+            echo "| run id | \`$RUN_ID\` |"
+            echo "| commit | \`$RUN_SHA\` |"
+            echo "| started | $RUN_STARTED_AT |"
+            echo "| ended | $RUN_UPDATED_AT |"
+            echo
+            echo "Last lines of the failing log:"
+            echo
+            echo '```'
+            echo "$EXCERPT"
+            echo '```'
+            echo
+            echo "Partial metrics, when the runner lived long enough for the"
+            echo "upload step to run, are in the \`tier1-index-metrics\` artifact"
+            echo "on that run. \`complete: false\` in that file means the script"
+            echo "was interrupted and the counts cover only the libraries listed."
+          } > "$BODY_FILE"
+
+          # Dedupe: one open issue holds the whole streak. Without this, every
+          # red week would file another issue and the canary would become its
+          # own source of backlog churn.
+          EXISTING=$(gh issue list --repo "$REPO" --state open --label "$LABEL" \
+            --limit 1 --json number --jq '.[0].number // empty' 2>/dev/null || true)
+
+          if [ -n "$EXISTING" ]; then
+            echo "Appending to open canary issue #$EXISTING"
+            gh issue comment "$EXISTING" --repo "$REPO" --body-file "$BODY_FILE"
+          else
+            echo "No open canary issue; filing a new one"
+            gh issue create --repo "$REPO" \
+              --title "Weekly Tier 1 canary failed on $RUN_SHA" \
+              --label "$LABEL" \
+              --body-file "$BODY_FILE"
+          fi
