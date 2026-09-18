@@ -1052,6 +1052,26 @@ class DocsDB:
         )
         self._conn.commit()
 
+    def reset_version_index(self, version_id: str) -> None:
+        """Mark a cleared version as NOT indexed so lazy re-ingest can fire.
+
+        ``docs_reindex`` clears a version's chunks, but as long as the row
+        still says ``status = 'indexed'`` every lazy path treats the library
+        as servable: ``resolve_library`` -> ``get_best_version`` keeps
+        returning it, so ``docs_query`` never fires ``ingest_tier2``, and the
+        documented "next docs search will re-index" only holds on the
+        search-chain path. A cleared version with zero chunks is not indexed.
+        The index_state record is deliberately untouched: it is the log of
+        the last ATTEMPT, and the next attempt overwrites it.
+        """
+        self._conn.execute(
+            """UPDATE versions
+               SET status = 'pending', indexed_at = NULL, page_count = 0, chunk_count = 0
+               WHERE id = ?""",
+            (version_id,),
+        )
+        self._conn.commit()
+
     def set_index_state(
         self, version_id: str, state: str, error: str | None = None
     ) -> None:

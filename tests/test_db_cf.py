@@ -477,3 +477,45 @@ def test_add_chunks_batches_1875_vectors_under_binding_cap():
     assert len(vec_http.vectors) == 1875
     hits = db.search("entry 1", limit=3)
     assert hits
+
+
+def test_reset_version_index_unresolves_cleared_version(tmp_path):
+    """docs_reindex cleared @modelcontextprotocol/sdk's chunks but left the
+    version row status='indexed', so get_best_version kept resolving it as
+    latest_version and the docs_query lazy-ingest gate never fired -- on a
+    keyword-only subject without a working search/rerank chain the reindex
+    could never restart (2026-09-18 live). A cleared version is not indexed."""
+    from wet_mcp.db import DocsDB as SqliteDocsDB
+
+    def build(kind):
+        if kind == "sqlite":
+            return SqliteDocsDB(tmp_path / f"docs-{kind}.db", embedding_dims=768)
+        return _backend_with_vec(
+            VectorizeBackend(
+                "http://vectorize.internal", idx="wet", http=FakeVectorizeHttp()
+            )
+        )
+
+    for kind in ("sqlite", "cf"):
+        backend = build(kind)
+        lib_id = backend.upsert_library("sdk", docs_url="https://m")
+        ver_id = backend.upsert_version(lib_id, "latest", docs_url="https://m/docs")
+        backend.add_chunks(
+            ver_id,
+            lib_id,
+            [{"content": "initialize request handshake", "url": "https://m/p"}],
+            embeddings=None,
+        )
+        backend.mark_version_indexed(ver_id, 1, 1)
+
+        # The trap: clearing chunks alone leaves the version servable.
+        backend.clear_version_chunks(ver_id)
+        assert backend.get_best_version(lib_id) is not None, (
+            f"[{kind}] cleared version still resolves as servable -- the "
+            "docs_query lazy-ingest gate will never fire"
+        )
+
+        backend.reset_version_index(ver_id)
+        assert backend.get_best_version(lib_id) is None, (
+            f"[{kind}] reset version must stop resolving so docs_query re-ingests it"
+        )

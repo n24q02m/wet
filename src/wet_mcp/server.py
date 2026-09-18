@@ -2325,6 +2325,12 @@ def _handle_config_docs_reindex(key: str | None) -> dict[str, Any]:
         ver = _docs_db.get_best_version(lib["id"])
         if ver:
             _docs_db.clear_version_chunks(ver["id"])
+            # A cleared version is not an indexed version: without this the
+            # row keeps status='indexed', resolve_library keeps serving it as
+            # latest_version, and the docs_query lazy-ingest gate never fires
+            # -- the re-index then depends on the full search chain, which a
+            # keyword-only subject may not have working.
+            _docs_db.reset_version_index(ver["id"])
         return {
             "status": "cleared",
             "library": key,
