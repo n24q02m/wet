@@ -52,18 +52,18 @@ def _d1_param_batches(items: list, params_per_item: int):
         yield items[i : i + per_batch]
 
 
-# Vectorize's Workers-binding mutation ceiling: at most 1000 vectors per
-# upsert / deleteByIds call (developers.cloudflare.com/vectorize/platform/limits,
-# "Maximum upsert batch size": 1000 (Workers) vs 5000 (HTTP API)). The outbound
-# handler forwards every id to one env.VECTORIZE.deleteByIds call, so a version
-# holding more than 1000 chunks -- e.g. @modelcontextprotocol/sdk at 1875 --
-# blew the cap and killed the request the same way the D1 parameter overflow
-# did (#1628): the client saw only "Server disconnected without sending a
-# response", and because clear_version_chunks deletes vectors FIRST, nothing
-# landed -- not the vector delete, not the D1 row delete, not an index-state
-# write. Batched here, in the caller that owns the mutation loop, rather than
-# inside mcp-core's single-shot VectorizeBackend.
-_VECTORIZE_MUTATION_BATCH = 1000
+# Vectorize mutation batch size. The docs' "Maximum upsert batch size" is 1000
+# (Workers) / 5000 (HTTP API) (developers.cloudflare.com/vectorize/platform/
+# limits), but on the deployed wet worker (v3.15.1, 2026-09-18) a single
+# deleteByIds of 1000 ids still died mid-request -- the container's httpx
+# reported "Server disconnected without sending a response" -- while the SAME
+# code path cleared a 1-chunk and a 382-chunk version fine (live bisect:
+# typescript=1, fastapi=382, @modelcontextprotocol/sdk batch of 1000). The
+# 1875-row chunk-id SELECT through d1.internal is suspect on the same grounds,
+# so clear_version_chunks pages that read at this size too. 100 is the same
+# batch unit the D1 parameter cap already imposes via _d1_param_batches, and
+# 4-10x under the observed failure threshold.
+_VECTORIZE_MUTATION_BATCH = 100
 
 
 def _vectorize_mutation_batches(items: list) -> list[list]:
@@ -379,9 +379,9 @@ class DocsDBCfBackend:
             " created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
             rows,
         )
-        # One upsert per <=1000-vector slice (binding mutation cap -- see
-        # _vectorize_mutation_batches). Unbatched, a large embedded index
-        # dies the same mid-request death as the delete path.
+        # One upsert per _VECTORIZE_MUTATION_BATCH slice -- see the constant's
+        # note: the documented 1000 cap failed live for deleteByIds, and the
+        # unbatched call dies the same mid-request death as the delete path.
         if embeddings:
             vectors = [
                 {
@@ -415,14 +415,27 @@ class DocsDBCfBackend:
         Returns the number of chunks removed, counted from the ids actually
         read (the D1 HTTP contract returns rows, not a rowcount).
         """
-        rows = self._d1.execute(
-            "SELECT id FROM doc_chunks WHERE version_id = ?", [version_id]
-        )
-        ids = [r["id"] for r in rows]
+        # Paged at the mutation batch size: a version holding thousands of
+        # chunks turns this into a multi-tens-of-KB response over the
+        # d1.internal interception route, which dies at roughly the same
+        # payload sizes observed for deleteByIds (see _VECTORIZE_MUTATION_BATCH).
+        ids: list[str] = []
+        offset = 0
+        while True:
+            rows = self._d1.execute(
+                "SELECT id FROM doc_chunks WHERE version_id = ?"
+                " ORDER BY id LIMIT ? OFFSET ?",
+                [version_id, _VECTORIZE_MUTATION_BATCH, offset],
+            )
+            page = [r["id"] for r in rows]
+            ids.extend(page)
+            if len(page) < _VECTORIZE_MUTATION_BATCH:
+                break
+            offset += _VECTORIZE_MUTATION_BATCH
         if not ids:
             return 0
-        # One deleteByIds per <=1000-id slice: a single call over a bigger
-        # version (1875 chunks) exceeds the binding's mutation cap and dies
+        # One deleteByIds per batch: a single call over a bigger version
+        # (1875 ids) exceeds what the route/binding accepts and dies
         # mid-request before the D1 rows below are ever touched.
         for batch in _vectorize_mutation_batches(ids):
             self._vec.delete_by_ids(batch)
