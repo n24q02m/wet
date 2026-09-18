@@ -1,4 +1,5 @@
 import inspect
+import json
 from pathlib import Path
 
 import pytest
@@ -369,3 +370,107 @@ def test_cf_backend_signature_mirrors_sqlite_backend(method_name):
         f"DocsDBCfBackend.{method_name}() reorders parameters relative to "
         f"DocsDB.{method_name}(), so positional calls bind different values"
     )
+
+
+# ---------------------------------------------------------------------------
+# Vectorize mutation batching: the Workers binding caps upsert / deleteByIds
+# at 1000 vectors per call (developers.cloudflare.com/vectorize/platform/
+# limits). A version bigger than that -- @modelcontextprotocol/sdk at 1875 --
+# made config(action="docs_reindex") die mid-request ("Server disconnected
+# without sending a response") twice on 2026-09-17, landing nothing.
+# ---------------------------------------------------------------------------
+
+
+class CappedVectorizeHttp(FakeVectorizeHttp):
+    """FakeVectorizeHttp that enforces the real binding's per-request mutation
+    ceiling, so any regression back to single-shot calls fails HERE instead of
+    only on the deployed worker."""
+
+    MAX_MUTATION = 1000
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.mutation_calls: list[tuple[str, int]] = []
+
+    def request(self, method, url, data=None, headers=None):
+        if url.endswith("/upsert"):
+            lines = data.decode().splitlines()
+            assert len(lines) <= self.MAX_MUTATION, (
+                f"upsert sent {len(lines)} vectors in one request; the binding "
+                f"caps mutations at {self.MAX_MUTATION}"
+            )
+            self.mutation_calls.append(("upsert", len(lines)))
+        elif url.endswith("/deleteByIds"):
+            ids = json.loads(data.decode())["ids"]
+            assert len(ids) <= self.MAX_MUTATION, (
+                f"deleteByIds sent {len(ids)} ids in one request; the binding "
+                f"caps mutations at {self.MAX_MUTATION}"
+            )
+            self.mutation_calls.append(("deleteByIds", len(ids)))
+        return super().request(method, url, data, headers)
+
+
+def _backend_with_vec(vec):
+    d1 = D1Backend("http://d1.internal", http=FakeD1Http(DDL))
+    return DocsDBCfBackend(d1, vec, embedding_dims=768)
+
+
+def _seed_version(db, chunk_count):
+    lib_id = db.upsert_library("@modelcontextprotocol/sdk", docs_url="https://m")
+    ver_id = db.upsert_version(lib_id, "latest", docs_url="https://m/docs")
+    db.add_chunks(
+        ver_id,
+        lib_id,
+        [
+            {"content": f"chunk {i} client transport", "url": f"https://m/p{i}"}
+            for i in range(chunk_count)
+        ],
+        embeddings=None,
+    )
+    db.mark_version_indexed(ver_id, 1, chunk_count)
+    return ver_id
+
+
+def test_clear_version_chunks_batches_1875_ids_under_binding_cap():
+    """The 2026-09-17 incident: one deleteByIds call carrying all 1875 ids of
+    @modelcontextprotocol/sdk exceeded the binding's 1000-mutation cap, killed
+    the request before the D1 DELETE ran, and the reindex never landed."""
+    vec_http = CappedVectorizeHttp()
+    db = _backend_with_vec(
+        VectorizeBackend("http://vectorize.internal", idx="wet", http=vec_http)
+    )
+    ver_id = _seed_version(db, 1875)
+
+    removed = db.clear_version_chunks(ver_id)
+
+    assert removed == 1875
+    sizes = [n for kind, n in vec_http.mutation_calls if kind == "deleteByIds"]
+    assert sizes == [1000, 875]
+    # Both vectors and D1 rows are actually gone: the mutation ordering is
+    # vectors-first precisely so a refusal leaves the store merely stale.
+    assert vec_http.vectors == {}
+    remaining = db._d1.fetchone(
+        "SELECT COUNT(*) AS n FROM doc_chunks WHERE version_id = ?", [ver_id]
+    )
+    assert remaining["n"] == 0
+
+
+def test_add_chunks_batches_1875_vectors_under_binding_cap():
+    """Indexing a big library WITH embeddings would hit the identical single
+    upsert overflow; batched, every vector still lands and stays queryable."""
+    vec_http = CappedVectorizeHttp()
+    db = _backend_with_vec(
+        VectorizeBackend("http://vectorize.internal", idx="wet", http=vec_http)
+    )
+    lib_id = db.upsert_library("biglib", docs_url="https://b")
+    ver_id = db.upsert_version(lib_id, "latest", docs_url="https://b/docs")
+    chunks = [{"content": f"entry {i}", "url": f"https://b/p{i}"} for i in range(1875)]
+    embeddings = [[float(i % 7), 1.0] for i in range(1875)]
+
+    db.add_chunks(ver_id, lib_id, chunks, embeddings=embeddings)
+
+    sizes = [n for kind, n in vec_http.mutation_calls if kind == "upsert"]
+    assert sizes == [1000, 875]
+    assert len(vec_http.vectors) == 1875
+    hits = db.search("entry 1", limit=3)
+    assert hits

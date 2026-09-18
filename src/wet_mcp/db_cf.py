@@ -52,6 +52,28 @@ def _d1_param_batches(items: list, params_per_item: int):
         yield items[i : i + per_batch]
 
 
+# Vectorize's Workers-binding mutation ceiling: at most 1000 vectors per
+# upsert / deleteByIds call (developers.cloudflare.com/vectorize/platform/limits,
+# "Maximum upsert batch size": 1000 (Workers) vs 5000 (HTTP API)). The outbound
+# handler forwards every id to one env.VECTORIZE.deleteByIds call, so a version
+# holding more than 1000 chunks -- e.g. @modelcontextprotocol/sdk at 1875 --
+# blew the cap and killed the request the same way the D1 parameter overflow
+# did (#1628): the client saw only "Server disconnected without sending a
+# response", and because clear_version_chunks deletes vectors FIRST, nothing
+# landed -- not the vector delete, not the D1 row delete, not an index-state
+# write. Batched here, in the caller that owns the mutation loop, rather than
+# inside mcp-core's single-shot VectorizeBackend.
+_VECTORIZE_MUTATION_BATCH = 1000
+
+
+def _vectorize_mutation_batches(items: list) -> list[list]:
+    """Slice a Vectorize mutation payload into <=_VECTORIZE_MUTATION_BATCH chunks."""
+    return [
+        items[i : i + _VECTORIZE_MUTATION_BATCH]
+        for i in range(0, len(items), _VECTORIZE_MUTATION_BATCH)
+    ]
+
+
 class DocsDBCfBackend:
     def __init__(
         self, d1: D1Backend, vectorize: VectorizeBackend, embedding_dims: int = 768
@@ -357,6 +379,9 @@ class DocsDBCfBackend:
             " created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
             rows,
         )
+        # One upsert per <=1000-vector slice (binding mutation cap -- see
+        # _vectorize_mutation_batches). Unbatched, a large embedded index
+        # dies the same mid-request death as the delete path.
         if embeddings:
             vectors = [
                 {
@@ -373,7 +398,8 @@ class DocsDBCfBackend:
                     zip(chunk_ids, chunks, embeddings, strict=False)
                 )
             ]
-            self._vec.upsert(vectors)
+            for batch in _vectorize_mutation_batches(vectors):
+                self._vec.upsert(batch)
             # Upsert is eventual; block until index is ready so an immediate
             # search() doesn't return empty (mirrors spec risk mitigation).
             self._vec.wait_until_indexed()
@@ -395,7 +421,11 @@ class DocsDBCfBackend:
         ids = [r["id"] for r in rows]
         if not ids:
             return 0
-        self._vec.delete_by_ids(ids)
+        # One deleteByIds per <=1000-id slice: a single call over a bigger
+        # version (1875 chunks) exceeds the binding's mutation cap and dies
+        # mid-request before the D1 rows below are ever touched.
+        for batch in _vectorize_mutation_batches(ids):
+            self._vec.delete_by_ids(batch)
         self._d1.execute("DELETE FROM doc_chunks WHERE version_id = ?", [version_id])
         return len(ids)
 
