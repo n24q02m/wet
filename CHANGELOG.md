@@ -2,6 +2,15 @@
 
 <!-- version list -->
 
+## v3.15.3 (2026-09-18)
+
+### Bug Fixes
+
+- **docs**: Docs_reindex must unresolve the cleared version, not just clear chunks
+  ([#1797](https://github.com/n24q02m/wet/pull/1797),
+  [`decc150`](https://github.com/n24q02m/wet/commit/decc1509f7c133631777bb33786f28885f480f3d))
+
+
 ## v3.15.2 (2026-09-18)
 
 ### Bug Fixes
