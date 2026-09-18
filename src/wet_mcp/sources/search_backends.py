@@ -28,6 +28,7 @@ from mcp_core.llm.key_rotation import rotate_keys, split_keys
 
 from wet_mcp import search_metrics
 from wet_mcp.config import settings
+from wet_mcp.sources.rerank import maybe_rerank
 
 
 class SearchBackend(Protocol):
@@ -928,6 +929,103 @@ class KagiBackend:
         )
 
 
+class OpenRouterBackend:
+    """OpenRouter web-search backend (https://openrouter.ai/docs).
+
+    Runs the query through a chat completion carrying the
+    ``openrouter:web_search`` server tool (the currently recommended form; the
+    legacy ``plugins: [{"id": "web"}]`` plugin and the ``:online`` model
+    suffix are deprecated). Result sources come back standardized as
+    ``url_citation`` annotations on the assistant message; they are mapped
+    onto the shared result shape and deduplicated by URL (docs verified
+    2026-09-18).
+    """
+
+    name = "openrouter"
+
+    def __init__(
+        self,
+        keys: list[str],
+        *,
+        model: str,
+        base_url: str,
+        engine: str = "",
+    ) -> None:
+        self.keys = keys
+        self.model = model
+        self.base_url = base_url.rstrip("/")
+        self.engine = engine
+
+    async def _search_one(self, key: str, query: str, max_results: int) -> str:
+        parameters: dict[str, object] = {
+            "max_results": min(max(max_results, 1), 10),
+        }
+        if self.engine:
+            parameters["engine"] = self.engine
+        tool: dict[str, object] = {
+            "type": "openrouter:web_search",
+            "parameters": parameters,
+        }
+        headers = {
+            "Authorization": f"Bearer {key}",
+            "Content-Type": "application/json",
+        }
+        async with httpx.AsyncClient(timeout=60) as client:
+            resp = await client.post(
+                f"{self.base_url}/chat/completions",
+                json={
+                    "model": self.model,
+                    "messages": [{"role": "user", "content": query}],
+                    "tools": [tool],
+                },
+                headers=headers,
+            )
+            if resp.status_code != 200:
+                raise _SearchHTTPError("OpenRouter", resp.status_code)
+            choices = resp.json().get("choices") or [{}]
+        message = choices[0].get("message") or {}
+        seen: set[str] = set()
+        mapped: list[dict[str, str]] = []
+        for annotation in message.get("annotations") or []:
+            citation = annotation.get("url_citation") or {}
+            url = citation.get("url", "")
+            if not url or url in seen:
+                continue
+            seen.add(url)
+            mapped.append(
+                {
+                    "url": url,
+                    "title": citation.get("title", ""),
+                    "snippet": citation.get("content", "") or citation.get("title", ""),
+                    "source": "openrouter",
+                }
+            )
+            if len(mapped) >= max_results:
+                break
+        return json.dumps(
+            {"results": mapped, "total": len(mapped), "query": query},
+            ensure_ascii=False,
+            indent=2,
+        )
+
+    async def search(
+        self,
+        query: str,
+        max_results: int = 10,
+        time_range=None,
+        language=None,
+        include_domains=None,
+        exclude_domains=None,
+        categories="general",
+        region=None,
+    ) -> str:
+        return await _search_with_rotation(
+            self.keys,
+            lambda key: self._search_one(key, query, max_results),
+            "OpenRouter",
+        )
+
+
 def _request_search_config() -> dict[str, str] | None:
     from wet_mcp.credential_state import (
         credentials_for_current_request,
@@ -985,6 +1083,24 @@ def _make_backend(name: str, searxng_url: str | None = None) -> SearchBackend:
         if not keys:
             raise ValueError("KAGI_API_KEY required for the kagi search backend")
         return KagiBackend(keys)
+    if name == "openrouter":
+        keys = split_keys(
+            _config_value(config, "OPENROUTER_API_KEY", settings.openrouter_api_key)
+        )
+        if not keys:
+            raise ValueError(
+                "OPENROUTER_API_KEY required for the openrouter search backend"
+            )
+        return OpenRouterBackend(
+            keys,
+            model=_config_value(config, "OPENROUTER_MODEL", settings.openrouter_model),
+            base_url=_config_value(
+                config, "OPENROUTER_BASE_URL", settings.openrouter_base_url
+            ),
+            engine=_config_value(
+                config, "OPENROUTER_SEARCH_ENGINE", settings.openrouter_search_engine
+            ),
+        )
     if name == "firecrawl":
         # Key optional: without one the request is attempted keyless (the
         # server may reject it — the chain advances on the error envelope).
@@ -1046,6 +1162,10 @@ def has_uvx_runnable_backend() -> bool:
             return True
         if name == "kagi" and split_keys(
             _config_value(config, "KAGI_API_KEY", settings.kagi_api_key)
+        ):
+            return True
+        if name == "openrouter" and split_keys(
+            _config_value(config, "OPENROUTER_API_KEY", settings.openrouter_api_key)
         ):
             return True
         if name == "searxng":
@@ -1306,6 +1426,7 @@ async def run_search_chain(
             "selected": "+".join(successful_backends) if successful_backends else None,
             "fallback": "parallel_fanout" if successful_backends else "exhausted",
         }
+        data = await maybe_rerank(query, data, max_results)
         return json.dumps(data, ensure_ascii=False)
 
     def traced_thunk(backend: SearchBackend) -> Callable[[], Awaitable[str]]:
@@ -1382,6 +1503,7 @@ async def run_search_chain(
             else ("none" if requested and selected == requested[0] else "used")
         ),
     }
+    data = await maybe_rerank(query, data, max_results)
     return json.dumps(data, ensure_ascii=False)
 
 
@@ -1391,6 +1513,7 @@ __all__ = [
     "DuckDuckGoBackend",
     "FirecrawlBackend",
     "KagiBackend",
+    "OpenRouterBackend",
     "StartpageBackend",
     "SearchBackend",
     "SearxngBackend",
