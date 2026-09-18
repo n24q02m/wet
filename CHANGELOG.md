@@ -2,6 +2,15 @@
 
 <!-- version list -->
 
+## v3.15.2 (2026-09-18)
+
+### Bug Fixes
+
+- **docs**: Page Vectorize mutations and chunk-id reads at 100 per call
+  ([#1796](https://github.com/n24q02m/wet/pull/1796),
+  [`9d1438d`](https://github.com/n24q02m/wet/commit/9d1438d807a61aea3b4bb106d8742c63a0a5c543))
+
+
 ## v3.15.1 (2026-09-18)
 
 ### Bug Fixes
