@@ -88,7 +88,7 @@ mcp-name: io.github.n24q02m/wet-mcp
 
 ## Features
 
-- **Web Search** -- Embedded SearXNG metasearch (Google, Bing, DuckDuckGo, Brave) with query expansion, TTL cache (1 h general / 5 min time-sensitive), standardized citation format, and 200-token snippet cap. Optional cloud search backends (Tavily, Brave, Exa) as a fallback chain via `SEARCH_BACKENDS`
+- **Web Search** -- Embedded SearXNG metasearch (Google, Bing, DuckDuckGo, Brave) with query expansion, TTL cache (1 h general / 5 min time-sensitive), standardized citation format, and 200-token snippet cap. Optional cloud search backends (Tavily, Brave, Exa, OpenRouter) as a fallback chain via `SEARCH_BACKENDS`, plus optional Cohere rerank (`WET_SEARCH_RERANK`)
 - **Academic Research** -- Search Google Scholar, Semantic Scholar, arXiv, PubMed, CrossRef, BASE
 - **Library Docs** -- Auto-discover and index documentation with FTS5 hybrid search, HyDE-enhanced retrieval, and version-specific docs
 - **Content Extract** -- 5-strategy escalation chain via `n24q02m-web-core` `ScrapingAgent` (`basic_http` -> `tls_spoof` -> render backends from `BROWSER_BACKENDS` (`native` / `browserless` / `cf-browser-rendering`) -> optional key-gated `captcha`), markitdown bridge for low-tier HTML/MD fallback, smart chunks structured output (clean text + markdown + JSON-LD + code blocks + metadata), batch processing (up to 50 URLs), deep crawling, site mapping
@@ -183,11 +183,24 @@ Any other litellm provider works via env passthrough -- see
 
 **Search backends** -- `SEARCH_BACKENDS` is an ordered runtime fallback chain:
 `searxng` (default, local or external via `SEARXNG_URL`), keyed `tavily` / `brave` /
-`exa` / `kagi`, optional-key `firecrawl`, and credential-free `duckduckgo` /
+`exa` / `kagi` / `openrouter`, optional-key `firecrawl`, and credential-free `duckduckgo` /
 `startpage`. Keyed providers use `TAVILY_API_KEY`, `BRAVE_API_KEY`, `EXA_API_KEY`,
-or `KAGI_API_KEY`. Firecrawl attempts a keyless request when `FIRECRAWL_API_KEY`
+`KAGI_API_KEY`, or `OPENROUTER_API_KEY` (comma-separate for rotation). The
+`openrouter` backend runs the query through a chat completion with the
+`openrouter:web_search` server tool and maps the returned `url_citation`
+annotations onto the shared result shape; `OPENROUTER_MODEL` (default a
+free-tier model), `OPENROUTER_BASE_URL`, and `OPENROUTER_SEARCH_ENGINE`
+override its behavior. Firecrawl attempts a keyless request when `FIRECRAWL_API_KEY`
 is absent; rejection or a DuckDuckGo/Startpage bot challenge advances the chain.
-The same chain serves web search, research, similar-page search, agent search,
+
+**Cohere rerank (optional, paid)** -- when `WET_SEARCH_RERANK=1` AND
+`COHERE_API_KEY` are both set, a successful chain result is re-ranked through
+Cohere `/v2/rerank` (`COHERE_RERANK_MODEL`, default `rerank-v4.0-fast`;
+`COHERE_BASE_URL` for gateway routes): results are reordered best-first and
+tagged `reranked_by: cohere` with per-result `rerank_score`. Without either
+variable the chain never calls Cohere; a rerank failure keeps the original
+ordering. The same chain serves web search, research, similar-page search,
+agent search,
 and docs discovery/indexing fallbacks. SearXNG retains its science-category
 filter for research; other providers use their own search capabilities.
 Hosted users configure the chain and keys in their own relay record. An empty

@@ -41,6 +41,7 @@ def test_model_chain_fields_have_no_hardcoded_suggestions():
         "brave",
         "exa",
         "kagi",
+        "openrouter",
         "firecrawl",
         "duckduckgo",
         "startpage",

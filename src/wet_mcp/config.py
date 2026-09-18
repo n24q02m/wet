@@ -138,20 +138,38 @@ class Settings(BaseSettings):
 
     # Pluggable web search backend selector. "searxng" (default, local) or
     # "tavily" (cloud adapter for CF where embedded SearXNG cannot run).
-    search_backend: str = "searxng"  # env SEARCH_BACKEND: searxng | tavily | brave | exa | kagi | firecrawl | duckduckgo | startpage
+    search_backend: str = "searxng"  # env SEARCH_BACKEND: searxng | tavily | brave | exa | kagi | openrouter | firecrawl | duckduckgo | startpage
     tavily_api_key: str = ""  # env TAVILY_API_KEY
 
     # SEARCH_BACKENDS: CSV provider chain with runtime fallback (try each, on
     # error/empty -> next, return first non-empty). Empty -> falls back to the
     # single SEARCH_BACKEND for back-compat (= a chain of length 1). Providers:
-    # searxng (self-host) | tavily | brave | exa | kagi (cloud, keyed) |
-    # firecrawl (cloud, key optional — keyless attempt) |
+    # searxng (self-host) | tavily | brave | exa | kagi | openrouter (cloud,
+    # keyed) | firecrawl (cloud, key optional — keyless attempt) |
     # duckduckgo | startpage (credential-free HTML scrape, uvx-safe).
     search_backends: str = ""  # env SEARCH_BACKENDS
     brave_api_key: str = ""  # env BRAVE_API_KEY
     exa_api_key: str = ""  # env EXA_API_KEY
     firecrawl_api_key: str = ""  # env FIRECRAWL_API_KEY (optional — keyless fallback)
     kagi_api_key: str = ""  # env KAGI_API_KEY
+    # OpenRouter web-search backend (keyed). The query runs through a chat
+    # completion with the openrouter:web_search server tool; sources come back
+    # as url_citation annotations. base_url is overridable for a CF AI Gateway
+    # route; engine selects the search provider when OpenRouter supports one.
+    openrouter_api_key: str = ""  # env OPENROUTER_API_KEY (CSV for rotation)
+    openrouter_model: str = (
+        "meta-llama/llama-3.3-70b-instruct:free"  # env OPENROUTER_MODEL
+    )
+    openrouter_base_url: str = "https://openrouter.ai/api/v1"  # env OPENROUTER_BASE_URL
+    openrouter_search_engine: str = ""  # env OPENROUTER_SEARCH_ENGINE (empty = default)
+
+    # Optional Cohere rerank post-processing for the search chain (PAID API).
+    # Double opt-in: WET_SEARCH_RERANK=1 AND COHERE_API_KEY must both be set;
+    # without them the chain never calls Cohere and results keep source order.
+    cohere_api_key: str = ""  # env COHERE_API_KEY
+    cohere_base_url: str = "https://api.cohere.com"  # env COHERE_BASE_URL
+    cohere_rerank_model: str = "rerank-v4.0-fast"  # env COHERE_RERANK_MODEL
+    wet_search_rerank: bool = False  # env WET_SEARCH_RERANK
     # Disable-local toggle for search (cross-cutting, see mcp_core.chains): skip
     # the auto-local SearXNG spawn. An external SEARXNG_URL or cloud backends
     # still work; only the heavy local SearXNG auto-start is suppressed.
