@@ -460,6 +460,16 @@ class DocsDBCfBackend:
             [time.time(), page_count, chunk_count, version_id],
         )
 
+    def reset_version_index(self, version_id: str) -> None:
+        """Mark a cleared version as NOT indexed. Cf twin of DocsDB.reset_version_index:
+        a cleared version with zero chunks must stop resolving as servable, or
+        the docs_query lazy-ingest gate (latest_version is None) never fires."""
+        self._d1.execute(
+            "UPDATE versions SET status = 'pending', indexed_at = NULL,"
+            " page_count = 0, chunk_count = 0 WHERE id = ?",
+            [version_id],
+        )
+
     def set_index_state(
         self, version_id: str, state: str, error: str | None = None
     ) -> None:

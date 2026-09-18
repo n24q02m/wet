@@ -105,6 +105,9 @@ def _handle_docs(args: argparse.Namespace) -> int:
     ver = db.get_best_version(lib["id"])
     if ver:
         db.clear_version_chunks(ver["id"])
+        # Same as the config handler: a cleared version must stop resolving
+        # as servable, or the lazy re-ingest gate never fires.
+        db.reset_version_index(ver["id"])
     result = {
         "status": "cleared",
         "library": args.library,
