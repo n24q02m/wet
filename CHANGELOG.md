@@ -2,6 +2,15 @@
 
 <!-- version list -->
 
+## v3.15.0 (2026-09-18)
+
+### Features
+
+- **search**: Openrouter web-search backend + optional cohere rerank (W-G)
+  ([#1794](https://github.com/n24q02m/wet/pull/1794),
+  [`93ee209`](https://github.com/n24q02m/wet/commit/93ee20907a972661cd8a4a63081b9bdd76e61c6b))
+
+
 ## v3.14.9 (2026-09-17)
 
 ### Bug Fixes
