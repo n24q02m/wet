@@ -2,6 +2,15 @@
 
 <!-- version list -->
 
+## v3.15.1 (2026-09-18)
+
+### Bug Fixes
+
+- **docs**: Batch Vectorize mutations at the binding's 1000-per-request cap
+  ([#1795](https://github.com/n24q02m/wet/pull/1795),
+  [`ad6db33`](https://github.com/n24q02m/wet/commit/ad6db333c7557ceaf5cf705a6b9fbb737eb03133))
+
+
 ## v3.15.0 (2026-09-18)
 
 ### Features
