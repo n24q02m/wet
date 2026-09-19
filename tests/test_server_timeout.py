@@ -42,6 +42,16 @@ def mock_dependencies():
     mock_metadata.version.return_value = "0.0.0"
     modules["importlib.metadata"] = mock_metadata
 
+    # Re-importing ``wet_mcp.server`` under mocks rebinds the parent package
+    # attribute ``wet_mcp.server`` to the throwaway module. patch.dict restores
+    # sys.modules on exit but NOT that attribute, leaving an orphaned copy
+    # (fresh module state, MagicMock-wired imports) shadowing the real module
+    # for every later attribute-style import -- e.g. pytest's string-target
+    # ``monkeypatch.setattr("wet_mcp.server._embedding_dims", ...)`` wrote the
+    # copy while ``from wet_mcp.server import ...`` read the real module, so
+    # tests running after this file saw stale state (#test-order pollution).
+    saved_server = sys.modules.get("wet_mcp.server")
+
     with patch.dict(sys.modules, modules):
         # Create a mock settings object
         mock_settings = MagicMock()
@@ -54,7 +64,15 @@ def mock_dependencies():
             del sys.modules["wet_mcp.server"]
 
         module = importlib.import_module("wet_mcp.server")
-        yield module, mock_settings
+        try:
+            yield module, mock_settings
+        finally:
+            # Put back the pre-fixture module identity: sys.modules comes back
+            # via patch.dict, the package attribute must be restored by hand.
+            if saved_server is not None:
+                sys.modules["wet_mcp"].server = saved_server
+            elif hasattr(sys.modules["wet_mcp"], "server"):
+                delattr(sys.modules["wet_mcp"], "server")
 
 
 def test_with_timeout_success(mock_dependencies):
