@@ -412,7 +412,7 @@ async def test_background_index_embedding_timeout_is_reported():
 
     errored = messages(records, "ERROR")
     assert any(
-        "Embedding batch timed out" in m and "testlib" in m and "3 chunks" in m
+        "Embedding run timed out" in m and "testlib" in m and "3 chunks" in m
         for m in errored
     ), errored
 

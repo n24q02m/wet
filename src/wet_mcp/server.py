@@ -6,6 +6,7 @@ import difflib
 import functools
 import io
 import json
+import math
 import os
 import re
 import sys
@@ -1052,8 +1053,35 @@ def _wrap_tool(tool_name: str):
 _SEARXNG_TIMEOUT = 150  # ensure_searxng() — cold start can take 90-120s
 _DISCOVERY_TIMEOUT = 30  # discover_library() — registry + probe
 _FETCH_TIMEOUT = 90  # _fetch_and_chunk_docs() — llms.txt + GH raw + crawl
-_EMBED_TIMEOUT = 60  # _embed_batch() — ONNX for all chunks
+_EMBED_TIMEOUT = 60  # _embed_batch() — per concurrency wave; see _embed_run_timeout
 _FALLBACK_TIMEOUT = 60  # SearXNG fallback fetch
+
+# Upper bound on the waves _embed_run_timeout may budget for. 11 waves *
+# _EMBED_TIMEOUT plus the other phase timeouts stays under
+# _INDEX_RUNNING_STALE_AFTER (900s), so even a pathologically large library
+# can never hold a live run past the stale-running marker.
+_EMBED_MAX_WAVES = 11
+
+
+def _embed_run_timeout(num_texts: int) -> float:
+    """Overall ``wait_for`` budget for one background-index embed run.
+
+    ``_EMBED_TIMEOUT`` was sized for a local ONNX pass over the whole chunk
+    set. The cloud backend now splits the same set into
+    ``CloudEmbeddingBackend.MAX_BATCH_SIZE``-text batches drained
+    ``CONCURRENCY`` at a time, so wall time grows with the wave count: a
+    fixed 60s ceiling killed large libraries mid-embed (1967 chunks -> 21
+    batches -> 3 waves) and stamped every chunk keyword-only. Budget one
+    ``_EMBED_TIMEOUT`` per wave instead. The local backend (one linear
+    pass) only ever receives a larger budget out of this, which is the
+    intended direction: time out a hung backend, never a healthy-but-slow
+    one.
+    """
+    from wet_mcp.embedder import CloudEmbeddingBackend
+
+    per_wave = CloudEmbeddingBackend.MAX_BATCH_SIZE * CloudEmbeddingBackend.CONCURRENCY
+    waves = max(1, math.ceil(num_texts / per_wave))
+    return _EMBED_TIMEOUT * min(waves, _EMBED_MAX_WAVES)
 
 
 async def _with_timeout(coro, action: str) -> Any:
@@ -2758,8 +2786,9 @@ async def _fetch_and_chunk_docs(
 # in a process that can vanish without unwinding (container evicted, OOM kill,
 # redeploy), and a ``running`` row nobody will ever finish would otherwise lock
 # its library out of indexing forever. The pipeline's own sub-timeouts
-# (_DISCOVERY_TIMEOUT + _FETCH_TIMEOUT + _SEARXNG_TIMEOUT + _FALLBACK_TIMEOUT +
-# _EMBED_TIMEOUT) sum to well under this, so a live run is never mistaken for
+# (_DISCOVERY_TIMEOUT + _FETCH_TIMEOUT + _SEARXNG_TIMEOUT + _FALLBACK_TIMEOUT
+# plus _embed_run_timeout, which scales with the chunk count but is capped by
+# _EMBED_MAX_WAVES) sum to well under this, so a live run is never mistaken for
 # an abandoned one.
 _INDEX_RUNNING_STALE_AFTER = 900.0
 
@@ -2988,9 +3017,10 @@ async def _background_index_and_search(
                         parts.append(c["heading_path"])
                     parts.append(c["content"])
                     embed_texts_list.append(" | ".join(parts)[:2000])
+                embed_budget = _embed_run_timeout(len(embed_texts_list))
                 try:
                     embeddings = await asyncio.wait_for(
-                        _embed_batch(embed_texts_list), timeout=_EMBED_TIMEOUT
+                        _embed_batch(embed_texts_list), timeout=embed_budget
                     )
                 except TimeoutError:
                     # Storing the chunks anyway is the intended degrade (they
@@ -2999,11 +3029,11 @@ async def _background_index_and_search(
                     # vectors. Without this line that swap is invisible.
                     keyword_only_reason = (
                         f"indexed keyword-only: {len(embed_texts_list)} chunks "
-                        "stored WITHOUT vectors because the embedding batch "
-                        f"timed out after {_EMBED_TIMEOUT}s"
+                        "stored WITHOUT vectors because the embedding run "
+                        f"timed out after {embed_budget:.0f}s"
                     )
                     logger.error(
-                        f"Embedding batch timed out after {_EMBED_TIMEOUT}s for "
+                        f"Embedding run timed out after {embed_budget:.0f}s for "
                         f"'{library}' ({len(embed_texts_list)} chunks from "
                         f"{docs_url}); chunks are stored WITHOUT vectors, so "
                         "this version answers keyword-only until it is "

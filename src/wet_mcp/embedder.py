@@ -184,6 +184,11 @@ class CloudEmbeddingBackend:
     """Cloud embedding via mcp_core.llm (litellm passthrough)."""
 
     MAX_BATCH_SIZE = 96  # Common safe batch size across providers
+    # In-flight provider requests while draining a multi-batch embed run
+    # (the semaphore in embed_texts). Callers that budget the whole run --
+    # the background indexer's wait_for ceiling -- read this instead of
+    # re-guessing the batch geometry.
+    CONCURRENCY = 8
 
     def __init__(
         self,
@@ -329,7 +334,7 @@ class CloudEmbeddingBackend:
         # together rather than one after another. The semaphore is what keeps a
         # large document from opening one request per batch at once and hitting
         # the provider's rate limit.
-        sem = asyncio.Semaphore(8)
+        sem = asyncio.Semaphore(self.CONCURRENCY)
 
         async def _embed_with_sem(
             batch: list[str], batch_num: int
