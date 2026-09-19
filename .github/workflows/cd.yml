@@ -77,7 +77,7 @@ jobs:
       # so the computed version is identical. Gated the same way as the real step so it
       # is skipped in the publish_existing_tag recovery path (that path deliberately
       # reuses a known tag/version and does not need this guard).
-      - uses: n24q02m/better-semantic-release@6e6884898bfe1ac34a0bc64ed62f54a21562df23 # v1.6.1
+      - uses: n24q02m/better-semantic-release@a994102ce3aa588fe3038e79707ae7ae3971b336 # v1.7.0
         id: dryrun
         if: inputs.publish_existing_tag == ''
         with:
@@ -147,7 +147,7 @@ jobs:
           echo "::error::Could not verify whether ${PKG} ${COMPUTED_VERSION} exists on PyPI: ${URL} returned HTTP '${status:-<no response>}' (expected 200 or 404). Refusing to proceed so a genuine collision cannot slip through as a false 'free'. Re-run the release once the registry is reachable."
           exit 1
 
-      - uses: n24q02m/better-semantic-release@6e6884898bfe1ac34a0bc64ed62f54a21562df23 # v1.6.1
+      - uses: n24q02m/better-semantic-release@a994102ce3aa588fe3038e79707ae7ae3971b336 # v1.7.0
         id: release
         if: inputs.publish_existing_tag == ''
         with:
