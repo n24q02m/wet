@@ -2,6 +2,15 @@
 
 <!-- version list -->
 
+## v3.15.4 (2026-09-19)
+
+### Bug Fixes
+
+- **docs**: Scale the ingest embed budget with concurrency waves
+  ([#1801](https://github.com/n24q02m/wet/pull/1801),
+  [`fc6a1ed`](https://github.com/n24q02m/wet/commit/fc6a1ed89e39aea39019e8865cb8851e40a82a34))
+
+
 ## v3.15.3 (2026-09-18)
 
 ### Bug Fixes
