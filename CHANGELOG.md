@@ -2,6 +2,15 @@
 
 <!-- version list -->
 
+## v3.15.5 (2026-09-19)
+
+### Bug Fixes
+
+- **tests**: Restore wet_mcp.server package attr after mock re-import
+  ([#1802](https://github.com/n24q02m/wet/pull/1802),
+  [`719d94f`](https://github.com/n24q02m/wet/commit/719d94faf712d3d691e6ce6e50f8e315d4d4893e))
+
+
 ## v3.15.4 (2026-09-19)
 
 ### Bug Fixes
