@@ -2,6 +2,15 @@
 
 <!-- version list -->
 
+## v3.15.7 (2026-09-21)
+
+### Bug Fixes
+
+- **deps**: Update n24q02m/better-semantic-release action to v1.7.0
+  ([#1805](https://github.com/n24q02m/wet/pull/1805),
+  [`8d6195e`](https://github.com/n24q02m/wet/commit/8d6195efd8bb0041c61d418840b8d8d02afcd9f3))
+
+
 ## v3.15.6 (2026-09-21)
 
 ### Bug Fixes
