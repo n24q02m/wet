@@ -1967,12 +1967,10 @@ async def try_llms_txt(base_url: str) -> str | None:
                 if resp.status_code == 200:
                     content = resp.text
                     # Validate: should be substantial text, not an error page
-                    # `lstrip` rather than `strip`: only the leading whitespace
-                    # matters to `startswith`, and trailing whitespace is what
-                    # makes `strip` expensive here. A text file that ends in a
-                    # newline forces `strip` to copy the whole body — 5.2 ms on
-                    # a 10 MB llms-full.txt, against 0.0025 ms for `lstrip`.
-                    if len(content) > 200 and not content.lstrip().startswith(
+                    # Slicing the first 2000 characters before `lstrip` prevents
+                    # allocating a massive copy of the entire body if leading
+                    # whitespace is present, minimizing memory allocation overhead.
+                    if len(content) > 200 and not content[:2000].lstrip().startswith(
                         "<!DOCTYPE"
                     ):
                         # llms.txt (non-full) is often just a TOC with links.
