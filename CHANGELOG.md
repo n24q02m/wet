@@ -2,6 +2,15 @@
 
 <!-- version list -->
 
+## v3.15.6 (2026-09-21)
+
+### Bug Fixes
+
+- **deps**: Update ghcr.io/astral-sh/uv:latest Docker digest to 10787c6
+  ([#1803](https://github.com/n24q02m/wet/pull/1803),
+  [`83f9fbb`](https://github.com/n24q02m/wet/commit/83f9fbbe057fdee7773b5bcbc07f74564cf18fd1))
+
+
 ## v3.15.5 (2026-09-19)
 
 ### Bug Fixes
