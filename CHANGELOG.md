@@ -2,6 +2,15 @@
 
 <!-- version list -->
 
+## v3.15.8 (2026-09-21)
+
+### Bug Fixes
+
+- **deps**: Update python:3.13-slim-bookworm Docker digest to 2325bb2
+  ([#1804](https://github.com/n24q02m/wet/pull/1804),
+  [`8c04057`](https://github.com/n24q02m/wet/commit/8c0405742c76f24c1e3f220930fc7eefaf433fae))
+
+
 ## v3.15.7 (2026-09-21)
 
 ### Bug Fixes
