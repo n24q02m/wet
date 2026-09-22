@@ -85,7 +85,6 @@ from web_core.search.runner import (  # noqa: F401, E402
     _STARTUP_HEALTH_TIMEOUT,
     _cleanup_process,
     _ensure_searxng_locked,
-    _find_available_port,
     _force_kill_process,
     _get_pip_command,
     _get_process_kwargs,

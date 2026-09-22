@@ -12,7 +12,7 @@ from wet_mcp.sync.base import SyncBackend
 def test_sync_backend_is_abstract() -> None:
     """SyncBackend should not be instantiable due to abstract methods."""
     with pytest.raises(TypeError, match="Can't instantiate abstract class SyncBackend"):
-        SyncBackend()
+        SyncBackend()  # ty: ignore[call-non-callable] — intentional: asserts the abstract TypeError
 
 
 class MockBackend(SyncBackend):
