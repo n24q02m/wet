@@ -2,6 +2,22 @@
 
 <!-- version list -->
 
+## v3.15.9 (2026-09-22)
+
+### Bug Fixes
+
+- **deps**: Lock file maintenance ([#1806](https://github.com/n24q02m/wet/pull/1806),
+  [`6562eaf`](https://github.com/n24q02m/wet/commit/6562eaf2ef0a86139682b644c48a6512a1027b2c))
+
+- **deps**: Upgrade virtualenv 16.7.12 -> 21.9.1 — clear TOCTOU moderate (Dependency Review)
+  ([#1806](https://github.com/n24q02m/wet/pull/1806),
+  [`6562eaf`](https://github.com/n24q02m/wet/commit/6562eaf2ef0a86139682b644c48a6512a1027b2c))
+
+- **types**: Un-shadow randomized _find_available_port + scope ty ignore for abstract-instantiation
+  test ([#1806](https://github.com/n24q02m/wet/pull/1806),
+  [`6562eaf`](https://github.com/n24q02m/wet/commit/6562eaf2ef0a86139682b644c48a6512a1027b2c))
+
+
 ## v3.15.8 (2026-09-21)
 
 ### Bug Fixes
