@@ -99,3 +99,7 @@ closed pull request.
 ## 2025-02-14 - Slice large strings before lstrip
 **Learning:** When validating the prefix of a very large string (e.g., an entire HTTP response) after whitespace removal, avoid calling `.strip()` or `.lstrip()` on the whole string as it allocates a massive copy if leading whitespace is present.
 **Action:** Slice a small prefix first (e.g., `content[:100].lstrip().startswith(...)`) to minimize memory allocation overhead.
+
+## 2026-08-20 - Replace urlparse in _source_domain hot path
+**Learning:** Using `urllib.parse.urlparse` to extract the `netloc` from URLs in `_source_domain` (called repeatedly via `standardize_results` for every search result) allocates multiple objects and is ~3x slower than direct string manipulation.
+**Action:** Use fast string slicing (`str.find`) to extract the domain portion of the URL between the protocol and the path/query/fragment to avoid the overhead of full URL parsing.
