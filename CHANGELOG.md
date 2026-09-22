@@ -2,6 +2,15 @@
 
 <!-- version list -->
 
+## v3.15.10 (2026-09-22)
+
+### Bug Fixes
+
+- ⚡ bolt: slice large strings before lstrip to avoid massive allocations
+  ([#1811](https://github.com/n24q02m/wet/pull/1811),
+  [`4fce19c`](https://github.com/n24q02m/wet/commit/4fce19cd56d1e4bfe7f6a4ecb9a414492de67f1a))
+
+
 ## v3.15.9 (2026-09-22)
 
 ### Bug Fixes
