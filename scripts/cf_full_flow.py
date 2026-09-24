@@ -321,7 +321,17 @@ def _assert_extract_resolved(txt: str | None) -> None:
 
 
 def _token_file() -> Path:
-    return Path(__file__).with_name(".wet_cf_token")
+    # Keep the dumped JWT OUT of the repo: prefer WET_CF_TOKEN_FILE env override,
+    # else the OS temp dir. Writing into scripts/ previously left live tokens
+    # inside the checkout (not gitignored).
+    import os
+
+    override = os.environ.get("WET_CF_TOKEN_FILE")
+    if override:
+        return Path(override)
+    import tempfile
+
+    return Path(tempfile.gettempdir()) / ".wet_cf_token"
 
 
 async def run_full(endpoint: str) -> None:
