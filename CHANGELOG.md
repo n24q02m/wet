@@ -2,6 +2,15 @@
 
 <!-- version list -->
 
+## v3.15.11 (2026-09-24)
+
+### Bug Fixes
+
+- **scripts**: Write --save-only token to tempdir/env path, not repo
+  ([#1817](https://github.com/n24q02m/wet/pull/1817),
+  [`f2e73c6`](https://github.com/n24q02m/wet/commit/f2e73c65c2a6d1fd11f2f2431637b480372ff350))
+
+
 ## v3.15.10 (2026-09-22)
 
 ### Bug Fixes
