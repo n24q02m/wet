@@ -71,10 +71,31 @@ def _source_domain(url: str) -> str:
     """Extract the registrable domain (netloc) from a URL."""
     if not url:
         return ""
-    try:
-        netloc = urlparse(url).netloc
-    except (ValueError, TypeError):
-        return ""
+
+    if url.startswith("http"):
+        idx = (
+            8
+            if url.startswith("https://")
+            else (7 if url.startswith("http://") else -1)
+        )
+        if idx != -1:
+            end_idx = len(url)
+            for delim in ("/", "?", "#"):
+                delim_idx = url.find(delim, idx, end_idx)
+                if delim_idx != -1:
+                    end_idx = delim_idx
+            netloc = url[idx:end_idx]
+        else:
+            try:
+                netloc = urlparse(url).netloc
+            except (ValueError, TypeError):
+                return ""
+    else:
+        try:
+            netloc = urlparse(url).netloc
+        except (ValueError, TypeError):
+            return ""
+
     # Strip port and leading 'www.' for cleaner display.
     netloc = netloc.split(":", 1)[0]
     return netloc[4:] if netloc.startswith("www.") else netloc
