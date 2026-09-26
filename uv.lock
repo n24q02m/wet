@@ -1048,7 +1048,7 @@ wheels = [
 [[package]]
 name = "hull-core"
 version = "0.1.0"
-source = { git = "https://github.com/n24q02m/hull.git?subdirectory=packages%2Fcore-py&rev=5262d54f4f0c1214dcedaef20531da98f9519bdf#5262d54f4f0c1214dcedaef20531da98f9519bdf" }
+source = { git = "https://github.com/n24q02m/hull.git?subdirectory=packages%2Fcore-py&rev=14841d05488c801d303b0f3d3cd97426f94a6e1a#14841d05488c801d303b0f3d3cd97426f94a6e1a" }
 dependencies = [
     { name = "fastmcp" },
     { name = "httpcore" },
@@ -3121,7 +3121,7 @@ wheels = [
 
 [[package]]
 name = "wet-mcp"
-version = "3.16.0"
+version = "3.16.2"
 source = { editable = "." }
 dependencies = [
     { name = "aiolimiter" },
@@ -3169,7 +3169,7 @@ requires-dist = [
     { name = "fastretrieval", specifier = ">=1.1.0,<2" },
     { name = "greenlet", specifier = "<3.5.6" },
     { name = "httpx" },
-    { name = "hull-core", git = "https://github.com/n24q02m/hull.git?subdirectory=packages%2Fcore-py&rev=5262d54f4f0c1214dcedaef20531da98f9519bdf" },
+    { name = "hull-core", git = "https://github.com/n24q02m/hull.git?subdirectory=packages%2Fcore-py&rev=14841d05488c801d303b0f3d3cd97426f94a6e1a" },
     { name = "jsonschema", specifier = ">=4.26.0" },
     { name = "langsmith", specifier = ">=0.10.10" },
     { name = "loguru" },
