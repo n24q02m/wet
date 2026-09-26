@@ -916,6 +916,52 @@ class TestAddChunksVec:
 
 
 # -----------------------------------------------------------------------
+# search() vec0 KNN constraint regression
+# -----------------------------------------------------------------------
+
+
+@_requires_sqlite_vec
+class TestSearchVecKnnConstraint:
+    def test_semantic_hits_without_keyword_overlap(self, tmp_path):
+        """Regression: vec0 KNN requires a ``k = ?`` constraint; binding the
+        candidate limit as a plain ``LIMIT ?`` placeholder raises
+        OperationalError ("A LIMIT or 'k = ?' constraint is required on vec0
+        knn queries"), which the vector leg swallowed as a warning — so every
+        semantic query silently degraded to keyword-only search.
+
+        The query text shares no vocabulary with any chunk, so a hit can only
+        come from the vector leg through a real sqlite-vec MATCH.
+        """
+        db = DocsDB(tmp_path / "knn.db", embedding_dims=4)
+        try:
+            lib_id = db.upsert_library(name="knnlib")
+            ver_id = db.upsert_version(lib_id)
+            db.add_chunks(
+                ver_id,
+                lib_id,
+                [
+                    {"content": "flurb gorb exfil quux"},
+                    {"content": "zibro nathek vorlan"},
+                    {"content": "crelt mوندar psiven"},
+                ],
+                embeddings=[
+                    [1.0, 0.0, 0.0, 0.0],
+                    [0.0, 1.0, 0.0, 0.0],
+                    [0.0, 0.0, 1.0, 0.0],
+                ],
+            )
+            rows = db.search(
+                "qqwrn zzpelt hvorn",
+                limit=3,
+                query_embedding=[1.0, 0.0, 0.0, 0.0],
+            )
+            assert rows, "vector leg dead: no hits without keyword overlap"
+            assert rows[0]["content"] == "flurb gorb exfil quux"
+        finally:
+            db.close()
+
+
+# -----------------------------------------------------------------------
 # clear_version_chunks() vec deletion (lines 550-557)
 # -----------------------------------------------------------------------
 

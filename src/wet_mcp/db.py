@@ -1513,9 +1513,9 @@ class DocsDB:
                     FROM doc_chunks_vec v
                     JOIN doc_chunks c ON v.id = c.id
                     LEFT JOIN libraries l ON c.library_id = l.id
-                    WHERE v.embedding MATCH ?
+                    WHERE v.embedding MATCH ? AND k = ?
                 """
-                vec_params: list = [_serialize_f32(query_embedding)]
+                vec_params: list = [_serialize_f32(query_embedding), candidate_limit]
 
                 if library_id:
                     vec_sql += " AND c.library_id = ?"
@@ -1524,8 +1524,7 @@ class DocsDB:
                     vec_sql += " AND c.version_id = ?"
                     vec_params.append(version_id)
 
-                vec_sql += " ORDER BY v.distance LIMIT ?"
-                vec_params.append(candidate_limit)
+                vec_sql += " ORDER BY v.distance"
 
                 vec_rows = self._conn.execute(vec_sql, vec_params).fetchall()
                 for vr in vec_rows:
