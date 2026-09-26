@@ -2,6 +2,14 @@
 
 <!-- version list -->
 
+## v3.16.2 (2026-09-26)
+
+### Bug Fixes
+
+- Constrain vec0 knn queries with k=candidate_limit
+  ([`9981ffc`](https://github.com/n24q02m/wet/commit/9981ffcaf93193e7e683c516df6342eb2e41d2b4))
+
+
 ## v3.16.1 (2026-09-26)
 
 ### Bug Fixes

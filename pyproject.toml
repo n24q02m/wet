@@ -1,6 +1,6 @@
 [project]
 name = "wet-mcp"
-version = "3.16.1"
+version = "3.16.2"
 description = "Open-source MCP server for AI agents: web search, content extraction, and library docs."
 readme = "README.md"
 license = { text = "Apache-2.0" }
