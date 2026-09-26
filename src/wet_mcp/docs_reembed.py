@@ -22,12 +22,14 @@ from pathlib import Path
 
 from loguru import logger
 
-PENDING_REASON = (
-    "no [models.embed] api_key configured (set api_key or HULL_EMBED_API_KEY "
-    "env; default route = OpenRouter voyage-4-lite)"
-)
-
 _PROGRESS_EVERY = 20  # batches between progress logs
+
+# Chunks beyond this length get a head-truncated embedding. The static ONNX
+# graph's attention workspace grows quadratically with sequence length; the
+# largest imported chunk (~500k chars) asks onnxruntime for a ~144 GB buffer
+# and crashes the session. 8000 chars (~2k tokens) is far below the model's
+# 32k context, keeps the queue uniform, and exact matching stays covered by FTS.
+_MAX_EMBED_CHARS = 8000
 
 
 def _embedding_identity(cell) -> str:
@@ -106,18 +108,33 @@ async def reembed(
 ) -> dict:
     """Backfill missing doc-chunk vectors. Returns a status dict.
 
-    ``status``: ``pending`` (embed cell unconfigured), ``error`` (store not
-    usable for vectors), ``dry-run``, or ``ok``.
+    ``status``: ``pending`` (no embedding backend available), ``error``
+    (store not usable for vectors), ``dry-run``, or ``ok``.
+
+    Backend resolution mirrors the server's dual-backend rule: the
+    ``[models.embed]`` cell when the host configured one, otherwise the
+    shared local ONNX backend (same identity the server stamps).
     """
     from wet_mcp.config import settings
-    from wet_mcp.runtime import cell_configured, model_cell, provider_client
+    from wet_mcp.embedder import (
+        LocalEmbeddingBackend,
+        no_local_embed_clause,
+        resolve_embed_backend_for_request,
+    )
+    from wet_mcp.runtime import DEFAULT_EMBEDDING_DIMS, model_cell
 
-    if not cell_configured("embed"):
-        return {"status": "pending", "reason": PENDING_REASON}
+    backend = resolve_embed_backend_for_request()
+    if backend is None:
+        return {
+            "status": "pending",
+            "reason": f"no embedding backend available ({no_local_embed_clause()})",
+        }
 
-    cell = model_cell("embed")
-    identity = _embedding_identity(cell)
-    dims = settings.embedding_dims or 768  # runtime.DEFAULT_EMBEDDING_DIMS
+    if isinstance(backend, LocalEmbeddingBackend):
+        identity = settings.resolve_local_embedding_model()
+    else:
+        identity = _embedding_identity(model_cell("embed"))
+    dims = settings.embedding_dims or DEFAULT_EMBEDDING_DIMS
     target = Path(db_path) if db_path is not None else settings.get_db_path()
     if not target.exists():
         return {
@@ -180,19 +197,42 @@ async def reembed(
                 **base,
             }
 
-        client = provider_client("embed")
         embedded = 0
+        failed_ids: list[str] = []
+        truncated = 0
         for start in range(0, len(missing), batch_size):
             batch = missing[start : start + batch_size]
-            batch_ids = [chunk_id for chunk_id, _ in batch]
-            embeddings = await client.embeddings(
-                [content for _, content in batch],
-                dimensions=dims if dims else None,
+            texts = [content[:_MAX_EMBED_CHARS] for _, content in batch]
+            truncated += sum(
+                1 for (_, content), cut in zip(batch, texts) if cut and len(content) > _MAX_EMBED_CHARS
             )
+            pairs: list[tuple[str, list[float]]] = []
+            try:
+                vectors = await backend.embed_texts(
+                    texts,
+                    dimensions=dims if dims else None,
+                )
+                pairs = list(zip((chunk_id for chunk_id, _ in batch), vectors))
+            except Exception as e:
+                # One pathological chunk can fail a whole batch (ONNX memory,
+                # provider limit). Split to singles; skip only the bad ones.
+                logger.warning(f"reembed: batch of {len(batch)} failed ({e}); retrying per-chunk")
+                for chunk_id, content in batch:
+                    try:
+                        vec = (
+                            await backend.embed_texts(
+                                [content[:_MAX_EMBED_CHARS]],
+                                dimensions=dims if dims else None,
+                            )
+                        )[0]
+                        pairs.append((chunk_id, vec))
+                    except Exception as chunk_error:
+                        logger.warning(f"reembed: skipping chunk {chunk_id}: {chunk_error}")
+                        failed_ids.append(chunk_id)
             # Same internals the indexer uses; rolls back + raises on failure.
-            db._add_chunk_vectors(batch_ids, embeddings)
+            db._add_chunk_vectors([cid for cid, _ in pairs], [v for _, v in pairs])
             db._conn.commit()
-            embedded += len(batch_ids)
+            embedded += len(pairs)
             if (start // batch_size + 1) % _PROGRESS_EVERY == 0:
                 logger.info(
                     f"reembed: {embedded}/{len(missing)} chunks embedded "
@@ -212,12 +252,15 @@ async def reembed(
         _stamp_identity(db, dims, identity)
         logger.info(
             f"reembed done: embedded={embedded} remaining={remaining} "
+            f"failed={len(failed_ids)} truncated={truncated} "
             f"identity={identity} dims={dims}"
         )
         return {
             "status": "ok",
             "embedded": embedded,
             "remaining": remaining,
+            "failed": failed_ids,
+            "truncated": truncated,
             **base,
         }
     finally:
