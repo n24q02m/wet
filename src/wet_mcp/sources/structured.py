@@ -5,7 +5,7 @@ import json
 from loguru import logger
 
 from wet_mcp.config import settings
-from wet_mcp.llm import acompletion, get_llm_config
+from wet_mcp.llm import has_llm_provider, acompletion, get_llm_config
 from wet_mcp.sources.crawler import extract as raw_extract
 
 _MAX_CONTENT_CHARS = 50_000
@@ -92,13 +92,12 @@ async def extract_structured(
         or {error}.
     """
     # Step 1: Check LLM availability
-    mode = settings.resolve_provider_mode()
-    if mode == "local":
+    if not has_llm_provider():
         return json.dumps(
             {
                 "error": (
                     "Structured extraction requires LLM. "
-                    "Configure API_KEYS (e.g. GEMINI_API_KEY, OPENAI_API_KEY)."
+                    "Configure the [models.chat] cell in ~/.wet/config.toml."
                 )
             }
         )

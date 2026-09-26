@@ -32,8 +32,9 @@ async def test_expand_query_success():
     """LLM returns 2 alternative queries -- happy path."""
     with (
         patch(
-            "wet_mcp.sources.search_strategies.settings",
-        ) as mock_settings,
+            "wet_mcp.sources.search_strategies.has_llm_provider",
+            return_value=True,
+        ),
         patch(
             "wet_mcp.sources.search_strategies.get_llm_config",
             return_value={"model": "gpt-4", "fallbacks": None, "temperature": 0},
@@ -44,7 +45,6 @@ async def test_expand_query_success():
             return_value=_mock_llm_response("python web scraping\nweb crawling python"),
         ),
     ):
-        mock_settings.resolve_provider_mode.return_value = "proxy"
 
         result = await expand_query("python scraping")
 
@@ -56,8 +56,7 @@ async def test_expand_query_success():
 
 async def test_expand_query_local_mode_fallback():
     """Local mode (no LLM) returns only original query."""
-    with patch("wet_mcp.sources.search_strategies.settings") as mock_settings:
-        mock_settings.resolve_provider_mode.return_value = "local"
+    with patch("wet_mcp.sources.search_strategies.has_llm_provider", return_value=False):
 
         result = await expand_query("python scraping")
 
@@ -68,8 +67,9 @@ async def test_expand_query_llm_failure_fallback():
     """LLM call fails -- gracefully returns original query."""
     with (
         patch(
-            "wet_mcp.sources.search_strategies.settings",
-        ) as mock_settings,
+            "wet_mcp.sources.search_strategies.has_llm_provider",
+            return_value=True,
+        ),
         patch(
             "wet_mcp.sources.search_strategies.get_llm_config",
             return_value={"model": "gpt-4", "fallbacks": None, "temperature": 0},
@@ -80,7 +80,6 @@ async def test_expand_query_llm_failure_fallback():
             side_effect=Exception("API error"),
         ),
     ):
-        mock_settings.resolve_provider_mode.return_value = "sdk"
 
         result = await expand_query("python scraping")
 
@@ -91,8 +90,9 @@ async def test_expand_query_numbered_lines():
     """LLM returns numbered lines -- numbers are stripped."""
     with (
         patch(
-            "wet_mcp.sources.search_strategies.settings",
-        ) as mock_settings,
+            "wet_mcp.sources.search_strategies.has_llm_provider",
+            return_value=True,
+        ),
         patch(
             "wet_mcp.sources.search_strategies.get_llm_config",
             return_value={"model": "gpt-4", "fallbacks": None, "temperature": 0},
@@ -103,7 +103,6 @@ async def test_expand_query_numbered_lines():
             return_value=_mock_llm_response("1. alternative one\n2) alternative two"),
         ),
     ):
-        mock_settings.resolve_provider_mode.return_value = "proxy"
 
         result = await expand_query("original")
 
@@ -116,8 +115,9 @@ async def test_expand_query_empty_llm_response():
     """LLM returns empty content -- falls back to original."""
     with (
         patch(
-            "wet_mcp.sources.search_strategies.settings",
-        ) as mock_settings,
+            "wet_mcp.sources.search_strategies.has_llm_provider",
+            return_value=True,
+        ),
         patch(
             "wet_mcp.sources.search_strategies.get_llm_config",
             return_value={"model": "gpt-4", "fallbacks": None, "temperature": 0},
@@ -128,7 +128,6 @@ async def test_expand_query_empty_llm_response():
             return_value=_mock_llm_response(""),
         ),
     ):
-        mock_settings.resolve_provider_mode.return_value = "proxy"
 
         result = await expand_query("original")
 
@@ -140,8 +139,9 @@ async def test_expand_query_more_than_two_alts():
     """LLM returns more than 2 alternatives -- only first 2 kept."""
     with (
         patch(
-            "wet_mcp.sources.search_strategies.settings",
-        ) as mock_settings,
+            "wet_mcp.sources.search_strategies.has_llm_provider",
+            return_value=True,
+        ),
         patch(
             "wet_mcp.sources.search_strategies.get_llm_config",
             return_value={"model": "gpt-4", "fallbacks": None, "temperature": 0},
@@ -152,7 +152,6 @@ async def test_expand_query_more_than_two_alts():
             return_value=_mock_llm_response("alt1\nalt2\nalt3\nalt4"),
         ),
     ):
-        mock_settings.resolve_provider_mode.return_value = "proxy"
 
         result = await expand_query("original")
 
@@ -253,7 +252,7 @@ async def test_find_similar_empty_pages():
 async def test_find_similar_auto_searxng_url(monkeypatch):
     """A local single-user SearXNG chain is started before similar search."""
     monkeypatch.delenv("PUBLIC_URL", raising=False)
-    monkeypatch.setattr("wet_mcp.credential_state.get_current_sub", lambda: None)
+    monkeypatch.setattr("wet_mcp.runtime.current_sub", lambda: "default")
     monkeypatch.setattr(
         "wet_mcp.sources.search_backends.chain_backend_names",
         lambda: ["searxng"],
@@ -301,8 +300,7 @@ async def test_extract_keywords_local_mode():
     """Local mode returns title as keywords."""
     from wet_mcp.sources.search_strategies import _extract_keywords
 
-    with patch("wet_mcp.sources.search_strategies.settings") as mock_settings:
-        mock_settings.resolve_provider_mode.return_value = "local"
+    with patch("wet_mcp.sources.search_strategies.has_llm_provider", return_value=False):
 
         result = await _extract_keywords("some content", "My Title")
         assert result == "My Title"
@@ -312,8 +310,7 @@ async def test_extract_keywords_local_no_title():
     """Local mode with no title returns content prefix."""
     from wet_mcp.sources.search_strategies import _extract_keywords
 
-    with patch("wet_mcp.sources.search_strategies.settings") as mock_settings:
-        mock_settings.resolve_provider_mode.return_value = "local"
+    with patch("wet_mcp.sources.search_strategies.has_llm_provider", return_value=False):
 
         result = await _extract_keywords("some content here", "")
         assert result == "some content here"
@@ -325,8 +322,9 @@ async def test_extract_keywords_llm_success():
 
     with (
         patch(
-            "wet_mcp.sources.search_strategies.settings",
-        ) as mock_settings,
+            "wet_mcp.sources.search_strategies.has_llm_provider",
+            return_value=True,
+        ),
         patch(
             "wet_mcp.sources.search_strategies.get_llm_config",
             return_value={"model": "gpt-4", "fallbacks": None, "temperature": 0},
@@ -337,7 +335,6 @@ async def test_extract_keywords_llm_success():
             return_value=_mock_llm_response("python, scraping, web, automation"),
         ),
     ):
-        mock_settings.resolve_provider_mode.return_value = "sdk"
 
         result = await _extract_keywords("content about python", "Python Guide")
         assert result == "python, scraping, web, automation"
@@ -349,8 +346,9 @@ async def test_extract_keywords_llm_failure():
 
     with (
         patch(
-            "wet_mcp.sources.search_strategies.settings",
-        ) as mock_settings,
+            "wet_mcp.sources.search_strategies.has_llm_provider",
+            return_value=True,
+        ),
         patch(
             "wet_mcp.sources.search_strategies.get_llm_config",
             return_value={"model": "gpt-4", "fallbacks": None, "temperature": 0},
@@ -361,7 +359,6 @@ async def test_extract_keywords_llm_failure():
             side_effect=Exception("API error"),
         ),
     ):
-        mock_settings.resolve_provider_mode.return_value = "sdk"
 
         result = await _extract_keywords("content", "Fallback Title")
         assert result == "Fallback Title"
@@ -519,8 +516,9 @@ async def test_generate_hyde_query_success():
     """LLM returns hypothetical document text -- happy path."""
     with (
         patch(
-            "wet_mcp.sources.search_strategies.settings",
-        ) as mock_settings,
+            "wet_mcp.sources.search_strategies.has_llm_provider",
+            return_value=True,
+        ),
         patch(
             "wet_mcp.sources.search_strategies.get_llm_config",
             return_value={"model": "gpt-4", "fallbacks": None, "temperature": 0},
@@ -534,7 +532,6 @@ async def test_generate_hyde_query_success():
             ),
         ),
     ):
-        mock_settings.resolve_provider_mode.return_value = "proxy"
 
         result = await generate_hyde_query("how to make HTTP requests", "requests")
 
@@ -544,8 +541,7 @@ async def test_generate_hyde_query_success():
 
 async def test_generate_hyde_query_local_mode():
     """Local mode (no LLM) returns None."""
-    with patch("wet_mcp.sources.search_strategies.settings") as mock_settings:
-        mock_settings.resolve_provider_mode.return_value = "local"
+    with patch("wet_mcp.sources.search_strategies.has_llm_provider", return_value=False):
 
         result = await generate_hyde_query("some query", "some-lib")
 
@@ -556,8 +552,9 @@ async def test_generate_hyde_query_llm_failure():
     """LLM call fails -- returns None gracefully."""
     with (
         patch(
-            "wet_mcp.sources.search_strategies.settings",
-        ) as mock_settings,
+            "wet_mcp.sources.search_strategies.has_llm_provider",
+            return_value=True,
+        ),
         patch(
             "wet_mcp.sources.search_strategies.get_llm_config",
             return_value={"model": "gpt-4", "fallbacks": None, "temperature": 0},
@@ -568,7 +565,6 @@ async def test_generate_hyde_query_llm_failure():
             side_effect=Exception("API error"),
         ),
     ):
-        mock_settings.resolve_provider_mode.return_value = "sdk"
 
         result = await generate_hyde_query("some query", "some-lib")
 
@@ -579,8 +575,9 @@ async def test_generate_hyde_query_empty_response():
     """LLM returns empty content -- returns None."""
     with (
         patch(
-            "wet_mcp.sources.search_strategies.settings",
-        ) as mock_settings,
+            "wet_mcp.sources.search_strategies.has_llm_provider",
+            return_value=True,
+        ),
         patch(
             "wet_mcp.sources.search_strategies.get_llm_config",
             return_value={"model": "gpt-4", "fallbacks": None, "temperature": 0},
@@ -591,7 +588,6 @@ async def test_generate_hyde_query_empty_response():
             return_value=_mock_llm_response(""),
         ),
     ):
-        mock_settings.resolve_provider_mode.return_value = "proxy"
 
         result = await generate_hyde_query("some query", "some-lib")
 

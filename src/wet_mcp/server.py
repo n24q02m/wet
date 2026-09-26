@@ -969,7 +969,6 @@ async def _run_configured_search(*, timeout: float | None = None, **kwargs: Any)
     searxng_url = None
     if (
         settings.auto_searxng_enabled()
-        and not is_uvx_tool_venv()
         and "searxng" in search_backends.chain_backend_names()
     ):
         try:

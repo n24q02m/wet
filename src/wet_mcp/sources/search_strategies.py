@@ -7,7 +7,7 @@ from urllib.parse import urlparse
 from loguru import logger
 
 from wet_mcp.config import settings
-from wet_mcp.llm import acompletion, get_llm_config
+from wet_mcp.llm import has_llm_provider, acompletion, get_llm_config
 from wet_mcp.sources.crawler import extract as raw_extract
 
 
@@ -16,8 +16,7 @@ async def expand_query(query: str) -> list[str]:
 
     Returns [original_query, alt1, alt2]. Falls back to [query] if LLM unavailable.
     """
-    mode = settings.resolve_provider_mode()
-    if mode == "local":
+    if not has_llm_provider():
         return [query]
 
     try:
@@ -66,8 +65,7 @@ async def rewrite_query(
     repeats a query already tried). Token cost is bounded by ``max_tokens``;
     callers bound the number of rounds.
     """
-    mode = settings.resolve_provider_mode()
-    if mode == "local":
+    if not has_llm_provider():
         return None
     avoid = avoid or []
     try:
@@ -160,8 +158,7 @@ async def find_similar(
 
 async def _extract_keywords(content: str, title: str) -> str:
     """Extract search keywords from content. LLM if available, else title."""
-    mode = settings.resolve_provider_mode()
-    if mode == "local":
+    if not has_llm_provider():
         return title if title else content[:200]
 
     try:
@@ -207,8 +204,7 @@ async def generate_hyde_query(query: str, library: str) -> str | None:
 
     Returns None if LLM unavailable or generation fails.
     """
-    mode = settings.resolve_provider_mode()
-    if mode == "local":
+    if not has_llm_provider():
         return None
 
     try:
