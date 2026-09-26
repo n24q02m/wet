@@ -1,21 +1,23 @@
 """The per-request embed/rerank resolvers must honour the disable-local flags.
 
-Two backend-selection paths exist and they disagreed. The startup path
-(``config.resolve_embedding_backend``) returns ``'unavailable'`` when the cloud
-chain is empty and ``DISABLE_LOCAL_EMBED`` is set. The per-request path
-(``embedder.resolve_embed_backend_for_request``) fell through to the local ONNX
-backend unconditionally, so on a deployment built WITHOUT the local extras --
-the http-slim image, which ``Dockerfile`` uninstalls ``fastretrieval`` and
-``onnxruntime`` from -- every indexing request for a sub with no cloud chain
-died on ``ModuleNotFoundError: No module named 'fastretrieval'`` raised from the
-lazy import inside ``LocalEmbeddingBackend._get_model``. Live D1 recorded exactly
-that in ``index_state='failed'`` (#1614) while ``config status`` reported the
-startup singleton and claimed embedding was available.
+Two backend-selection paths exist and they used to disagree. The startup path
+made a deployment choice; the per-request path
+(``embedder.resolve_embed_backend_for_request`` /
+``reranker.resolve_rerank_backend_for_request``) fell through to the local
+ONNX backend unconditionally, so on a deployment built WITHOUT the local
+extras -- the http-slim image, which uninstalls ``fastretrieval`` and
+``onnxruntime`` -- every indexing request with no cloud backend died on
+``ModuleNotFoundError: No module named 'fastretrieval'`` raised from the lazy
+import inside ``LocalEmbeddingBackend._get_model`` while ``config status``
+claimed embedding was available.
 
-The expected behaviour is the one the startup path already defines: no cloud
-chain + local disabled == gracefully UNAVAILABLE. Not the local backend, and
-not the startup singleton either -- that one carries the OPERATOR's key, and
-spending it on an arbitrary sub is what the resolver's docstring rules out.
+The expected behaviour: the startup-resolved backend (the ``[models.embed]`` /
+``[models.rerank]`` cell) wins when present; otherwise the request falls back
+to the shared local ONNX leg -- unless the local leg is unavailable
+(``DISABLE_LOCAL_EMBED`` / ``DISABLE_LOCAL_RERANK``, or an image built
+without the ONNX extras), in which case it is ``None``: gracefully
+unavailable, keyword-only. De-host there is no per-request credential
+resolution any more: the cell is host-owned, not a per-sub secret.
 
 ``fastretrieval`` is installed in the dev venv, so these tests intercept the
 import instead of relying on its absence: that both reproduces the slim image
@@ -26,36 +28,35 @@ checked the return value would stay green if the import happened first.
 from __future__ import annotations
 
 import builtins
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from hull_core.auth.context import AuthContext, reset_current_user, set_current_user
 
-from wet_mcp.credential_state import (
-    CLOUD_KEYS,
-    set_current_sub,
-    store_for_sub,
-)
+import wet_mcp.embedder as embedder_mod
+import wet_mcp.reranker as reranker_mod
 
 
 @pytest.fixture(autouse=True)
-def _isolate(monkeypatch, tmp_path):
-    """sub=None, no provider keys / chains in env, fresh per-sub store."""
-    monkeypatch.setenv("WET_DATA_DIR", str(tmp_path))
-    monkeypatch.setenv("CREDENTIAL_SECRET", "s")
-    set_current_sub(None)
-    for k in (*CLOUD_KEYS, "ANTHROPIC_API_KEY", "GOOGLE_API_KEY"):
-        monkeypatch.delenv(k, raising=False)
-    for k in ("EMBEDDING_MODELS", "RERANK_MODELS", "LLM_MODELS"):
-        monkeypatch.delenv(k, raising=False)
-
-    # The shared local singletons are process-wide; a leftover from another
-    # test would make "returns the shared local backend" pass for the wrong
-    # reason.
-    from wet_mcp import embedder, reranker
-
-    monkeypatch.setattr(embedder, "_shared_local_backend", None)
-    monkeypatch.setattr(reranker, "_shared_local_backend", None)
+def _isolate(monkeypatch):
+    """Fresh backend singletons; no request identity; reset after."""
+    monkeypatch.setattr(embedder_mod, "_backend", None)
+    monkeypatch.setattr(embedder_mod, "_shared_local_backend", None)
+    monkeypatch.setattr(reranker_mod, "_backend", None)
+    monkeypatch.setattr(reranker_mod, "_shared_local_backend", None)
+    token = set_current_user(AuthContext.local())
     yield
-    set_current_sub(None)
+    reset_current_user(token)
+
+
+@pytest.fixture
+def as_user_a():
+    """Resolve requests under a mode-3 identity (namespace ``user_a``)."""
+    token = set_current_user(
+        AuthContext(uid="a", namespace="user_a", mode="multi")
+    )
+    yield
+    reset_current_user(token)
 
 
 @pytest.fixture
@@ -92,22 +93,41 @@ def local_rerank_disabled(monkeypatch):
     monkeypatch.setattr(settings, "disable_local_rerank", True)
 
 
+def _cloud_embed_backend(model: str = "text-embedding-3-large"):
+    """A CloudEmbeddingBackend over a stub client (cell-owned model id)."""
+    from wet_mcp.embedder import CloudEmbeddingBackend
+
+    client = MagicMock()
+    client.cell.model = model
+    client.embeddings = AsyncMock(return_value=[[0.1] * 4])
+    return CloudEmbeddingBackend(client)
+
+
+def _cloud_reranker(model: str = "cohere/rerank-v3.5"):
+    """A CloudReranker over a stub client (cell-owned model id)."""
+    from wet_mcp.reranker import CloudReranker
+
+    client = MagicMock()
+    client.cell.model = model
+    client.rerank = AsyncMock(return_value=[])
+    return CloudReranker(client)
+
+
 # ---------------------------------------------------------------------------
 # Embedding
 # ---------------------------------------------------------------------------
 
 
 class TestEmbedResolverHonoursDisableLocalEmbed:
-    def test_no_chain_and_local_disabled_resolves_to_none(self, local_embed_disabled):
+    def test_no_backend_and_local_disabled_resolves_to_none(
+        self, local_embed_disabled
+    ):
         """The exit the slim image actually takes: gracefully unavailable."""
         from wet_mcp.embedder import resolve_embed_backend_for_request
 
-        store_for_sub("user_a", {"GITHUB_TOKEN": "ghp_x"})  # no embed provider key
-        set_current_sub("user_a")
-
         assert resolve_embed_backend_for_request() is None
 
-    async def test_no_chain_and_local_disabled_never_imports_fastretrieval(
+    async def test_no_backend_and_local_disabled_never_imports_fastretrieval(
         self, local_embed_disabled, slim_image
     ):
         """End-to-end through the live dispatch helper, on a slim image.
@@ -119,95 +139,52 @@ class TestEmbedResolverHonoursDisableLocalEmbed:
         """
         from wet_mcp import server
 
-        store_for_sub("user_a", {"GITHUB_TOKEN": "ghp_x"})
-        set_current_sub("user_a")
-
         assert await server._embed("hello", is_query=True) is None
         assert slim_image == [], f"local ONNX leg was entered: {slim_image}"
 
-    async def test_no_chain_and_local_disabled_degrades_the_index_batch(
+    async def test_no_backend_and_local_disabled_degrades_the_index_batch(
         self, local_embed_disabled, slim_image
     ):
         """The batch path the background indexer uses degrades the same way."""
         from wet_mcp import server
 
-        store_for_sub("user_a", {"GITHUB_TOKEN": "ghp_x"})
-        set_current_sub("user_a")
-
         assert await server._embed_batch(["a", "b"]) is None
         assert slim_image == [], f"local ONNX leg was entered: {slim_image}"
 
-    def test_no_chain_and_local_disabled_does_not_spend_the_operator_key(
-        self, local_embed_disabled, monkeypatch
-    ):
-        """Unavailable means None -- never the startup singleton.
-
-        The singleton was resolved from the OPERATOR's process env. Handing it
-        to an arbitrary sub bills the operator's provider account for that
-        sub's traffic, which the resolver's docstring rules out on purpose.
-        """
-        from wet_mcp import embedder
-        from wet_mcp.embedder import CloudEmbeddingBackend
-
-        operator_singleton = CloudEmbeddingBackend(
-            "jina_ai/jina-embeddings-v5-text-small", api_key="operator_key"
-        )
-        monkeypatch.setattr(embedder, "_backend", operator_singleton)
-
-        store_for_sub("user_a", {"GITHUB_TOKEN": "ghp_x"})
-        set_current_sub("user_a")
-
-        assert embedder.resolve_embed_backend_for_request() is not operator_singleton
-        assert embedder.resolve_embed_backend_for_request() is None
-
-    def test_no_chain_with_local_enabled_still_returns_shared_local(self):
+    def test_no_backend_with_local_enabled_still_returns_shared_local(self):
         """No regression: the local fallback is untouched when local is on."""
-        from wet_mcp import embedder
         from wet_mcp.embedder import LocalEmbeddingBackend
 
-        store_for_sub("user_a", {"GITHUB_TOKEN": "ghp_x"})
-        set_current_sub("user_a")
-
-        backend = embedder.resolve_embed_backend_for_request()
+        backend = embedder_mod.resolve_embed_backend_for_request()
         assert isinstance(backend, LocalEmbeddingBackend)
         # It is the process-shared instance, not a fresh one per request.
-        assert backend is embedder.resolve_embed_backend_for_request()
+        assert backend is embedder_mod.resolve_embed_backend_for_request()
 
-    def test_cloud_chain_wins_over_the_flag_and_carries_the_subs_key(
-        self, local_embed_disabled
+    def test_cloud_backend_wins_over_the_flag(self, local_embed_disabled):
+        """A startup-resolved cloud backend is unaffected: the flag only
+        gates the LOCAL leg (the cell is host-owned, so there is no per-sub
+        key for the flag to interact with any more)."""
+        from wet_mcp.embedder import resolve_embed_backend_for_request
+
+        backend = _cloud_embed_backend()
+        embedder_mod._backend = backend
+
+        assert resolve_embed_backend_for_request() is backend
+
+    def test_startup_backend_wins_regardless_of_request_identity(
+        self, local_embed_disabled, as_user_a
     ):
-        """A sub WITH a chain is unaffected: the flag only gates the local leg."""
-        from wet_mcp.embedder import (
-            CloudEmbeddingBackend,
-            resolve_embed_backend_for_request,
-        )
+        """The startup backend is THE server backend: every caller gets it.
 
-        store_for_sub(
-            "user_a",
-            {
-                "EMBEDDING_MODELS": "jina_ai/jina-embeddings-v5-text-small",
-                "JINA_AI_API_KEY": "jina_a",
-            },
-        )
-        set_current_sub("user_a")
-
-        backend = resolve_embed_backend_for_request()
-        assert isinstance(backend, CloudEmbeddingBackend)
-        assert backend.model == "jina_ai/jina-embeddings-v5-text-small"
-        assert backend.api_key == "jina_a"
-
-    def test_sub_none_still_returns_the_startup_singleton(
-        self, local_embed_disabled, monkeypatch
-    ):
-        """Stdio / single-user is out of scope for the per-sub flag branch."""
-        from wet_mcp import embedder
+        De-host there is exactly one host-configured backend; a mode-3
+        identity changes storage roots, not which embedding backend serves.
+        """
         from wet_mcp.embedder import LocalEmbeddingBackend
 
         sentinel = LocalEmbeddingBackend()
-        monkeypatch.setattr(embedder, "_backend", sentinel)
-        set_current_sub(None)
+        embedder_mod._backend = sentinel
 
-        assert embedder.resolve_embed_backend_for_request() is sentinel
+        assert embedder_mod.resolve_embed_backend_for_request() is sentinel
 
 
 # ---------------------------------------------------------------------------
@@ -216,15 +193,14 @@ class TestEmbedResolverHonoursDisableLocalEmbed:
 
 
 class TestRerankResolverHonoursDisableLocalRerank:
-    def test_no_chain_and_local_disabled_resolves_to_none(self, local_rerank_disabled):
+    def test_no_backend_and_local_disabled_resolves_to_none(
+        self, local_rerank_disabled
+    ):
         from wet_mcp.reranker import resolve_rerank_backend_for_request
-
-        store_for_sub("user_a", {"GITHUB_TOKEN": "ghp_x"})
-        set_current_sub("user_a")
 
         assert resolve_rerank_backend_for_request() is None
 
-    async def test_no_chain_and_local_disabled_never_imports_fastretrieval(
+    async def test_no_backend_and_local_disabled_never_imports_fastretrieval(
         self, local_rerank_disabled, slim_image
     ):
         """``_rerank_results`` must return the unranked order, importing nothing.
@@ -236,71 +212,25 @@ class TestRerankResolverHonoursDisableLocalRerank:
         """
         from wet_mcp import server
 
-        store_for_sub("user_a", {"GITHUB_TOKEN": "ghp_x"})
-        set_current_sub("user_a")
-
         results = [{"content": "doc-a"}, {"content": "doc-b"}]
-        ranked = await server._rerank_results("q", results, top_n=1)
+        ranked = await server._rerank_results("q", results, 1)
         assert ranked == [{"content": "doc-a"}]
         assert slim_image == [], f"local ONNX leg was entered: {slim_image}"
 
-    def test_no_chain_and_local_disabled_does_not_spend_the_operator_key(
-        self, local_rerank_disabled, monkeypatch
-    ):
-        from wet_mcp import reranker
-        from wet_mcp.reranker import CloudReranker
-
-        operator_singleton = CloudReranker(
-            model="cohere/rerank-v3.5", api_key="operator_key"
-        )
-        monkeypatch.setattr(reranker, "_backend", operator_singleton)
-
-        store_for_sub("user_a", {"GITHUB_TOKEN": "ghp_x"})
-        set_current_sub("user_a")
-
-        assert reranker.resolve_rerank_backend_for_request() is None
-
-    def test_no_chain_with_local_enabled_still_returns_shared_local(self):
-        from wet_mcp import reranker
+    def test_no_backend_with_local_enabled_still_returns_shared_local(self):
         from wet_mcp.reranker import LocalReranker
 
-        store_for_sub("user_a", {"GITHUB_TOKEN": "ghp_x"})
-        set_current_sub("user_a")
-
-        backend = reranker.resolve_rerank_backend_for_request()
+        backend = reranker_mod.resolve_rerank_backend_for_request()
         assert isinstance(backend, LocalReranker)
-        assert backend is reranker.resolve_rerank_backend_for_request()
+        assert backend is reranker_mod.resolve_rerank_backend_for_request()
 
-    def test_cloud_chain_wins_over_the_flag_and_carries_the_subs_key(
-        self, local_rerank_disabled
-    ):
-        from wet_mcp.reranker import (
-            CloudReranker,
-            resolve_rerank_backend_for_request,
-        )
+    def test_cloud_backend_wins_over_the_flag(self, local_rerank_disabled):
+        from wet_mcp.reranker import resolve_rerank_backend_for_request
 
-        store_for_sub(
-            "user_a",
-            {"RERANK_MODELS": "cohere/rerank-v3.5", "COHERE_API_KEY": "co_a"},
-        )
-        set_current_sub("user_a")
+        backend = _cloud_reranker()
+        reranker_mod._backend = backend
 
-        backend = resolve_rerank_backend_for_request()
-        assert isinstance(backend, CloudReranker)
-        assert backend.model == "cohere/rerank-v3.5"
-        assert backend.api_key == "co_a"
-
-    def test_sub_none_still_returns_the_startup_singleton(
-        self, local_rerank_disabled, monkeypatch
-    ):
-        from wet_mcp import reranker
-        from wet_mcp.reranker import LocalReranker
-
-        sentinel = LocalReranker()
-        monkeypatch.setattr(reranker, "_backend", sentinel)
-        set_current_sub(None)
-
-        assert reranker.resolve_rerank_backend_for_request() is sentinel
+        assert resolve_rerank_backend_for_request() is backend
 
 
 # ---------------------------------------------------------------------------
@@ -309,64 +239,40 @@ class TestRerankResolverHonoursDisableLocalRerank:
 
 
 class TestConfigStatusReflectsPerRequestResolution:
-    """Reported state must be served state, per ``_active_docs_backend``.
+    """Reported state must be served state.
 
-    The status handler read the startup singletons, so a sub whose request
-    resolves to "nothing" was told ``CloudEmbeddingBackend available=true`` --
-    the operator's backend, described to a user who will never be served by it.
+    A status handler that read a DIFFERENT source than the resolvers would
+    describe a backend the caller will never be served by.
     """
 
     async def test_embedding_reads_unavailable_when_the_request_has_no_backend(
-        self, local_embed_disabled, monkeypatch
+        self, local_embed_disabled
     ):
-        from wet_mcp import embedder
-        from wet_mcp.embedder import CloudEmbeddingBackend
         from wet_mcp.server import _handle_config_status
-
-        monkeypatch.setattr(
-            embedder,
-            "_backend",
-            CloudEmbeddingBackend("jina_ai/jina-embeddings-v5-text-small"),
-        )
-        store_for_sub("user_a", {"GITHUB_TOKEN": "ghp_x"})
-        set_current_sub("user_a")
 
         status = await _handle_config_status()
         assert status["embedding"]["available"] is False
         assert status["embedding"]["backend"] is None
 
-    async def test_embedding_names_the_subs_own_cloud_backend(self, monkeypatch):
-        from wet_mcp import embedder
+    async def test_embedding_names_the_resolved_cloud_backend(self):
         from wet_mcp.server import _handle_config_status
 
-        monkeypatch.setattr(embedder, "_backend", None)
-        store_for_sub(
-            "user_a",
-            {
-                "EMBEDDING_MODELS": "jina_ai/jina-embeddings-v5-text-small",
-                "JINA_AI_API_KEY": "jina_a",
-            },
+        embedder_mod._backend = _cloud_embed_backend(
+            "jina_ai/jina-embeddings-v5-text-small"
         )
-        set_current_sub("user_a")
 
         status = await _handle_config_status()
         assert status["embedding"]["backend"] == "CloudEmbeddingBackend"
         assert status["embedding"]["available"] is True
 
     async def test_embedding_status_records_model_and_dimensions(self, monkeypatch):
-        from wet_mcp import embedder
+        from wet_mcp import server
         from wet_mcp.server import _handle_config_status
 
-        monkeypatch.setattr(embedder, "_backend", None)
-        monkeypatch.setattr("wet_mcp.server._embedding_dims", 768)
-        store_for_sub(
-            "user_a",
-            {
-                "EMBEDDING_MODELS": "jina_ai/jina-embeddings-v5-text-small",
-                "JINA_AI_API_KEY": "jina_a",
-            },
+        embedder_mod._backend = _cloud_embed_backend(
+            "jina_ai/jina-embeddings-v5-text-small"
         )
-        set_current_sub("user_a")
+        monkeypatch.setattr(server, "_embedding_dims", 768)
 
         status = await _handle_config_status()
 
@@ -374,34 +280,20 @@ class TestConfigStatusReflectsPerRequestResolution:
         assert status["embedding"]["dims"] == 768
 
     async def test_reranker_reads_unavailable_when_the_request_has_no_backend(
-        self, local_rerank_disabled, monkeypatch
+        self, local_rerank_disabled
     ):
-        from wet_mcp import reranker
-        from wet_mcp.reranker import CloudReranker
         from wet_mcp.server import _handle_config_status
-
-        monkeypatch.setattr(reranker, "_backend", CloudReranker())
-        store_for_sub("user_a", {"GITHUB_TOKEN": "ghp_x"})
-        set_current_sub("user_a")
 
         status = await _handle_config_status()
         assert status["reranker"]["available"] is False
         assert status["reranker"]["backend"] is None
 
-    async def test_single_user_still_reports_the_startup_singletons(self, monkeypatch):
-        """Existing readers keep the answer they had on stdio / single-user."""
-        from wet_mcp import embedder, reranker
-        from wet_mcp.embedder import CloudEmbeddingBackend
-        from wet_mcp.reranker import CloudReranker
+    async def test_status_reports_the_resolved_backends(self):
+        """Existing readers keep seeing the backends requests actually get."""
         from wet_mcp.server import _handle_config_status
 
-        monkeypatch.setattr(
-            embedder,
-            "_backend",
-            CloudEmbeddingBackend("jina_ai/jina-embeddings-v5-text-small"),
-        )
-        monkeypatch.setattr(reranker, "_backend", CloudReranker())
-        set_current_sub(None)
+        embedder_mod._backend = _cloud_embed_backend()
+        reranker_mod._backend = _cloud_reranker()
 
         status = await _handle_config_status()
         assert status["embedding"]["backend"] == "CloudEmbeddingBackend"
@@ -409,12 +301,11 @@ class TestConfigStatusReflectsPerRequestResolution:
         assert status["reranker"]["backend"] == "CloudReranker"
         assert status["reranker"]["available"] is True
 
-    async def test_status_says_why_embedding_is_unavailable(self, local_embed_disabled):
+    async def test_status_says_why_embedding_is_unavailable(
+        self, local_embed_disabled
+    ):
         """ "available: false" alone reads as a bug report, not a config answer."""
         from wet_mcp.server import _handle_config_status
-
-        store_for_sub("user_a", {"GITHUB_TOKEN": "ghp_x"})
-        set_current_sub("user_a")
 
         reason = (await _handle_config_status())["embedding"]["unavailable_reason"]
         assert reason and "DISABLE_LOCAL_EMBED" in reason
@@ -435,8 +326,6 @@ class TestSearchSignalsKeywordOnlyRetrieval:
 
     @staticmethod
     def _stub_docs_db(monkeypatch, captured: dict):
-        from unittest.mock import MagicMock
-
         from wet_mcp import server
 
         db = MagicMock()
@@ -451,6 +340,14 @@ class TestSearchSignalsKeywordOnlyRetrieval:
         monkeypatch.setattr(server, "_docs_db", db)
         return db
 
+    @staticmethod
+    def _stub_hyde(monkeypatch):
+        """HyDE needs an LLM; these tests are about the retrieval signal."""
+        monkeypatch.setattr(
+            "wet_mcp.sources.search_strategies.generate_hyde_query",
+            AsyncMock(return_value=None),
+        )
+
     async def test_keyword_only_reply_names_the_missing_vector_leg(
         self, local_embed_disabled, slim_image, monkeypatch
     ):
@@ -458,8 +355,7 @@ class TestSearchSignalsKeywordOnlyRetrieval:
 
         captured: dict = {}
         self._stub_docs_db(monkeypatch, captured)
-        store_for_sub("user_a", {"GITHUB_TOKEN": "ghp_x"})
-        set_current_sub("user_a")
+        self._stub_hyde(monkeypatch)
 
         payload = await server._search_cached_index("fastapi", "routing", None, 10)
 
@@ -470,17 +366,17 @@ class TestSearchSignalsKeywordOnlyRetrieval:
         assert slim_image == [], f"local ONNX leg was entered: {slim_image}"
 
     async def test_hybrid_reply_says_hybrid_and_carries_no_notice(self, monkeypatch):
-        from wet_mcp import embedder, server
+        from wet_mcp import server
 
         class _FakeBackend:
             async def embed_single(self, text, dimensions=None):
                 return [0.5] * 4
 
-        monkeypatch.setattr(embedder, "_backend", _FakeBackend())
-        set_current_sub(None)
+        embedder_mod._backend = _FakeBackend()
 
         captured: dict = {}
         self._stub_docs_db(monkeypatch, captured)
+        self._stub_hyde(monkeypatch)
 
         payload = await server._search_cached_index("fastapi", "routing", None, 10)
 

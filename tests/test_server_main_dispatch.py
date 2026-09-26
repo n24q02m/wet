@@ -1,340 +1,208 @@
-"""Tests for wet_mcp.server main() entry point + run_http_server() modes.
+"""Tests for the de-hosted server entry points: build_http_app / run_server_blocking / main.
 
-Covers the stdio-pure / HTTP-multi-user dispatch wired in spec
-``2026-05-01-stdio-pure-http-multiuser.md``: stdio is the default,
-``--http`` (or ``MCP_TRANSPORT=http`` / ``TRANSPORT_MODE=http``) opts
-into the HTTP server. The legacy ``MCP_MODE`` env var (and
-``remote-relay`` deprecation branch) were deleted in the same change.
+There is ONE way to run wet-mcp now (spec §3): a single HTTP process with the
+MCP endpoint at ``http://host:port/mcp``, authenticated per
+``~/.wet/config.toml`` ([server] auth = no-auth | token | multi). The old
+stdio-default / ``--http`` / mcp-core ``run_http_server`` dispatch matrix and
+the ``PUBLIC_URL`` remote-mode guard are deleted surface and are not exercised.
 """
 
-import sys
-from unittest.mock import AsyncMock, patch
+from types import SimpleNamespace
+from unittest.mock import MagicMock, patch
 
 import pytest
+from hull_core.config.settings import HullSettings, ServerSettings
+
+from wet_mcp import server as srv
 
 
-class TestRunHttpServer:
-    """run_http_server() starts HTTP server via mcp-core run_http_server."""
-
-    async def test_delegates_to_run_http_server(self, monkeypatch):
-        monkeypatch.delenv("PUBLIC_URL", raising=False)
-        # Single-user now reads these too, so an ambient value would decide
-        # the assertion below instead of the default this test is guarding.
-        monkeypatch.delenv("MCP_HOST", raising=False)
-        monkeypatch.delenv("MCP_PORT", raising=False)
-        from wet_mcp.server import run_http_server
-
-        with (
-            patch(
-                "mcp_core.transport.local_server.run_http_server",
-                new_callable=AsyncMock,
-            ) as mock_run_http,
-        ):
-            await run_http_server(port=0)
-
-            mock_run_http.assert_called_once()
-            args, kwargs = mock_run_http.call_args
-            assert kwargs["server_name"] == "wet-mcp"
-            assert kwargs["port"] == 0
-            assert kwargs["host"] == "127.0.0.1"
-            assert "relay_schema" in kwargs
-            assert "on_credentials_saved" in kwargs
-
-    async def test_custom_port_passed_through(self, monkeypatch):
-        monkeypatch.delenv("PUBLIC_URL", raising=False)
-        monkeypatch.delenv("MCP_HOST", raising=False)
-        monkeypatch.delenv("MCP_PORT", raising=False)
-        from wet_mcp.server import run_http_server
-
-        with patch(
-            "mcp_core.transport.local_server.run_http_server",
-            new_callable=AsyncMock,
-        ) as mock_run_http:
-            await run_http_server(port=19999)
-            _, kwargs = mock_run_http.call_args
-            assert kwargs["port"] == 19999
-
-    async def test_public_url_without_dcr_secret_refuses_start(self, monkeypatch):
-        """Multi-user remote mode requires MCP_DCR_SERVER_SECRET."""
-        from wet_mcp.server import run_http_server
-
-        monkeypatch.setenv("PUBLIC_URL", "https://wet.example.com")
-        monkeypatch.delenv("MCP_DCR_SERVER_SECRET", raising=False)
-
-        with pytest.raises(SystemExit, match="MCP_DCR_SERVER_SECRET missing"):
-            await run_http_server()
-
-    async def test_public_url_with_dcr_secret_binds_0000_8080(self, monkeypatch):
-        """PUBLIC_URL + MCP_DCR_SERVER_SECRET -> 0.0.0.0:8080 multi-user remote."""
-        from wet_mcp.server import run_http_server
-
-        monkeypatch.setenv("PUBLIC_URL", "https://wet.example.com")
-        monkeypatch.setenv("MCP_DCR_SERVER_SECRET", "test-dcr-secret")
-        monkeypatch.delenv("MCP_PORT", raising=False)
-
-        with patch(
-            "mcp_core.transport.local_server.run_http_server",
-            new_callable=AsyncMock,
-        ) as mock_run_http:
-            await run_http_server()
-
-            _, kwargs = mock_run_http.call_args
-            assert kwargs["host"] == "0.0.0.0"
-            assert kwargs["port"] == 8080
-
-    async def test_public_url_respects_mcp_port_override(self, monkeypatch):
-        """MCP_PORT overrides default 8080 in multi-user remote mode."""
-        from wet_mcp.server import run_http_server
-
-        monkeypatch.setenv("PUBLIC_URL", "https://wet.example.com")
-        monkeypatch.setenv("MCP_DCR_SERVER_SECRET", "test-dcr-secret")
-        monkeypatch.setenv("MCP_PORT", "9090")
-
-        with patch(
-            "mcp_core.transport.local_server.run_http_server",
-            new_callable=AsyncMock,
-        ) as mock_run_http:
-            await run_http_server()
-
-            _, kwargs = mock_run_http.call_args
-            assert kwargs["host"] == "0.0.0.0"
-            assert kwargs["port"] == 9090
+def _hs(auth: str = "no-auth", host: str = "127.0.0.1", port: int = 8802):
+    return SimpleNamespace(server=SimpleNamespace(auth=auth, host=host, port=port))
 
 
-class TestSingleUserBindOverride:
-    """Single-user HTTP (no ``PUBLIC_URL``) honours MCP_HOST / MCP_PORT.
+def _hull_settings(tmp_path, auth: str = "no-auth") -> HullSettings:
+    return HullSettings(config_dir=tmp_path, server=ServerSettings(auth=auth))
 
-    Issue #1611: run as an HTTP service in a container, wet-mcp bound
-    loopback on a randomly picked port, so no published port reached it
-    from a sibling container -- even though the ``http`` Docker target
-    ships ``MCP_PORT=8080`` + ``EXPOSE 8080``. Setting either variable is
-    the operator's explicit intent; leaving them unset must keep the
-    loopback + auto-port default the desktop setup flow relies on.
-    """
 
-    @pytest.fixture(autouse=True)
-    def _single_user_env(self, monkeypatch):
-        """No PUBLIC_URL, no bind overrides -- each test opts in."""
-        monkeypatch.delenv("PUBLIC_URL", raising=False)
-        monkeypatch.delenv("MCP_HOST", raising=False)
-        monkeypatch.delenv("MCP_PORT", raising=False)
+# ---------------------------------------------------------------------------
+# build_http_app
+# ---------------------------------------------------------------------------
 
-    async def test_unset_keeps_loopback_and_auto_port(self):
-        """Regression guard: bare single-user HTTP still binds 127.0.0.1:auto.
 
-        ``port=0`` is mcp-core's "find a free port" sentinel, so this
-        asserts the pre-#1611 default is untouched when nothing is set.
-        """
-        from wet_mcp.server import run_http_server
+class TestBuildHttpApp:
+    def test_returns_asgi_app_with_mounted_mcp(self, tmp_path):
+        from starlette.applications import Starlette
+        from starlette.routing import Mount
 
-        with patch(
-            "mcp_core.transport.local_server.run_http_server",
-            new_callable=AsyncMock,
-        ) as mock_run_http:
-            await run_http_server()
+        app = srv.build_http_app(_hull_settings(tmp_path))
 
-            _, kwargs = mock_run_http.call_args
-            assert kwargs["host"] == "127.0.0.1"
-            assert kwargs["port"] == 0
+        # Starlette application wrapping the MCP streamable-HTTP app behind
+        # the hull auth middleware, mounted at the root.
+        assert isinstance(app, Starlette)
+        assert any(isinstance(r, Mount) for r in app.routes)
 
-    async def test_mcp_port_alone_pins_port_on_loopback(self, monkeypatch):
-        """MCP_PORT without MCP_HOST pins the port but stays on loopback."""
-        from wet_mcp.server import run_http_server
+    def test_default_settings_loaded_from_instance_config(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(
+            "wet_mcp.runtime.hull_settings",
+            lambda: _hull_settings(tmp_path),
+        )
+        app = srv.build_http_app(None)
 
-        monkeypatch.setenv("MCP_PORT", "8080")
+        assert hasattr(app, "routes")
 
-        with patch(
-            "mcp_core.transport.local_server.run_http_server",
-            new_callable=AsyncMock,
-        ) as mock_run_http:
-            await run_http_server()
+    def test_auth_mode_from_settings_reaches_authenticator(self, tmp_path):
+        """token/multi settings build an app too (authenticator accepts them)."""
+        from hull_core.auth.tokens import hash_token
 
-            _, kwargs = mock_run_http.call_args
-            assert kwargs["host"] == "127.0.0.1"
-            assert kwargs["port"] == 8080
+        users_file = tmp_path / "users.toml"
+        users_file.write_text(
+            "[users.alice]\n"
+            f'token_hash = "{hash_token("alice-token")}"\n'
+            "enabled = true\nnamespace = \"alice\"\n",
+            encoding="utf-8",
+        )
+        multi = HullSettings(
+            config_dir=tmp_path,
+            server=ServerSettings(auth="multi", users_file=users_file),
+        )
+        for settings in (_hull_settings(tmp_path, auth="token"), multi):
+            app = srv.build_http_app(settings)
+            assert hasattr(app, "routes")
 
-    async def test_mcp_host_and_port_bind_all_interfaces(self, monkeypatch):
-        """The reporter's scenario: MCP_HOST=0.0.0.0 + MCP_PORT=8080."""
-        from wet_mcp.server import run_http_server
 
-        monkeypatch.setenv("MCP_HOST", "0.0.0.0")
-        monkeypatch.setenv("MCP_PORT", "8080")
+# ---------------------------------------------------------------------------
+# run_server_blocking
+# ---------------------------------------------------------------------------
 
-        with patch(
-            "mcp_core.transport.local_server.run_http_server",
-            new_callable=AsyncMock,
-        ) as mock_run_http:
-            await run_http_server()
 
-            _, kwargs = mock_run_http.call_args
-            assert kwargs["host"] == "0.0.0.0"
-            assert kwargs["port"] == 8080
+class TestRunServerBlocking:
+    def test_no_auth_non_loopback_bind_refused(self, monkeypatch):
+        """An unauthenticated listener must never leave localhost."""
+        monkeypatch.setattr("wet_mcp.runtime.hull_settings", lambda: _hs(auth="no-auth"))
 
-    async def test_non_loopback_host_warns_about_shared_credentials(self, monkeypatch):
-        """Binding past loopback single-user exposes one shared cred set."""
-        from wet_mcp.server import run_http_server
+        with pytest.raises(srv.ServerConfigError, match="no-auth"):
+            srv.run_server_blocking(host="0.0.0.0", port=8802)
 
-        monkeypatch.setenv("MCP_HOST", "0.0.0.0")
+    def test_serves_uvicorn_on_requested_bind(self, monkeypatch, tmp_path):
+        hs = _hs(auth="no-auth", host="127.0.0.1", port=8803)
+        monkeypatch.setattr("wet_mcp.runtime.hull_settings", lambda: hs)
+
+        lock_cm = MagicMock()
+        lock_obj = MagicMock()
+        lock_obj.__enter__.return_value = lock_obj
+        lock_obj.__exit__.return_value = False
+        lock_cm.return_value = lock_obj
 
         with (
-            patch(
-                "mcp_core.transport.local_server.run_http_server",
-                new_callable=AsyncMock,
-            ),
-            patch("wet_mcp.server.logger.warning") as mock_warning,
+            patch("hull_core.lifecycle.lock.LifecycleLock", lock_cm),
+            patch("wet_mcp.server.build_http_app", return_value=MagicMock()) as mock_app,
+            patch("uvicorn.run") as mock_uvicorn,
         ):
-            await run_http_server()
+            srv.run_server_blocking(host="127.0.0.1", port=8803)
 
-        assert mock_warning.call_count == 1
-        assert "single-user mode" in mock_warning.call_args[0][0]
+        lock_cm.assert_called_once_with("wet", 8803)
+        mock_app.assert_called_once_with(hs)
+        mock_uvicorn.assert_called_once()
+        _, kwargs = mock_uvicorn.call_args
+        assert kwargs["host"] == "127.0.0.1"
+        assert kwargs["port"] == 8803
 
-    async def test_loopback_host_does_not_warn(self):
-        """The untouched default must stay quiet -- no new boot noise."""
-        from wet_mcp.server import run_http_server
+    def test_token_auth_allows_non_loopback(self, monkeypatch):
+        """A shared bind requires token/multi auth — and is then allowed."""
+        hs = _hs(auth="token", host="0.0.0.0", port=8804)
+        monkeypatch.setattr("wet_mcp.runtime.hull_settings", lambda: hs)
+
+        lock_obj = MagicMock()
+        lock_obj.__enter__.return_value = lock_obj
+        lock_obj.__exit__.return_value = False
+        lock_factory = MagicMock(return_value=lock_obj)
 
         with (
-            patch(
-                "mcp_core.transport.local_server.run_http_server",
-                new_callable=AsyncMock,
-            ),
-            patch("wet_mcp.server.logger.warning") as mock_warning,
+            patch("hull_core.lifecycle.lock.LifecycleLock", lock_factory),
+            patch("wet_mcp.server.build_http_app", return_value=MagicMock()),
+            patch("uvicorn.run") as mock_uvicorn,
         ):
-            await run_http_server()
+            srv.run_server_blocking(host="0.0.0.0", port=8804)
 
-        mock_warning.assert_not_called()
+        _, kwargs = mock_uvicorn.call_args
+        assert kwargs["host"] == "0.0.0.0"
+        assert kwargs["port"] == 8804
 
-    async def test_invalid_mcp_port_fails_loudly(self, monkeypatch):
-        """A typo'd MCP_PORT aborts startup, never falls back to auto-port."""
-        from wet_mcp.server import run_http_server
+    def test_defaults_come_from_instance_config(self, monkeypatch):
+        """host/port None -> [server].host/port from ~/.wet/config.toml."""
+        hs = _hs(auth="no-auth", host="127.0.0.1", port=9310)
+        monkeypatch.setattr("wet_mcp.runtime.hull_settings", lambda: hs)
 
-        monkeypatch.setenv("MCP_PORT", "not-a-port")
+        lock_obj = MagicMock()
+        lock_obj.__enter__.return_value = lock_obj
+        lock_obj.__exit__.return_value = False
+        lock_factory = MagicMock(return_value=lock_obj)
 
-        with patch(
-            "mcp_core.transport.local_server.run_http_server",
-            new_callable=AsyncMock,
-        ) as mock_run_http:
-            with pytest.raises(ValueError, match="not-a-port"):
-                await run_http_server()
+        with (
+            patch("hull_core.lifecycle.lock.LifecycleLock", lock_factory),
+            patch("wet_mcp.server.build_http_app", return_value=MagicMock()),
+            patch("uvicorn.run") as mock_uvicorn,
+        ):
+            srv.run_server_blocking()
 
-        mock_run_http.assert_not_called()
+        lock_factory.assert_called_once_with("wet", 9310)
+        _, kwargs = mock_uvicorn.call_args
+        assert kwargs["port"] == 9310
 
-    async def test_public_url_guard_survives_bind_overrides(self, monkeypatch):
-        """MCP_HOST / MCP_PORT do not become a way around the DCR guard."""
-        from wet_mcp.server import run_http_server
 
-        monkeypatch.setenv("PUBLIC_URL", "https://wet.example.com")
-        monkeypatch.delenv("MCP_DCR_SERVER_SECRET", raising=False)
-        monkeypatch.setenv("MCP_HOST", "0.0.0.0")
-        monkeypatch.setenv("MCP_PORT", "8080")
+class TestIsLoopbackHost:
+    @pytest.mark.parametrize(
+        ("host", "expected"),
+        [
+            ("127.0.0.1", True),
+            ("localhost", True),
+            ("::1", True),
+            ("[::1]", True),
+            ("127.9.9.9", True),
+            ("0.0.0.0", False),
+            ("192.168.1.10", False),
+            ("wet.example.com", False),
+        ],
+    )
+    def test_classification(self, host, expected):
+        assert srv._is_loopback_host(host) is expected
 
-        with pytest.raises(SystemExit, match="MCP_DCR_SERVER_SECRET missing"):
-            await run_http_server()
+
+# ---------------------------------------------------------------------------
+# module main(): env-var bind overrides for container deployments
+# ---------------------------------------------------------------------------
 
 
 class TestMainDispatch:
-    """main() defaults to stdio; ``--http`` / env opts into HTTP."""
+    def test_no_env_defers_to_instance_config(self, monkeypatch):
+        monkeypatch.delenv("WET_HOST", raising=False)
+        monkeypatch.delenv("WET_PORT", raising=False)
+        with patch("wet_mcp.server.run_server_blocking") as mock_serve:
+            srv.main()
 
-    def test_no_args_defaults_to_stdio(self, monkeypatch):
-        """Bare ``wet-mcp`` invocation runs FastMCP stdio (new default)."""
-        from wet_mcp import server
-        from wet_mcp.server import main
+        mock_serve.assert_called_once_with(host=None, port=None)
 
-        monkeypatch.setattr(sys, "argv", ["wet-mcp"])
-        monkeypatch.delenv("MCP_TRANSPORT", raising=False)
-        monkeypatch.delenv("TRANSPORT_MODE", raising=False)
+    def test_wet_host_and_wet_port_override_bind(self, monkeypatch):
+        monkeypatch.setenv("WET_HOST", "0.0.0.0")
+        monkeypatch.setenv("WET_PORT", "8080")
+        with patch("wet_mcp.server.run_server_blocking") as mock_serve:
+            srv.main()
 
-        with patch.object(server.mcp, "run") as mock_run:
-            main()
-        mock_run.assert_called_once_with(transport="stdio")
+        mock_serve.assert_called_once_with(host="0.0.0.0", port=8080)
 
-    def test_stdio_flag_runs_mcp(self, monkeypatch):
-        """``--stdio`` is accepted (stdio is also the default)."""
-        from wet_mcp import server
-        from wet_mcp.server import main
+    def test_wet_port_only_pins_port(self, monkeypatch):
+        monkeypatch.delenv("WET_HOST", raising=False)
+        monkeypatch.setenv("WET_PORT", "9090")
+        with patch("wet_mcp.server.run_server_blocking") as mock_serve:
+            srv.main()
 
-        monkeypatch.setattr(sys, "argv", ["wet-mcp", "--stdio"])
-        monkeypatch.delenv("MCP_TRANSPORT", raising=False)
-        monkeypatch.delenv("TRANSPORT_MODE", raising=False)
+        mock_serve.assert_called_once_with(host=None, port=9090)
 
-        with patch.object(server.mcp, "run") as mock_run:
-            main()
-        mock_run.assert_called_once_with(transport="stdio")
+    def test_invalid_wet_port_fails_loudly(self, monkeypatch):
+        """A typo'd WET_PORT aborts startup instead of silently auto-porting."""
+        monkeypatch.setenv("WET_PORT", "not-a-port")
+        with patch("wet_mcp.server.run_server_blocking") as mock_serve:
+            with pytest.raises(ValueError, match="not-a-port"):
+                srv.main()
 
-    def test_mcp_transport_stdio_runs_mcp(self, monkeypatch):
-        """MCP_TRANSPORT=stdio is accepted (stdio is also the default)."""
-        from wet_mcp import server
-        from wet_mcp.server import main
-
-        monkeypatch.setattr(sys, "argv", ["wet-mcp"])
-        monkeypatch.setenv("MCP_TRANSPORT", "stdio")
-        monkeypatch.delenv("TRANSPORT_MODE", raising=False)
-
-        with patch.object(server.mcp, "run") as mock_run:
-            main()
-        mock_run.assert_called_once_with(transport="stdio")
-
-    def test_http_flag_runs_http_server(self, monkeypatch):
-        """``--http`` opts into HTTP server."""
-        from wet_mcp.server import main
-
-        monkeypatch.setattr(sys, "argv", ["wet-mcp", "--http"])
-        monkeypatch.delenv("MCP_TRANSPORT", raising=False)
-        monkeypatch.delenv("TRANSPORT_MODE", raising=False)
-
-        with (
-            patch("wet_mcp.server.asyncio.run") as mock_run,
-            patch("wet_mcp.server.run_http_server") as mock_http,
-        ):
-            main()
-            mock_run.assert_called_once()
-            mock_http.assert_called_once()
-
-    def test_mcp_transport_http_runs_http_server(self, monkeypatch):
-        """MCP_TRANSPORT=http opts into HTTP server."""
-        from wet_mcp.server import main
-
-        monkeypatch.setattr(sys, "argv", ["wet-mcp"])
-        monkeypatch.setenv("MCP_TRANSPORT", "http")
-        monkeypatch.delenv("TRANSPORT_MODE", raising=False)
-
-        with (
-            patch("wet_mcp.server.asyncio.run") as mock_run,
-            patch("wet_mcp.server.run_http_server") as mock_http,
-        ):
-            main()
-            mock_run.assert_called_once()
-            mock_http.assert_called_once()
-
-    def test_transport_mode_http_runs_http_server(self, monkeypatch):
-        """TRANSPORT_MODE=http opts into HTTP server."""
-        from wet_mcp.server import main
-
-        monkeypatch.setattr(sys, "argv", ["wet-mcp"])
-        monkeypatch.delenv("MCP_TRANSPORT", raising=False)
-        monkeypatch.setenv("TRANSPORT_MODE", "http")
-
-        with (
-            patch("wet_mcp.server.asyncio.run") as mock_run,
-            patch("wet_mcp.server.run_http_server") as mock_http,
-        ):
-            main()
-            mock_run.assert_called_once()
-            mock_http.assert_called_once()
-
-    def test_mcp_mode_env_is_ignored(self, monkeypatch):
-        """Legacy ``MCP_MODE`` (incl. ``remote-relay``) is no longer read.
-
-        Setting it must NOT raise SystemExit and must NOT route to HTTP --
-        the binary still defaults to stdio. Old deprecation branch removed.
-        """
-        from wet_mcp import server
-        from wet_mcp.server import main
-
-        monkeypatch.setattr(sys, "argv", ["wet-mcp"])
-        monkeypatch.setenv("MCP_MODE", "remote-relay")
-        monkeypatch.delenv("MCP_TRANSPORT", raising=False)
-        monkeypatch.delenv("TRANSPORT_MODE", raising=False)
-
-        with patch.object(server.mcp, "run") as mock_run:
-            main()
-        mock_run.assert_called_once_with(transport="stdio")
+        mock_serve.assert_not_called()

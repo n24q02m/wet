@@ -992,48 +992,48 @@ class TestExtractErrorPath:
 # -----------------------------------------------------------------------
 
 
+def _stub_embed_client(model: str = "text-embedding-3-large"):
+    """A stub hull OpenAI-spec client for the embed cell."""
+    client = MagicMock()
+    client.cell.model = model
+    client.embeddings = AsyncMock()
+    return client
+
+
 class TestCloudEmbeddingBackendCheckAvailableEmpty:
     """Cover check_available returns 0 when embeddings are empty."""
 
     async def test_check_available_empty_data(self):
         from wet_mcp.embedder import CloudEmbeddingBackend
 
-        backend = CloudEmbeddingBackend("text-embedding-3-large")
+        client = _stub_embed_client()
+        client.embeddings.return_value = []
+        backend = CloudEmbeddingBackend(client)
 
-        with patch.object(backend, "_call_provider", return_value=[]):
-            assert await backend.check_available() == 0
+        assert await backend.check_available() == 0
 
 
-class TestCloudEmbeddingBackendWithApiBaseAndKey:
-    """Cover api_base and api_key pass-through."""
+class TestCloudEmbeddingBackendCellOwned:
+    """The cell owns model/base_url/key; the backend reads the model id."""
 
-    async def test_embed_with_api_base_and_key(self):
+    async def test_embed_reads_model_from_cell_and_returns_vectors(self):
         from wet_mcp.embedder import CloudEmbeddingBackend
 
-        backend = CloudEmbeddingBackend(
-            "text-embedding-3-large",
-            api_base="http://proxy:4000",
-            api_key="sk-test",
-        )
-        assert backend.api_base == "http://proxy:4000"
-        assert backend.api_key == "sk-test"
+        client = _stub_embed_client("text-embedding-3-large")
+        client.embeddings.return_value = [[0.1]]
+        backend = CloudEmbeddingBackend(client)
 
-        with patch.object(backend, "_call_provider", return_value=[[0.1]]):
-            result = await backend.embed_texts(["test"])
-            assert result == [[0.1]]
+        assert backend.model == "text-embedding-3-large"
+        assert await backend.embed_texts(["test"]) == [[0.1]]
 
-    async def test_check_available_with_api_base_and_key(self):
+    async def test_check_available_reports_native_dims(self):
         from wet_mcp.embedder import CloudEmbeddingBackend
 
-        backend = CloudEmbeddingBackend(
-            "text-embedding-3-large",
-            api_base="http://proxy:4000",
-            api_key="sk-test",
-        )
+        client = _stub_embed_client()
+        client.embeddings.return_value = [[0.1, 0.2]]
+        backend = CloudEmbeddingBackend(client)
 
-        with patch.object(backend, "_call_provider", return_value=[[0.1, 0.2]]):
-            dims = await backend.check_available()
-            assert dims == 2
+        assert await backend.check_available() == 2
 
 
 class TestLocalEmbeddingBackendLoadError:
@@ -1119,24 +1119,41 @@ class TestLocalEmbedSingleQuery:
 # -----------------------------------------------------------------------
 
 
-class TestGetLlmConfigEmptyModels:
-    """Cover line 33: empty models fallback."""
+class TestGetLlmConfigCellGating:
+    """The [models.chat] cell decides whether LLM features exist at all."""
 
-    async def test_empty_models_fallback(self, monkeypatch):
-        from wet_mcp.config import settings
+    async def test_unconfigured_cell_means_no_model(self):
         from wet_mcp.llm import get_llm_config
 
-        for k in ("GEMINI_API_KEY", "GOOGLE_API_KEY", "OPENAI_API_KEY"):
-            monkeypatch.delenv(k, raising=False)
-        original = settings.llm_models
-        settings.llm_models = ""
+        unconfigured = MagicMock()
+        unconfigured.configured = False
 
-        try:
+        with patch(
+            "wet_mcp.runtime.model_cell", lambda task, settings=None: unconfigured
+        ):
             config = get_llm_config()
-            # Empty chain + no provider key -> no model (LLM feature off).
-            assert config["model"] is None
-        finally:
-            settings.llm_models = original
+
+        # Unconfigured cell -> no model (LLM feature off), empty key.
+        assert config["model"] is None
+        assert config["api_key"] == ""
+        assert config["fallbacks"] == []
+
+    async def test_configured_cell_owns_model_and_base(self):
+        from wet_mcp.llm import get_llm_config
+
+        cell = MagicMock()
+        cell.configured = True
+        cell.model = "gemini/gemini-3-flash"
+        cell.base_url = "https://cell.example/v1"
+        cell.api_key = "cell-key"
+
+        with patch("wet_mcp.runtime.model_cell", lambda task, settings=None: cell):
+            config = get_llm_config()
+
+        assert config["model"] == "gemini/gemini-3-flash"
+        assert config["api_base"] == "https://cell.example/v1"
+        assert config["api_key"] == "cell-key"
+        assert config["fallbacks"] == []
 
 
 class TestAnalyzeMediaMimeUnknown:
@@ -1154,7 +1171,7 @@ class TestAnalyzeMediaMimeUnknown:
         f.write_bytes(b"\x00\x01\x02")
 
         try:
-            with patch("wet_mcp.llm._has_llm_provider", return_value=True):
+            with patch("wet_mcp.llm.has_llm_provider", return_value=True):
                 result = await analyze_media(str(f))
             assert "Error" in result
         finally:
@@ -1174,7 +1191,7 @@ class TestAnalyzeMediaErrorPaths:
         txt.write_text("hello")
 
         with (
-            patch("wet_mcp.llm._has_llm_provider", return_value=True),
+            patch("wet_mcp.llm.has_llm_provider", return_value=True),
             patch(
                 "wet_mcp.llm.acompletion",
                 side_effect=Exception("API down"),
@@ -1193,7 +1210,7 @@ class TestAnalyzeMediaErrorPaths:
         audio_file.write_bytes(b"fake audio")
 
         with (
-            patch("wet_mcp.llm._has_llm_provider", return_value=True),
+            patch("wet_mcp.llm.has_llm_provider", return_value=True),
             patch("wet_mcp.llm.get_model_capabilities") as mock_caps,
         ):
             mock_caps.return_value = {
@@ -1214,7 +1231,7 @@ class TestAnalyzeMediaErrorPaths:
         video_file.write_bytes(b"fake video")
 
         with (
-            patch("wet_mcp.llm._has_llm_provider", return_value=True),
+            patch("wet_mcp.llm.has_llm_provider", return_value=True),
             patch("wet_mcp.llm.get_model_capabilities") as mock_caps,
         ):
             mock_caps.return_value = {
@@ -1236,7 +1253,7 @@ class TestAnalyzeMediaErrorPaths:
         img.write_bytes(b"fake image")
 
         with (
-            patch("wet_mcp.llm._has_llm_provider", return_value=True),
+            patch("wet_mcp.llm.has_llm_provider", return_value=True),
             patch("wet_mcp.llm.get_model_capabilities") as mock_caps,
             patch(
                 "wet_mcp.llm.acompletion",
@@ -1258,35 +1275,37 @@ class TestAnalyzeMediaErrorPaths:
 # -----------------------------------------------------------------------
 
 
-class TestCloudRerankerWithApiKey:
-    """Cover CloudReranker api_key pass-through."""
+def _stub_rerank_client(model: str = "rerank-v4.0-pro"):
+    """A stub hull OpenAI-spec client for the rerank cell."""
+    client = MagicMock()
+    client.cell.model = model
+    client.rerank = AsyncMock()
+    return client
 
-    async def test_rerank_with_api_key(self):
+
+class TestCloudRerankerCellOwned:
+    """The cell owns model/base_url/key; results parse to (index, score)."""
+
+    async def test_rerank_parses_provider_results(self):
         from wet_mcp.reranker import CloudReranker
 
-        reranker = CloudReranker(model="rerank-v4.0-pro", api_key="sk-test")
+        client = _stub_rerank_client()
+        client.rerank.return_value = [{"index": 0, "relevance_score": 0.9}]
+        reranker = CloudReranker(client)
 
-        mock_response = MagicMock()
-        mock_response.results = [{"index": 0, "relevance_score": 0.9}]
+        results = await reranker.rerank("query", ["doc1"], top_n=5)
+        assert len(results) == 1
+        assert reranker.model == "rerank-v4.0-pro"
+        client.rerank.assert_awaited_once_with("query", ["doc1"], top_n=5)
 
-        with patch("mcp_core.llm.rerank", return_value=mock_response) as mock_rerank:
-            results = reranker.rerank("query", ["doc1"])
-            assert len(results) == 1
-            assert reranker.api_key == "sk-test"
-            assert mock_rerank.call_args[1]["api_key"] == "sk-test"
-
-    async def test_check_available_with_api_key(self):
+    async def test_check_available_true_when_provider_answers(self):
         from wet_mcp.reranker import CloudReranker
 
-        reranker = CloudReranker(model="rerank-v4.0-pro", api_key="sk-test")
+        client = _stub_rerank_client()
+        client.rerank.return_value = [{"index": 0, "relevance_score": 0.5}]
+        reranker = CloudReranker(client)
 
-        mock_response = MagicMock()
-        mock_response.results = [{"index": 0, "relevance_score": 0.5}]
-
-        with patch("mcp_core.llm.rerank", return_value=mock_response):
-            result = reranker.check_available()
-            assert result is True
-            assert reranker.api_key == "sk-test"
+        assert await reranker.check_available() is True
 
 
 class TestLocalRerankerLoadModel:
@@ -1325,9 +1344,8 @@ class TestCloudRerankerCheckAvailableEmpty:
     async def test_check_available_empty_results(self):
         from wet_mcp.reranker import CloudReranker
 
-        reranker = CloudReranker(api_key="test-key")
-        mock_response = MagicMock()
-        mock_response.results = []
+        client = _stub_rerank_client()
+        client.rerank.return_value = []
+        reranker = CloudReranker(client)
 
-        with patch("mcp_core.llm.rerank", return_value=mock_response):
-            assert reranker.check_available() is False
+        assert await reranker.check_available() is False

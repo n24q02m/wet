@@ -1,8 +1,8 @@
-"""Tests for src/wet_mcp/embedder.py -- Dual-backend embedding.
+"""Tests for src/wet_mcp/embedder.py — dual-backend embedding over hull cells.
 
-Covers CloudEmbeddingBackend (litellm passthrough via mcp_core.llm),
-batch splitting, retry logic, LocalEmbeddingBackend (local ONNX), factory functions,
-and provider detection helpers.
+Covers CloudEmbeddingBackend (the [models.embed] cell's OpenAI-spec client),
+batch splitting, retry logic, LocalEmbeddingBackend (local ONNX), the
+per-request resolver, and the init_backend factory.
 """
 
 from types import SimpleNamespace
@@ -10,72 +10,51 @@ from unittest.mock import AsyncMock, MagicMock, call, patch
 
 import pytest
 
+import wet_mcp.embedder as embedder_mod
 from wet_mcp.embedder import (
     CloudEmbeddingBackend,
     LocalEmbeddingBackend,
-    _detect_embedding_provider,
     _is_retryable,
     _is_unsupported_param,
-    _strip_provider,
     get_backend,
     init_backend,
+    resolve_embed_backend_for_request,
 )
 
+
+def _cell_client(model: str = "text-embedding-3-small") -> MagicMock:
+    """A hull OpenAICompatClient stand-in for one [models.embed] cell."""
+    client = MagicMock()
+    client.cell = SimpleNamespace(model=model)
+    client.embeddings = AsyncMock()
+    return client
+
+
+@pytest.fixture(autouse=True)
+def _reset_backend_singletons():
+    """Keep the module-level singletons from leaking between tests."""
+    original_backend = embedder_mod._backend
+    original_shared = embedder_mod._shared_local_backend
+    embedder_mod._backend = None
+    embedder_mod._shared_local_backend = None
+    yield
+    embedder_mod._backend = original_backend
+    embedder_mod._shared_local_backend = original_shared
+
+
 # -----------------------------------------------------------------------
-# Helper function tests
+# Helper functions
 # -----------------------------------------------------------------------
 
 
 class TestHelpers:
-    async def test_detect_provider_gemini(self):
-        assert _detect_embedding_provider("gemini/gemini-embedding-001") == "gemini"
-        assert _detect_embedding_provider("gemini-embedding-001") == "gemini"
-
-    async def test_detect_provider_openai(self):
-        assert _detect_embedding_provider("text-embedding-3-small") == "openai"
-        assert _detect_embedding_provider("openai/text-embedding-3-small") == "openai"
-
-    async def test_detect_provider_cohere(self):
-        assert _detect_embedding_provider("embed-multilingual-v3.0") == "cohere"
-        assert _detect_embedding_provider("cohere/embed-v4") == "cohere"
-
-    async def test_detect_provider_jina(self):
-        assert _detect_embedding_provider("jina_ai/jina-embeddings-v3") == "jina"
-        assert _detect_embedding_provider("jina-embeddings-v3") == "jina"
-
-    async def test_detect_provider_fallback_env(self):
-        with patch.dict("os.environ", {"GEMINI_API_KEY": "k"}, clear=False):
-            assert _detect_embedding_provider("unknown-model") == "gemini"
-
-    async def test_detect_provider_fallback_default(self):
-        with patch.dict(
-            "os.environ",
-            {},
-            clear=True,
-        ):
-            # Remove all provider env vars
-            import os
-
-            for k in (
-                "GEMINI_API_KEY",
-                "GOOGLE_API_KEY",
-                "OPENAI_API_KEY",
-                "COHERE_API_KEY",
-            ):
-                os.environ.pop(k, None)
-            assert _detect_embedding_provider("unknown-model") == "openai"
-
-    async def test_strip_provider(self):
-        assert _strip_provider("gemini/model-name") == "model-name"
-        assert _strip_provider("model-name") == "model-name"
-
-    async def test_is_retryable(self):
+    def test_is_retryable(self):
         assert _is_retryable(Exception("429 rate limit exceeded"))
         assert _is_retryable(Exception("503 service temporarily unavailable"))
         assert _is_retryable(Exception("connection timeout"))
         assert not _is_retryable(Exception("Invalid API key"))
 
-    async def test_is_unsupported_param(self):
+    def test_is_unsupported_param(self):
         assert _is_unsupported_param(
             Exception("does not support parameters: dimensions"), "dimensions"
         )
@@ -86,331 +65,110 @@ class TestHelpers:
 
 
 # -----------------------------------------------------------------------
-# CloudEmbeddingBackend: embed_texts (mocking _call_provider)
+# CloudEmbeddingBackend: embed_texts (mocking the cell client)
 # -----------------------------------------------------------------------
 
 
 class TestCloudEmbeddingBackend:
     async def test_embed_texts_success(self):
         """Batch embedding returns correct vectors."""
-        backend = CloudEmbeddingBackend("text-embedding-3-small")
+        client = _cell_client()
+        client.embeddings.return_value = [[0.1, 0.2, 0.3], [0.4, 0.5, 0.6]]
+        backend = CloudEmbeddingBackend(client)
 
-        with patch.object(
-            backend,
-            "_call_provider",
-            new_callable=AsyncMock,
-            return_value=[[0.1, 0.2, 0.3], [0.4, 0.5, 0.6]],
-        ):
-            vecs = await backend.embed_texts(["hello", "world"])
+        vecs = await backend.embed_texts(["hello", "world"])
 
-        assert len(vecs) == 2
         assert vecs[0] == [0.1, 0.2, 0.3]
         assert vecs[1] == [0.4, 0.5, 0.6]
 
     async def test_embed_texts_empty_input(self):
         """Empty input returns empty list without API call."""
-        backend = CloudEmbeddingBackend("text-embedding-3-small")
+        backend = CloudEmbeddingBackend(_cell_client())
         vecs = await backend.embed_texts([])
         assert vecs == []
 
     async def test_embed_texts_with_dimensions(self):
-        """Dimensions parameter is passed through to _call_provider."""
-        backend = CloudEmbeddingBackend("text-embedding-3-small")
+        """The dimensions parameter is passed through to the client."""
+        client = _cell_client()
+        client.embeddings.return_value = [[0.1]]
+        backend = CloudEmbeddingBackend(client)
 
-        with patch.object(
-            backend, "_call_provider", new_callable=AsyncMock, return_value=[[0.1]]
-        ) as mock_call:
-            await backend.embed_texts(["test"], dimensions=256)
-            mock_call.assert_called_once_with(["test"], 256)
+        await backend.embed_texts(["test"], dimensions=256)
+
+        client.embeddings.assert_awaited_once_with(["test"], dimensions=256)
 
     async def test_embed_texts_no_dimensions(self):
-        """No dimensions parameter when not specified."""
-        backend = CloudEmbeddingBackend("text-embedding-3-small")
+        """No dimensions kwarg when not specified."""
+        client = _cell_client()
+        client.embeddings.return_value = [[0.1]]
+        backend = CloudEmbeddingBackend(client)
 
-        with patch.object(
-            backend, "_call_provider", new_callable=AsyncMock, return_value=[[0.1]]
-        ) as mock_call:
-            await backend.embed_texts(["test"])
-            mock_call.assert_called_once_with(["test"], None)
+        await backend.embed_texts(["test"])
+
+        client.embeddings.assert_awaited_once_with(["test"], dimensions=None)
 
     async def test_embed_texts_dimensions_fallback(self):
-        """Falls back to local truncation when provider rejects dimensions param."""
-        backend = CloudEmbeddingBackend("embed-multilingual-v3.0")
-
+        """Falls back to local truncation when the provider rejects dimensions."""
+        client = _cell_client()
         unsupported_err = Exception("output_dimension is not supported for this model")
+        client.embeddings.side_effect = [unsupported_err, [[0.1] * 1024]]
+        backend = CloudEmbeddingBackend(client)
 
-        with patch.object(
-            backend,
-            "_call_provider",
-            new_callable=AsyncMock,
-            side_effect=[unsupported_err, [[0.1] * 1024]],
-        ):
-            result = await backend.embed_texts(["test"], dimensions=768)
-            # Should truncate locally to 768
-            assert len(result[0]) == 768
+        result = await backend.embed_texts(["test"], dimensions=768)
+
+        assert len(result[0]) == 768
 
     async def test_embed_texts_local_truncation(self):
-        """Truncates locally when server returns more dims than requested."""
-        backend = CloudEmbeddingBackend("gemini/gemini-embedding-001")
+        """Truncates locally when the server returns more dims than requested."""
+        client = _cell_client()
+        client.embeddings.return_value = [[0.1] * 3072]
+        backend = CloudEmbeddingBackend(client)
 
-        with patch.object(
-            backend,
-            "_call_provider",
-            new_callable=AsyncMock,
-            return_value=[[0.1] * 3072],
-        ):
-            result = await backend.embed_texts(["test"], dimensions=768)
-            assert len(result[0]) == 768
+        result = await backend.embed_texts(["test"], dimensions=768)
+
+        assert len(result[0]) == 768
 
     async def test_embed_texts_api_error(self):
         """Non-retryable API errors are raised to caller."""
-        backend = CloudEmbeddingBackend("text-embedding-3-small")
+        client = _cell_client()
+        client.embeddings.side_effect = Exception("Invalid model")
+        backend = CloudEmbeddingBackend(client)
 
-        with patch.object(
-            backend,
-            "_call_provider",
-            new_callable=AsyncMock,
-            side_effect=Exception("Invalid model"),
-        ):
-            with pytest.raises(Exception, match="Invalid model"):
-                await backend.embed_texts(["test"])
+        with pytest.raises(Exception, match="Invalid model"):
+            await backend.embed_texts(["test"])
 
     async def test_embed_single_success(self):
         """Single text embedding returns one vector."""
-        backend = CloudEmbeddingBackend("text-embedding-3-small")
+        client = _cell_client()
+        client.embeddings.return_value = [[0.1, 0.2, 0.3]]
+        backend = CloudEmbeddingBackend(client)
 
-        with patch.object(
-            backend,
-            "_call_provider",
-            new_callable=AsyncMock,
-            return_value=[[0.1, 0.2, 0.3]],
-        ):
-            vec = await backend.embed_single("hello")
+        vec = await backend.embed_single("hello")
 
         assert vec == [0.1, 0.2, 0.3]
 
-    async def test_check_available(self):
-        """Returns dimension count when model is available."""
-        backend = CloudEmbeddingBackend("text-embedding-3-small")
+    async def test_model_from_cell(self):
+        """The model id is owned by the cell (no provider prefix handling)."""
+        backend = CloudEmbeddingBackend(_cell_client("gemini-embedding-001"))
+        assert backend.model == "gemini-embedding-001"
 
-        with patch.object(
-            backend,
-            "_call_provider",
-            new_callable=AsyncMock,
-            return_value=[[0.0] * 768],
-        ):
-            dims = await backend.check_available()
+    async def test_check_available(self):
+        """Returns the cell model's dimension count when available."""
+        client = _cell_client()
+        client.embeddings.return_value = [[0.0] * 768]
+        backend = CloudEmbeddingBackend(client)
+
+        dims = await backend.check_available()
 
         assert dims == 768
 
     async def test_check_unavailable(self):
-        """Returns 0 when model is not available."""
-        backend = CloudEmbeddingBackend("nonexistent")
+        """Returns 0 when the model is not available."""
+        client = _cell_client()
+        client.embeddings.side_effect = Exception("Invalid API key")
+        backend = CloudEmbeddingBackend(client)
 
-        with patch.object(
-            backend,
-            "_call_provider",
-            new_callable=AsyncMock,
-            side_effect=Exception("Invalid API key"),
-        ):
-            dims = await backend.check_available()
-
-        assert dims == 0
-
-
-# -----------------------------------------------------------------------
-# CloudEmbeddingBackend: litellm passthrough (_call_provider + _litellm_model)
-# -----------------------------------------------------------------------
-
-
-def _embedding_response(embeddings: list[list[float]]) -> MagicMock:
-    """Build a litellm-shaped EmbeddingResponse mock (.data list of dicts)."""
-    mock_response = MagicMock()
-    mock_response.data = [
-        {"index": i, "embedding": emb, "object": "embedding"}
-        for i, emb in enumerate(embeddings)
-    ]
-    return mock_response
-
-
-class TestLitellmModelMapping:
-    """_litellm_model maps wet's model naming to litellm provider prefixes."""
-
-    def test_prefixed_models_pass_through(self):
-        assert (
-            CloudEmbeddingBackend("gemini/gemini-embedding-001")._litellm_model()
-            == "gemini/gemini-embedding-001"
-        )
-        assert (
-            CloudEmbeddingBackend(
-                "jina_ai/jina-embeddings-v5-text-small"
-            )._litellm_model()
-            == "jina_ai/jina-embeddings-v5-text-small"
-        )
-        assert (
-            CloudEmbeddingBackend("cohere/embed-v4")._litellm_model()
-            == "cohere/embed-v4"
-        )
-
-    def test_bare_jina_gets_prefix(self):
-        backend = CloudEmbeddingBackend("jina-embeddings-v3")
-        assert backend._litellm_model() == "jina_ai/jina-embeddings-v3"
-
-    def test_bare_gemini_gets_prefix(self):
-        backend = CloudEmbeddingBackend("gemini-embedding-001")
-        assert backend._litellm_model() == "gemini/gemini-embedding-001"
-
-    def test_bare_cohere_gets_prefix(self):
-        backend = CloudEmbeddingBackend("embed-multilingual-v3.0")
-        assert backend._litellm_model() == "cohere/embed-multilingual-v3.0"
-
-    def test_bare_openai_stays_bare(self):
-        backend = CloudEmbeddingBackend("text-embedding-3-small")
-        assert backend._litellm_model() == "text-embedding-3-small"
-
-
-class TestCallProvider:
-    """_call_provider dispatches through mcp_core.llm.aembedding."""
-
-    async def test_basic_call(self):
-        """Model, input, api_base and api_key are forwarded."""
-        backend = CloudEmbeddingBackend("text-embedding-3-small", api_key="test-key")
-
-        with patch("mcp_core.llm.aembedding", new_callable=AsyncMock) as mock_embed:
-            mock_embed.return_value = _embedding_response([[0.1, 0.2, 0.3]])
-            result = await backend._call_provider(["test"])
-
-            call_kwargs = mock_embed.call_args[1]
-            assert call_kwargs["model"] == "text-embedding-3-small"
-            assert call_kwargs["input"] == ["test"]
-            assert call_kwargs["api_key"] == "test-key"
-            assert call_kwargs["api_base"] is None
-            assert "dimensions" not in call_kwargs
-
-        assert result == [[0.1, 0.2, 0.3]]
-
-    async def test_dimensions_forwarded(self):
-        """dimensions kwarg is only sent when set."""
-        backend = CloudEmbeddingBackend("text-embedding-3-small", api_key="test-key")
-
-        with patch("mcp_core.llm.aembedding", new_callable=AsyncMock) as mock_embed:
-            mock_embed.return_value = _embedding_response([[0.1]])
-            await backend._call_provider(["test"], dimensions=256)
-            assert mock_embed.call_args[1]["dimensions"] == 256
-
-    async def test_explicit_api_base_forwarded(self):
-        """Constructor api_base wins over EMBEDDING_API_BASE env."""
-        backend = CloudEmbeddingBackend(
-            "text-embedding-3-small",
-            api_key="test-key",
-            api_base="https://custom.api/v1",
-        )
-
-        with patch("mcp_core.llm.aembedding", new_callable=AsyncMock) as mock_embed:
-            mock_embed.return_value = _embedding_response([[0.1]])
-            await backend._call_provider(["test"])
-            assert mock_embed.call_args[1]["api_base"] == "https://custom.api/v1"
-
-    async def test_env_api_base_fallback(self, monkeypatch):
-        """EMBEDDING_API_BASE env is used when no explicit api_base."""
-        monkeypatch.setenv("EMBEDDING_API_BASE", "https://env.api/v1")
-        backend = CloudEmbeddingBackend("text-embedding-3-small")
-
-        with patch("mcp_core.llm.aembedding", new_callable=AsyncMock) as mock_embed:
-            mock_embed.return_value = _embedding_response([[0.1]])
-            await backend._call_provider(["test"])
-            assert mock_embed.call_args[1]["api_base"] == "https://env.api/v1"
-
-    async def test_cohere_input_type_forwarded(self):
-        """Cohere models pass input_type=search_document through kwargs."""
-        backend = CloudEmbeddingBackend("embed-multilingual-v3.0", api_key="test-key")
-
-        with patch("mcp_core.llm.aembedding", new_callable=AsyncMock) as mock_embed:
-            mock_embed.return_value = _embedding_response([[0.1, 0.2, 0.3]])
-            result = await backend._call_provider(["test"])
-
-            call_kwargs = mock_embed.call_args[1]
-            assert call_kwargs["model"] == "cohere/embed-multilingual-v3.0"
-            assert call_kwargs["input_type"] == "search_document"
-
-        assert result == [[0.1, 0.2, 0.3]]
-
-    async def test_non_cohere_has_no_input_type(self):
-        """Non-cohere providers do not send input_type."""
-        backend = CloudEmbeddingBackend(
-            "jina_ai/jina-embeddings-v3", api_key="test-key"
-        )
-
-        with patch("mcp_core.llm.aembedding", new_callable=AsyncMock) as mock_embed:
-            mock_embed.return_value = _embedding_response([[0.1, 0.2, 0.3]])
-            result = await backend._call_provider(["test"])
-            assert "input_type" not in mock_embed.call_args[1]
-
-        assert result == [[0.1, 0.2, 0.3]]
-
-    async def test_no_api_key_passes_none(self):
-        """Without an explicit key, api_key=None lets litellm use env vars."""
-        backend = CloudEmbeddingBackend("text-embedding-3-small")
-
-        with patch("mcp_core.llm.aembedding", new_callable=AsyncMock) as mock_embed:
-            mock_embed.return_value = _embedding_response([[0.1]])
-            await backend._call_provider(["test"])
-            assert mock_embed.call_args[1]["api_key"] is None
-
-    async def test_results_sorted_by_index(self):
-        """Out-of-order response data is re-sorted by index."""
-        backend = CloudEmbeddingBackend("text-embedding-3-small")
-
-        mock_response = MagicMock()
-        mock_response.data = [
-            {"index": 1, "embedding": [0.2]},
-            {"index": 0, "embedding": [0.1]},
-        ]
-
-        with patch("mcp_core.llm.aembedding", new_callable=AsyncMock) as mock_embed:
-            mock_embed.return_value = mock_response
-            result = await backend._call_provider(["a", "b"])
-
-        assert result == [[0.1], [0.2]]
-
-    async def test_empty_api_key_normalised_to_none(self):
-        """Empty-string api_key is normalised to None (litellm env fallback)."""
-        backend = CloudEmbeddingBackend("text-embedding-3-small", api_key="")
-
-        with patch("mcp_core.llm.aembedding", new_callable=AsyncMock) as mock_embed:
-            mock_embed.return_value = _embedding_response([[0.1]])
-            await backend._call_provider(["test"])
-            assert mock_embed.call_args[1]["api_key"] is None
-
-    async def test_pydantic_object_response_shape(self):
-        """litellm Embedding pydantic objects (.index/.embedding) are handled."""
-        backend = CloudEmbeddingBackend("text-embedding-3-small")
-
-        # Plain objects (no dict subscript) mimicking litellm's Embedding type.
-        item0 = SimpleNamespace(index=1, embedding=[0.2])
-        item1 = SimpleNamespace(index=0, embedding=[0.1])
-        mock_response = MagicMock()
-        mock_response.data = [item0, item1]
-
-        with patch("mcp_core.llm.aembedding", new_callable=AsyncMock) as mock_embed:
-            mock_embed.return_value = mock_response
-            result = await backend._call_provider(["a", "b"])
-
-        # Re-sorted by .index even with object items.
-        assert result == [[0.1], [0.2]]
-
-    async def test_none_data_guarded(self):
-        """response.data=None yields [] instead of raising."""
-        backend = CloudEmbeddingBackend("text-embedding-3-small")
-
-        mock_response = MagicMock()
-        mock_response.data = None
-
-        with patch("mcp_core.llm.aembedding", new_callable=AsyncMock) as mock_embed:
-            mock_embed.return_value = mock_response
-            result = await backend._call_provider(["a"])
-
-        assert result == []
+        assert await backend.check_available() == 0
 
 
 # -----------------------------------------------------------------------
@@ -421,14 +179,14 @@ class TestCallProvider:
 class TestBatchSplitting:
     async def test_splits_large_batch(self):
         """Texts exceeding MAX_BATCH_SIZE are split into sub-batches."""
-        backend = CloudEmbeddingBackend("text-embedding-3-small")
+        backend = CloudEmbeddingBackend(_cell_client())
         n = backend.MAX_BATCH_SIZE + 50  # 150 texts -> 2 batches
 
-        def mock_call(texts, dimensions=None):
+        async def mock_inner(texts, dimensions=None):
             return [[float(j)] for j in range(len(texts))]
 
         with patch.object(
-            backend, "_call_provider", new_callable=AsyncMock, side_effect=mock_call
+            backend, "_embed_batch_inner", new=AsyncMock(side_effect=mock_inner)
         ):
             vecs = await backend.embed_texts([f"text_{i}" for i in range(n)])
 
@@ -436,30 +194,28 @@ class TestBatchSplitting:
 
     async def test_batch_call_count(self):
         """Correct number of API calls for split batches."""
-        backend = CloudEmbeddingBackend("text-embedding-3-small")
+        backend = CloudEmbeddingBackend(_cell_client())
         n = backend.MAX_BATCH_SIZE * 2 + 10  # 210 texts -> 3 batches
 
-        def mock_call(texts, dimensions=None):
+        async def mock_inner(texts, dimensions=None):
             return [[0.0] for _ in range(len(texts))]
 
-        with patch.object(
-            backend, "_call_provider", new_callable=AsyncMock, side_effect=mock_call
-        ) as mock:
+        mock = AsyncMock(side_effect=mock_inner)
+        with patch.object(backend, "_embed_batch_inner", new=mock):
             await backend.embed_texts([f"t{i}" for i in range(n)])
 
         assert mock.call_count == 3
 
     async def test_no_split_under_limit(self):
         """No splitting when under MAX_BATCH_SIZE."""
-        backend = CloudEmbeddingBackend("text-embedding-3-small")
+        backend = CloudEmbeddingBackend(_cell_client())
         n = backend.MAX_BATCH_SIZE
 
-        def mock_call(texts, dimensions=None):
+        async def mock_inner(texts, dimensions=None):
             return [[0.0] for _ in range(len(texts))]
 
-        with patch.object(
-            backend, "_call_provider", new_callable=AsyncMock, side_effect=mock_call
-        ) as mock:
+        mock = AsyncMock(side_effect=mock_inner)
+        with patch.object(backend, "_embed_batch_inner", new=mock):
             await backend.embed_texts([f"text_{i}" for i in range(n)])
 
         assert mock.call_count == 1
@@ -474,18 +230,11 @@ class TestRetryLogic:
     @patch("wet_mcp.embedder.asyncio.sleep", new_callable=AsyncMock)
     async def test_retries_on_rate_limit(self, mock_sleep):
         """Retries on rate limit errors with exponential backoff."""
-        backend = CloudEmbeddingBackend("text-embedding-3-small")
+        client = _cell_client()
+        client.embeddings.side_effect = [Exception("429 rate limit exceeded"), [[0.1]]]
+        backend = CloudEmbeddingBackend(client)
 
-        with patch.object(
-            backend,
-            "_call_provider",
-            new_callable=AsyncMock,
-            side_effect=[
-                Exception("429 rate limit exceeded"),
-                [[0.1]],
-            ],
-        ):
-            result = await backend.embed_texts(["test"])
+        result = await backend.embed_texts(["test"])
 
         assert result == [[0.1]]
         mock_sleep.assert_called_once_with(1.0)
@@ -493,69 +242,53 @@ class TestRetryLogic:
     @patch("wet_mcp.embedder.asyncio.sleep", new_callable=AsyncMock)
     async def test_retries_on_server_error(self, mock_sleep):
         """Retries on 5xx server errors."""
-        backend = CloudEmbeddingBackend("text-embedding-3-small")
+        client = _cell_client()
+        client.embeddings.side_effect = [
+            Exception("503 service temporarily unavailable"),
+            [[0.2]],
+        ]
+        backend = CloudEmbeddingBackend(client)
 
-        with patch.object(
-            backend,
-            "_call_provider",
-            new_callable=AsyncMock,
-            side_effect=[
-                Exception("503 service temporarily unavailable"),
-                [[0.2]],
-            ],
-        ):
-            result = await backend.embed_texts(["test"])
+        result = await backend.embed_texts(["test"])
 
         assert result == [[0.2]]
 
     @patch("wet_mcp.embedder.asyncio.sleep", new_callable=AsyncMock)
     async def test_no_retry_on_non_retryable(self, mock_sleep):
         """Non-retryable errors fail immediately without retry."""
-        backend = CloudEmbeddingBackend("text-embedding-3-small")
+        client = _cell_client()
+        client.embeddings.side_effect = Exception("Invalid API key")
+        backend = CloudEmbeddingBackend(client)
 
-        with patch.object(
-            backend,
-            "_call_provider",
-            new_callable=AsyncMock,
-            side_effect=Exception("Invalid API key"),
-        ):
-            with pytest.raises(Exception, match="Invalid API key"):
-                await backend.embed_texts(["test"])
+        with pytest.raises(Exception, match="Invalid API key"):
+            await backend.embed_texts(["test"])
 
         mock_sleep.assert_not_called()
 
     @patch("wet_mcp.embedder.asyncio.sleep", new_callable=AsyncMock)
     async def test_exponential_backoff(self, mock_sleep):
         """Retry delays use exponential backoff."""
-        backend = CloudEmbeddingBackend("text-embedding-3-small")
+        client = _cell_client()
+        client.embeddings.side_effect = [
+            Exception("429 rate limit"),
+            Exception("429 rate limit"),
+            [[0.1]],
+        ]
+        backend = CloudEmbeddingBackend(client)
 
-        with patch.object(
-            backend,
-            "_call_provider",
-            new_callable=AsyncMock,
-            side_effect=[
-                Exception("429 rate limit"),
-                Exception("429 rate limit"),
-                [[0.1]],
-            ],
-        ):
-            await backend.embed_texts(["test"])
+        await backend.embed_texts(["test"])
 
         assert mock_sleep.call_args_list == [call(1.0), call(2.0)]
 
     @patch("wet_mcp.embedder.asyncio.sleep", new_callable=AsyncMock)
     async def test_max_retries_exhausted(self, mock_sleep):
         """Raises after all retries are exhausted."""
-        backend = CloudEmbeddingBackend("text-embedding-3-small")
+        client = _cell_client()
+        client.embeddings.side_effect = Exception("429 rate limit")
+        backend = CloudEmbeddingBackend(client)
 
-        with patch.object(
-            backend,
-            "_call_provider",
-            new_callable=AsyncMock,
-            side_effect=Exception("429 rate limit"),
-        ):
-            with pytest.raises(Exception, match="429 rate limit"):
-                await backend.embed_texts(["test"])
+        with pytest.raises(Exception, match="429 rate limit"):
+            await backend.embed_texts(["test"])
 
         # 3 attempts total, 2 sleeps
         assert mock_sleep.call_count == 2
@@ -574,10 +307,7 @@ class TestLocalEmbeddingBackend:
         backend = LocalEmbeddingBackend("test-model")
         mock_model = MagicMock()
         mock_model.embed.return_value = iter(
-            [
-                np.array([0.1, 0.2, 0.3]),
-                np.array([0.4, 0.5, 0.6]),
-            ]
+            [np.array([0.1, 0.2, 0.3]), np.array([0.4, 0.5, 0.6])]
         )
 
         with patch.object(backend, "_get_model", return_value=mock_model):
@@ -598,19 +328,13 @@ class TestLocalEmbeddingBackend:
 
         backend = LocalEmbeddingBackend()
         mock_model = MagicMock()
-        # Model handles truncation internally when dim= is passed
-        mock_model.embed.return_value = iter(
-            [
-                np.array([0.1, 0.2, 0.3]),
-            ]
-        )
+        mock_model.embed.return_value = iter([np.array([0.1, 0.2, 0.3])])
 
         with patch.object(backend, "_get_model", return_value=mock_model):
             vecs = await backend.embed_texts(["test"], dimensions=3)
 
         mock_model.embed.assert_called_once_with(["test"], dim=3)
         assert len(vecs[0]) == 3
-        assert vecs[0] == pytest.approx([0.1, 0.2, 0.3])
 
     async def test_embed_single(self):
         """embed_single delegates to embed_texts."""
@@ -641,13 +365,8 @@ class TestLocalEmbeddingBackend:
     async def test_check_available_failure(self):
         """Returns 0 when model fails to load."""
         backend = LocalEmbeddingBackend()
-
-        with patch.object(
-            backend, "_get_model", side_effect=Exception("ONNX load error")
-        ):
-            dims = await backend.check_available()
-
-        assert dims == 0
+        with patch.object(backend, "_get_model", side_effect=Exception("ONNX load error")):
+            assert await backend.check_available() == 0
 
     async def test_check_available_embed_exception(self):
         """Returns 0 when model.embed fails."""
@@ -656,9 +375,7 @@ class TestLocalEmbeddingBackend:
         mock_model.embed.side_effect = Exception("Runtime error")
 
         with patch.object(backend, "_get_model", return_value=mock_model):
-            dims = await backend.check_available()
-
-        assert dims == 0
+            assert await backend.check_available() == 0
 
     async def test_check_available_empty_result(self):
         """Returns 0 when model.embed returns empty list."""
@@ -667,12 +384,10 @@ class TestLocalEmbeddingBackend:
         mock_model.embed.return_value = []
 
         with patch.object(backend, "_get_model", return_value=mock_model):
-            dims = await backend.check_available()
-
-        assert dims == 0
+            assert await backend.check_available() == 0
 
     async def test_embed_single_query_success(self):
-        """embed_single_query calls model.query_embed."""
+        """embed_single_query calls model.query_embed (asymmetric retrieval)."""
         import numpy as np
 
         backend = LocalEmbeddingBackend()
@@ -706,44 +421,90 @@ class TestLocalEmbeddingBackend:
             mock_model = MagicMock()
             mock_cls.return_value = mock_model
 
-            # First call
             model1 = backend._get_model()
             assert model1 is mock_model
             mock_cls.assert_called_once_with(model_name=backend._model_name)
 
-            # Second call
             model2 = backend._get_model()
             assert model2 is mock_model
             assert mock_cls.call_count == 1
 
 
 # -----------------------------------------------------------------------
-# Factory functions
+# Per-request resolution + factory
 # -----------------------------------------------------------------------
 
 
 class TestBackendFactory:
-    async def test_init_cloud_backend(self):
-        """init_backend('cloud') creates CloudEmbeddingBackend."""
-        backend = init_backend("cloud", "test-model")
+    async def test_init_cloud_backend_uses_cell_client(self, monkeypatch):
+        """init_backend('cloud') wraps the [models.embed] cell's client."""
+        client = _cell_client("voyage-4-lite")
+        monkeypatch.setattr(
+            "wet_mcp.runtime.cell_configured",
+            lambda task, settings=None: task == "embed",
+        )
+        monkeypatch.setattr(
+            "wet_mcp.runtime.provider_client", lambda task, settings=None: client
+        )
+
+        backend = init_backend("cloud")
+
         assert isinstance(backend, CloudEmbeddingBackend)
+        assert backend.model == "voyage-4-lite"
         assert get_backend() is backend
 
+    async def test_init_cloud_ignores_model_arg(self, monkeypatch):
+        """The cell owns the model; a caller-supplied id is ignored."""
+        client = _cell_client("cell-model")
+        monkeypatch.setattr(
+            "wet_mcp.runtime.cell_configured", lambda task, settings=None: True
+        )
+        monkeypatch.setattr(
+            "wet_mcp.runtime.provider_client", lambda task, settings=None: client
+        )
+
+        backend = init_backend("cloud", "someone-elses-model")
+        assert backend.model == "cell-model"
+
+    async def test_init_cloud_requires_configured_cell(self, monkeypatch):
+        """Unconfigured [models.embed] cell -> loud RuntimeError."""
+        monkeypatch.setattr(
+            "wet_mcp.runtime.cell_configured", lambda task, settings=None: False
+        )
+
+        with pytest.raises(RuntimeError, match="not configured"):
+            init_backend("cloud")
+
     async def test_init_local_backend(self):
-        """init_backend('local') creates LocalEmbeddingBackend."""
         backend = init_backend("local")
         assert isinstance(backend, LocalEmbeddingBackend)
         assert get_backend() is backend
 
-    async def test_init_cloud_requires_model(self):
-        """Cloud backend requires model name."""
-        with pytest.raises(ValueError, match="model is required"):
-            init_backend("cloud")
-
     async def test_init_unknown_backend(self):
-        """Unknown backend type raises ValueError."""
         with pytest.raises(ValueError, match="Unknown backend"):
             init_backend("unknown")
+
+
+class TestResolveEmbedBackendForRequest:
+    async def test_startup_singleton_wins(self):
+        """A startup-resolved backend serves every request unchanged."""
+        sentinel = LocalEmbeddingBackend("sentinel")
+        embedder_mod._backend = sentinel
+
+        assert resolve_embed_backend_for_request() is sentinel
+
+    async def test_falls_back_to_shared_local(self):
+        """No singleton -> the process-shared local ONNX backend."""
+        backend = resolve_embed_backend_for_request()
+        assert isinstance(backend, LocalEmbeddingBackend)
+        # Same shared instance on the next request (no per-request rebuild).
+        assert resolve_embed_backend_for_request() is backend
+
+    async def test_unavailable_when_local_leg_disabled(self, monkeypatch):
+        from wet_mcp.config import settings
+
+        monkeypatch.setattr(settings, "disable_local_embed", True)
+        assert resolve_embed_backend_for_request() is None
 
 
 # -----------------------------------------------------------------------
@@ -754,129 +515,53 @@ class TestBackendFactory:
 class TestCheckAvailableApiKeyValidation:
     """check_available() distinguishes API key errors from other failures."""
 
-    async def test_api_key_401_returns_zero(self):
-        """401 errors are caught and return 0."""
-        backend = CloudEmbeddingBackend("text-embedding-3-small")
-        with patch.object(
-            backend,
-            "_call_provider",
-            new_callable=AsyncMock,
-            side_effect=Exception("401 Unauthorized"),
-        ):
-            assert await backend.check_available() == 0
+    @pytest.mark.parametrize(
+        "error", ["401 Unauthorized", "403 Forbidden", "Invalid API key provided", "Unauthorized access"]
+    )
+    async def test_auth_errors_return_zero(self, error):
+        client = _cell_client()
+        client.embeddings.side_effect = Exception(error)
 
-    async def test_api_key_403_returns_zero(self):
-        """403 forbidden returns 0."""
-        backend = CloudEmbeddingBackend("text-embedding-3-small")
-        with patch.object(
-            backend,
-            "_call_provider",
-            new_callable=AsyncMock,
-            side_effect=Exception("403 Forbidden"),
-        ):
-            assert await backend.check_available() == 0
-
-    async def test_invalid_key_detected(self):
-        """'invalid' keyword in error is caught."""
-        backend = CloudEmbeddingBackend("text-embedding-3-small")
-        with patch.object(
-            backend,
-            "_call_provider",
-            new_callable=AsyncMock,
-            side_effect=Exception("Invalid API key provided"),
-        ):
-            assert await backend.check_available() == 0
-
-    async def test_unauthorized_detected(self):
-        """'unauthorized' keyword in error is caught."""
-        backend = CloudEmbeddingBackend("text-embedding-3-small")
-        with patch.object(
-            backend,
-            "_call_provider",
-            new_callable=AsyncMock,
-            side_effect=Exception("Unauthorized access"),
-        ):
-            assert await backend.check_available() == 0
+        assert await CloudEmbeddingBackend(client).check_available() == 0
 
     async def test_non_auth_error_returns_zero(self):
         """Non-auth errors (e.g. model not found) also return 0."""
-        backend = CloudEmbeddingBackend("text-embedding-3-small")
-        with patch.object(
-            backend,
-            "_call_provider",
-            new_callable=AsyncMock,
-            side_effect=Exception("Model not found"),
-        ):
-            assert await backend.check_available() == 0
+        client = _cell_client()
+        client.embeddings.side_effect = Exception("Model not found")
+
+        assert await CloudEmbeddingBackend(client).check_available() == 0
 
     async def test_success_returns_dims(self):
-        """Successful check returns embedding dimensions."""
-        backend = CloudEmbeddingBackend("text-embedding-3-small")
-        with patch.object(
-            backend,
-            "_call_provider",
-            new_callable=AsyncMock,
-            return_value=[[0.1, 0.2, 0.3]],
-        ):
-            assert await backend.check_available() == 3
+        client = _cell_client()
+        client.embeddings.return_value = [[0.1, 0.2, 0.3]]
+
+        assert await CloudEmbeddingBackend(client).check_available() == 3
 
     async def test_empty_embeddings_returns_zero(self):
-        """Returns 0 when provider returns empty embeddings."""
-        backend = CloudEmbeddingBackend("text-embedding-3-small")
-        with patch.object(
-            backend, "_call_provider", new_callable=AsyncMock, return_value=[]
-        ):
-            assert await backend.check_available() == 0
+        client = _cell_client()
+        client.embeddings.return_value = []
+
+        assert await CloudEmbeddingBackend(client).check_available() == 0
 
 
 # -----------------------------------------------------------------------
-# Local model loading edge cases
+# Shared local backend
 # -----------------------------------------------------------------------
-
-
-class TestLocalGetModelWarning:
-    """_get_model() logs download warning and check_available edge cases."""
-
-    async def test_check_available_import_error(self):
-        """Returns 0 when fastretrieval is not installed."""
-        backend = LocalEmbeddingBackend()
-        with patch.object(backend, "_get_model", side_effect=ImportError("No module")):
-            assert await backend.check_available() == 0
-
-    async def test_check_available_success(self):
-        """Returns dims when local model works."""
-        import numpy as np
-
-        backend = LocalEmbeddingBackend()
-        mock_model = MagicMock()
-        mock_model.embed.return_value = iter([np.array([0.1, 0.2, 0.3])])
-        with patch.object(backend, "_get_model", return_value=mock_model):
-            assert await backend.check_available() == 3
 
 
 class TestSharedLocalBackend:
     def test_shared_local_embed_backend_lazy(self):
         """_shared_local_embed_backend lazily creates and caches instance."""
-        # Reset global state for test
-        import wet_mcp.embedder
         from wet_mcp.embedder import _shared_local_embed_backend
 
-        original = wet_mcp.embedder._shared_local_backend
-        wet_mcp.embedder._shared_local_backend = None
+        with patch("wet_mcp.embedder.LocalEmbeddingBackend") as mock_cls:
+            instance = MagicMock()
+            mock_cls.return_value = instance
 
-        try:
-            with patch("wet_mcp.embedder.LocalEmbeddingBackend") as mock_cls:
-                instance = MagicMock()
-                mock_cls.return_value = instance
+            res1 = _shared_local_embed_backend()
+            assert res1 is instance
+            mock_cls.assert_called_once()
 
-                # First call
-                res1 = _shared_local_embed_backend()
-                assert res1 is instance
-                mock_cls.assert_called_once()
-
-                # Second call
-                res2 = _shared_local_embed_backend()
-                assert res2 is instance
-                assert mock_cls.call_count == 1
-        finally:
-            wet_mcp.embedder._shared_local_backend = original
+            res2 = _shared_local_embed_backend()
+            assert res2 is instance
+            assert mock_cls.call_count == 1

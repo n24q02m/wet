@@ -17,6 +17,7 @@ per-wave budget.
 from __future__ import annotations
 
 import asyncio
+from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
@@ -111,9 +112,11 @@ async def test_multiwave_embed_stores_vectors_instead_of_degrading(
         """Real batch splitting + semaphore, stubbed slow provider calls."""
 
         def __init__(self):
-            super().__init__("cohere/embed-english-v3.0")
+            # The backend wraps the [models.embed] cell's OpenAI-spec client;
+            # only the cell model id is read on this path.
+            super().__init__(SimpleNamespace(cell=SimpleNamespace(model="slow-embed-stub")))
 
-        async def _call_provider(self, texts, dimensions=None):
+        async def _embed_batch_inner(self, texts, dimensions=None):
             batch_sizes.append(len(texts))
             await asyncio.sleep(0.3)
             return [[0.5, 0.5, 0.5, 0.5] for _ in texts]

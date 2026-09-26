@@ -1,7 +1,8 @@
-"""Full/real live MCP protocol tests for wet-mcp.
+"""Full/real live MCP protocol tests for wet-mcp (HTTP transport).
 
-Spawns a real MCP server via stdio and tests ALL tool actions with real data.
-Local ONNX mode (no API keys needed) unless explicitly testing other modes.
+De-host: the server is spawned as the blocking HTTP process and driven through
+the streamable-HTTP MCP protocol. Local ONNX mode (no provider cells) unless a
+test explicitly configures one.
 
 Usage:
     uv run pytest tests/test_full_live.py -m full -v --tb=short
@@ -9,14 +10,18 @@ Usage:
 
 import json
 import os
+import socket
+import subprocess
+import sys
 import warnings
+from pathlib import Path
 
+import httpx
 import pytest
-from mcp import StdioServerParameters
 from mcp.client.session import ClientSession
-from mcp.client.stdio import stdio_client
+from mcp.client.streamable_http import streamablehttp_client
 
-pytestmark = [pytest.mark.full, pytest.mark.timeout(60)]
+pytestmark = [pytest.mark.full, pytest.mark.timeout(120)]
 
 
 # ---------------------------------------------------------------------------
@@ -36,6 +41,74 @@ def parse_allow_error(r) -> str:
     return r.content[0].text
 
 
+def _free_port() -> int:
+    with socket.socket() as sock:
+        sock.bind(("127.0.0.1", 0))
+        return sock.getsockname()[1]
+
+
+def _spawn_server(tmp_path: Path, *, rerank_enabled: bool = True):
+    """Spawn the real blocking HTTP server on a tmp instance home."""
+    local_state = tmp_path / "local-state"
+    local_state.mkdir(parents=True, exist_ok=True)
+    port = _free_port()
+    env = {
+        **os.environ,
+        "LOG_LEVEL": "WARNING",
+        "HOME": str(local_state),
+        "USERPROFILE": str(local_state),
+        "XDG_CONFIG_HOME": str(local_state),
+        "LOCALAPPDATA": str(local_state),
+        "APPDATA": str(local_state),
+        "CACHE_DIR": str(tmp_path),
+        "DOCS_DB_PATH": str(tmp_path / "docs.db"),
+        "DOWNLOAD_DIR": str(tmp_path / "downloads"),
+        "RERANK_ENABLED": "true" if rerank_enabled else "false",
+        "WET_HOST": "127.0.0.1",
+        "WET_PORT": str(port),
+    }
+    log_path = tmp_path / "server.log"
+    log_fh = open(log_path, "ab")
+    proc = subprocess.Popen(
+        [sys.executable, "-m", "wet_mcp.server"],
+        env=env,
+        stdout=log_fh,
+        stderr=log_fh,
+        close_fds=True,
+    )
+    log_fh.close()  # the child owns its inherited handle
+    return proc, port
+
+
+async def _connect(port: int):
+    """Yield an initialized ClientSession once the listener is up."""
+    url = f"http://127.0.0.1:{port}/mcp"
+    deadline = 60.0
+    waited = 0.0
+    while True:
+        try:
+            httpx.get(url, timeout=2.0)
+            break  # any response = up
+        except httpx.HTTPError:
+            if waited >= deadline:
+                raise
+            await __import__("asyncio").sleep(0.25)
+            waited += 0.25
+    async with streamablehttp_client(url) as (read_stream, write_stream, _):
+        async with ClientSession(read_stream, write_stream) as session:
+            await session.initialize()
+            yield session
+
+
+async def _finish(proc, gen) -> None:
+    await gen.aexit(None, None, None)
+    proc.terminate()
+    try:
+        proc.wait(timeout=10)
+    except subprocess.TimeoutExpired:
+        proc.kill()
+
+
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
@@ -43,75 +116,42 @@ def parse_allow_error(r) -> str:
 
 @pytest.fixture
 async def mcp_session(tmp_path):
-    """Start real wet-mcp server via stdio, yield ClientSession.
-
-    Uses tmp_path for cache/docs to avoid polluting real data.
-    """
-    server_params = StdioServerParameters(
-        command="uv",
-        args=["run", "wet-mcp"],
-        env={
-            **os.environ,
-            "LOG_LEVEL": "WARNING",
-            "CACHE_DIR": str(tmp_path),
-            "DOCS_DB_PATH": str(tmp_path / "docs.db"),
-            "DOWNLOAD_DIR": str(tmp_path / "downloads"),
-            # Force local mode (no API keys)
-            "EMBEDDING_BACKEND": "local",
-            "RERANK_BACKEND": "local",
-        },
-    )
+    """Start a real wet-mcp HTTP server, yield ClientSession (tmp data dirs)."""
+    proc, port = _spawn_server(tmp_path)
+    gen = _connect(port)
     try:
-        async with stdio_client(server_params) as (read_stream, write_stream):
-            async with ClientSession(read_stream, write_stream) as session:
-                await session.initialize()
-                yield session
+        session = await gen.asend(None)
+        yield session
     except (RuntimeError, ExceptionGroup) as exc:
         msg = str(exc).lower()
         if "cancel scope" in msg or "different task" in msg:
-            warnings.warn(
-                f"Suppressed teardown error: {exc}",
-                RuntimeWarning,
-                stacklevel=1,
-            )
+            warnings.warn(f"Suppressed teardown error: {exc}", RuntimeWarning, stacklevel=1)
         else:
             raise
+    finally:
+        await _finish(proc, gen)
 
 
 @pytest.fixture
 async def mcp_session_rerank_off(tmp_path):
     """MCP session with reranking disabled."""
-    server_params = StdioServerParameters(
-        command="uv",
-        args=["run", "wet-mcp"],
-        env={
-            **os.environ,
-            "LOG_LEVEL": "WARNING",
-            "CACHE_DIR": str(tmp_path),
-            "DOCS_DB_PATH": str(tmp_path / "docs.db"),
-            "EMBEDDING_BACKEND": "local",
-            "RERANK_ENABLED": "false",
-        },
-    )
+    proc, port = _spawn_server(tmp_path, rerank_enabled=False)
+    gen = _connect(port)
     try:
-        async with stdio_client(server_params) as (read_stream, write_stream):
-            async with ClientSession(read_stream, write_stream) as session:
-                await session.initialize()
-                yield session
+        session = await gen.asend(None)
+        yield session
     except (RuntimeError, ExceptionGroup) as exc:
         msg = str(exc).lower()
         if "cancel scope" in msg or "different task" in msg:
-            warnings.warn(
-                f"Suppressed teardown error: {exc}",
-                RuntimeWarning,
-                stacklevel=1,
-            )
+            warnings.warn(f"Suppressed teardown error: {exc}", RuntimeWarning, stacklevel=1)
         else:
             raise
+    finally:
+        await _finish(proc, gen)
 
 
 # ---------------------------------------------------------------------------
-# Search tool (local ONNX, embedded SearXNG)
+# Search tool (local ONNX, SearXNG at SEARXNG_URL / auto-local)
 # ---------------------------------------------------------------------------
 
 
@@ -215,7 +255,6 @@ class TestFullExtract:
 
     async def test_extract_convert(self, mcp_session: ClientSession, tmp_path):
         """extract.convert -- convert a local file to markdown."""
-        # Create a simple text file to convert
         test_file = tmp_path / "test.txt"
         test_file.write_text(
             "This is a test document for conversion.", encoding="utf-8"
@@ -273,23 +312,23 @@ class TestFullConfig:
             f"Missing expected keys: {list(data.keys())}"
         )
 
-    async def test_config_set_embedding_backend(self, mcp_session: ClientSession):
-        """config.set -- change embedding_backend."""
+    async def test_config_set_log_level(self, mcp_session: ClientSession):
+        """config.set -- change a runtime setting (the kept set surface)."""
         r = await mcp_session.call_tool(
-            "config", {"action": "set", "key": "embedding_backend", "value": "local"}
+            "config", {"action": "set", "key": "log_level", "value": "DEBUG"}
         )
         text = parse(r)
-        assert any(w in text.lower() for w in ("updated", "set", "embedding")), text[
-            :120
-        ]
+        assert any(w in text.lower() for w in ("updated", "set")), text[:120]
 
-    async def test_config_set_rerank_backend(self, mcp_session: ClientSession):
-        """config.set -- change rerank_backend."""
-        r = await mcp_session.call_tool(
-            "config", {"action": "set", "key": "rerank_backend", "value": "local"}
-        )
-        text = parse(r)
-        assert any(w in text.lower() for w in ("updated", "set", "rerank")), text[:120]
+    async def test_config_set_rejects_deleted_backend_keys(self, mcp_session):
+        """De-host: provider cells live in config.toml, not config.set keys."""
+        for key in ("embedding_backend", "rerank_backend"):
+            r = await mcp_session.call_tool(
+                "config", {"action": "set", "key": key, "value": "local"}
+            )
+            text = parse_allow_error(r)
+            assert "error" in text.lower(), f"{key} should be rejected: {text[:120]}"
+            assert "valid_keys" in text
 
     async def test_config_cache_clear(self, mcp_session: ClientSession):
         """config.cache_clear -- clear web cache."""
@@ -327,63 +366,6 @@ class TestFullSetup:
 
 
 # ---------------------------------------------------------------------------
-# Custom LLM API base mode (skipped if no LLM_API_BASE)
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.skipif(
-    not os.environ.get("LLM_API_BASE"),
-    reason="LLM_API_BASE not set",
-)
-@pytest.mark.timeout(120)
-class TestFullLLMApiBaseMode:
-    @pytest.fixture
-    async def api_base_session(self, tmp_path):
-        """MCP session using a custom LLM API base (litellm passthrough)."""
-        server_params = StdioServerParameters(
-            command="uv",
-            args=["run", "wet-mcp"],
-            env={
-                **os.environ,
-                "LOG_LEVEL": "WARNING",
-                "CACHE_DIR": str(tmp_path),
-                "DOCS_DB_PATH": str(tmp_path / "docs.db"),
-            },
-        )
-        try:
-            async with stdio_client(server_params) as (read_stream, write_stream):
-                async with ClientSession(read_stream, write_stream) as session:
-                    await session.initialize()
-                    yield session
-        except (RuntimeError, ExceptionGroup) as exc:
-            msg = str(exc).lower()
-            if "cancel scope" in msg or "different task" in msg:
-                warnings.warn(
-                    f"Suppressed teardown error: {exc}",
-                    RuntimeWarning,
-                    stacklevel=1,
-                )
-            else:
-                raise
-
-    async def test_search_docs_api_base(self, api_base_session: ClientSession):
-        """search.docs with custom-api-base embedding."""
-        r = await api_base_session.call_tool(
-            "search", {"action": "docs", "library": "requests", "query": "get"}
-        )
-        text = parse(r)
-        assert len(text) > 50, f"Docs result too short: {len(text)} chars"
-
-    async def test_config_status_api_base(self, api_base_session: ClientSession):
-        """config.status should show cloud embedding available."""
-        r = await api_base_session.call_tool("config", {"action": "status"})
-        text = parse(r)
-        data = json.loads(text)
-        embedding = data.get("embedding", {})
-        assert embedding.get("available") is True, f"Embedding not available: {data}"
-
-
-# ---------------------------------------------------------------------------
 # Rerank disabled mode
 # ---------------------------------------------------------------------------
 
@@ -405,9 +387,8 @@ class TestFullRerankOff:
         r = await mcp_session_rerank_off.call_tool("config", {"action": "status"})
         text = parse(r)
         data = json.loads(text)
-        _ = data.get("reranking", data.get("rerank", {}))  # noqa: F841
-        # Either shows disabled or empty backend
-        assert isinstance(data, dict), f"Expected dict, got: {type(data)}"
+        reranker = data.get("reranker", {})
+        assert reranker.get("available") is False, f"Reranker should be off: {reranker}"
 
 
 # ---------------------------------------------------------------------------
@@ -453,76 +434,3 @@ class TestFullSecurity:
             w in text.lower()
             for w in ("error", "denied", "security", "block", "traversal")
         ), f"Path traversal not blocked: {text[:120]}"
-
-
-# ---------------------------------------------------------------------------
-# Cloud embedding mode (SDK mode via API_KEYS)
-# ---------------------------------------------------------------------------
-
-API_KEYS = os.environ.get("API_KEYS", "")
-
-
-@pytest.mark.skipif(not API_KEYS, reason="API_KEYS not set")
-@pytest.mark.timeout(120)
-class TestFullCloudMode:
-    """Tests with cloud embedding via API_KEYS (SDK mode)."""
-
-    @pytest.fixture
-    async def cloud_session(self, tmp_path):
-        """MCP session using cloud SDK mode via API_KEYS."""
-        server_params = StdioServerParameters(
-            command="uv",
-            args=["run", "wet-mcp"],
-            env={
-                **os.environ,
-                "LOG_LEVEL": "WARNING",
-                "CACHE_DIR": str(tmp_path),
-                "DOCS_DB_PATH": str(tmp_path / "docs.db"),
-                "DOWNLOAD_DIR": str(tmp_path / "downloads"),
-                "API_KEYS": API_KEYS,
-            },
-        )
-        try:
-            async with stdio_client(server_params) as (read_stream, write_stream):
-                async with ClientSession(read_stream, write_stream) as session:
-                    await session.initialize()
-                    yield session
-        except (RuntimeError, ExceptionGroup) as exc:
-            msg = str(exc).lower()
-            if "cancel scope" in msg or "different task" in msg:
-                warnings.warn(
-                    f"Suppressed teardown error: {exc}",
-                    RuntimeWarning,
-                    stacklevel=1,
-                )
-            else:
-                raise
-
-    async def test_search_docs_cloud_embed(self, cloud_session: ClientSession):
-        """search.docs with cloud embedding should return results."""
-        r = await cloud_session.call_tool(
-            "search", {"action": "docs", "library": "requests", "query": "get"}
-        )
-        text = parse(r)
-        assert len(text) > 50, f"Docs result too short: {len(text)} chars"
-
-    async def test_config_status_shows_cloud(self, cloud_session: ClientSession):
-        """config.status should show cloud/sdk embedding mode."""
-        r = await cloud_session.call_tool("config", {"action": "status"})
-        text = parse(r)
-        data = json.loads(text)
-        embedding = data.get("embedding", {})
-        backend = embedding.get("backend", "")
-        assert backend != "local", f"Expected cloud backend, got: {backend}"
-
-    async def test_media_analyze_with_api_key(self, cloud_session: ClientSession):
-        """media.analyze with API key should return analysis."""
-        r = await cloud_session.call_tool(
-            "media",
-            {
-                "action": "analyze",
-                "url": "https://upload.wikimedia.org/wikipedia/commons/thumb/4/47/PNG_transparency_demonstration_1.png/300px-PNG_transparency_demonstration_1.png",
-            },
-        )
-        text = parse(r)
-        assert len(text) > 20, f"Analysis result too short: {len(text)} chars"

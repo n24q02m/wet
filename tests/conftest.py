@@ -4,25 +4,41 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-pytest_plugins = ["conftest_e2e", "conftest_cf"]
+pytest_plugins = ["conftest_e2e"]
+
+
+class _AvailableBothWays:
+    """``check_available`` stub usable from both sync and async call sites.
+
+    The cloud legs await ``check_available()`` (async HTTP client) while the
+    local legs call it synchronously (CPU-bound ONNX). A stub handed out by
+    the backend-init factory below must answer both so the lifespan's
+    background init can run against either branch without loading a model.
+    """
+
+    def __init__(self, value=True) -> None:  # noqa: ANN001
+        self.value = value
+
+    def __call__(self):
+        return self.value
+
+    def __await__(self):
+        async def _resolve():
+            return self.value
+
+        return _resolve().__await__()
 
 
 @pytest.fixture(autouse=True)
-def _isolate_per_plugin_home(tmp_path_factory, monkeypatch):
+def _isolate_home(tmp_path_factory, monkeypatch):
     """Point ``Path.home()`` at a throwaway directory for every test.
 
-    ``mcp_core.storage.per_plugin_store`` derives every credential path from
-    ``Path.home()`` and exposes no override seam, so each test that reaches
-    ``store_for_sub`` writes the developer's real
-    ``~/.wet-mcp/subs/<sub>/config.json``. The sub names are fixed constants
-    (``user_a`` / ``user_b`` / ``empty_user``), which turns that shared path
-    into a cross-process mutex nobody holds: two pytest processes running at
-    once -- two agents on one machine, or a ``-n`` worker pair in CI -- write
-    the same blob and read back each other's values. A run has already been
-    seen asserting ``key_a`` and reading ``jina_a`` (stored by
-    ``test_multiuser_llm_gate_and_backend``), and reading ``None`` moments
-    after its own ``store_for_sub`` because the other process rewrote the file
-    in between.
+    wet derives every storage path from ``Path.home()`` (``~/.wet/``:
+    config.toml, docs.db, per-sub cache roots) and the local model caches
+    key off it too. Without isolation a test touching the storage layer
+    reads or writes the developer's real ``~/.wet`` — and two pytest
+    processes running at once (``-n`` workers in CI) would contend on the
+    same on-disk files.
 
     ``Path.home()`` resolves ``HOME`` on POSIX and ``USERPROFILE`` on Windows,
     so both are set; ``monkeypatch`` restores them when the test ends.
@@ -33,39 +49,21 @@ def _isolate_per_plugin_home(tmp_path_factory, monkeypatch):
 
 
 @pytest.fixture(autouse=True)
-def _never_open_a_real_browser(monkeypatch):
-    """Keep the GDrive device-code path from hijacking the developer's browser.
+def _stub_lifespan_heavy_init():
+    """Keep the FastMCP lifespan off real disk, downloads and the network.
 
-    ``credential_state._trigger_gdrive_device_code`` calls ``try_open_browser``
-    on the verification URL. Newer mcp-core honours ``MCP_NO_BROWSER``, but the
-    import is lazy and older installs lack that guard, so patch the symbol too.
-    Tests that assert on the launch patch ``mcp_core.try_open_browser``
-    themselves, which shadows this fixture.
-    """
-    monkeypatch.setenv("MCP_NO_BROWSER", "1")
-    monkeypatch.setattr("mcp_core.try_open_browser", lambda url: False, raising=False)
-
-
-@pytest.fixture(autouse=True)
-def _stub_phase2_lifespan_hooks():
-    """Phase 2 wires migrations + Tier 1 warmup into the FastMCP lifespan.
-
-    Both touch ``~/.wet-mcp/docs.db`` which the CI runner does not have.
-    Stub them out by default so tests that drive the lifespan don't hit
-    real disk; tests that need the real migrations / warmup call them
-    directly (test_migrations.py, test_tier1_warmup.py).
-
-    Also stubs the embedding/reranker backend FACTORIES so the lifespan's
-    fire-and-forget background init task (``wet-init-backends``) never loads a
-    real local ONNX model (~570MB download) nor makes a real cloud provider
-    call -- either of which hangs a cold CI runner long after a test's own
-    patches have exited. Tests that exercise these init factories patch the
-    same targets themselves; their patch overrides this default.
+    The lifespan's startup leg runs migrations + Tier 1 warmup (both touch
+    ``~/.wet/docs.db``, which a cold CI runner does not have) and kicks off
+    the fire-and-forget backend init task (``wet-init-backends``). Stub the
+    heavy pieces by default: tests that need the real migrations / warmup
+    call them directly (test_migrations.py, test_tier1_warmup.py), and tests
+    that exercise the backend-init factories patch the same targets
+    themselves, overriding this default.
     """
     embed_backend = MagicMock()
-    embed_backend.check_available = AsyncMock(return_value=768)
+    embed_backend.check_available = _AvailableBothWays(768)
     rerank = MagicMock()
-    rerank.check_available = MagicMock(return_value=True)
+    rerank.check_available = _AvailableBothWays(True)
     with (
         patch("wet_mcp.migrations.run_migrations_on_startup"),
         patch("wet_mcp.sources.tier1_warmup.maybe_warm"),
@@ -97,20 +95,6 @@ def _disable_uvx_tool_venv_detection(monkeypatch):
         if mod_name == "wet_mcp.server" and hasattr(mod, "is_uvx_tool_venv"):
             monkeypatch.setattr(mod, "is_uvx_tool_venv", lambda: False)
     yield
-
-
-@pytest.fixture(autouse=True)
-def _set_credential_state_configured():
-    """Set credential state to CONFIGURED for all tests.
-
-    Prevents _require_credentials() from blocking tool calls in tests.
-    Tests that specifically test credential state should override this.
-    """
-    from wet_mcp.credential_state import CredentialState, set_state
-
-    set_state(CredentialState.CONFIGURED)
-    yield
-    set_state(CredentialState.CONFIGURED)
 
 
 @pytest.fixture

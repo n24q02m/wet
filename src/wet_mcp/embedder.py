@@ -364,7 +364,7 @@ class LocalEmbeddingBackend:
             logger.warning(
                 f"Loading local embedding model: {self._model_name} "
                 "(~570 MB download on first run). "
-                "Set API_KEYS to use cloud embedding instead."
+                "Set the [models.embed] cell in ~/.wet/config.toml to use cloud embedding instead."
             )
             self._model = TextEmbedding(model_name=self._model_name)
             logger.info("Local embedding model loaded")

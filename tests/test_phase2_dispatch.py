@@ -20,12 +20,13 @@ from wet_mcp.db import DocsDB
 
 @pytest.fixture
 def docs_db(tmp_path: Path, monkeypatch):
+    """Temp DocsDB wired into the server dispatcher.
+
+    De-host: there is no credential gate to bypass — auth is the hull
+    middleware in front of the MCP endpoint, not a per-call check.
+    """
     db = DocsDB(tmp_path / "docs.db", embedding_dims=0)
     monkeypatch.setattr(srv, "_docs_db", db)
-    # Bypass the credential gate so we can drive the dispatcher directly.
-    from wet_mcp import credential_state as cs
-
-    monkeypatch.setattr(cs, "get_state", lambda: cs.CredentialState.LOCAL)
     yield db
     db.close()
 
@@ -216,30 +217,21 @@ async def test_unknown_action_lists_phase2_actions(docs_db) -> None:
 
 async def test_docs_resolve_when_db_missing(monkeypatch) -> None:
     """When the DocsDB is None (startup race), resolve returns an error."""
-    from wet_mcp import credential_state as cs
-
     monkeypatch.setattr(srv, "_docs_db", None)
-    monkeypatch.setattr(cs, "get_state", lambda: cs.CredentialState.LOCAL)
     out = await srv.search(action="docs_resolve", query="react")
     assert payload(out)["error"].startswith("Error: Docs database")
 
 
 async def test_docs_query_when_db_missing(monkeypatch) -> None:
     """When the DocsDB is None, docs_query returns an error."""
-    from wet_mcp import credential_state as cs
-
     monkeypatch.setattr(srv, "_docs_db", None)
-    monkeypatch.setattr(cs, "get_state", lambda: cs.CredentialState.LOCAL)
     out = await srv.search(action="docs_query", library="react", query="x")
     assert payload(out)["error"].startswith("Error: Docs database")
 
 
 async def test_docs_lock_project_when_db_missing(monkeypatch) -> None:
     """When the DocsDB is None, docs_lock_project returns an error."""
-    from wet_mcp import credential_state as cs
-
     monkeypatch.setattr(srv, "_docs_db", None)
-    monkeypatch.setattr(cs, "get_state", lambda: cs.CredentialState.LOCAL)
     out = await srv.search(action="docs_lock_project", project_path="/tmp")
     assert payload(out)["error"].startswith("Error: Docs database")
 
