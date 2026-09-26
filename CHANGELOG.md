@@ -2,6 +2,17 @@
 
 <!-- version list -->
 
+## v3.16.1 (2026-09-26)
+
+### Bug Fixes
+
+- Docs reembed uses dual-backend resolver + resilient batches
+  ([`de0ecc8`](https://github.com/n24q02m/wet/commit/de0ecc8aa9eee0561c1ca16f50e89fa869f26959))
+
+- Reembed builds cloud backend from cell in CLI context
+  ([`19efd53`](https://github.com/n24q02m/wet/commit/19efd5387b331aa7721f301025ed75b8e08f9d99))
+
+
 ## v3.16.0 (2026-09-26)
 
 ### Bug Fixes
