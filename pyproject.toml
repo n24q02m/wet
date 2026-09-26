@@ -21,9 +21,14 @@ requires-python = "==3.13.*"
 dependencies = [
     # Shared web infrastructure (SSRF, SearXNG, URL utils, ScrapingAgent + Crawl4AI transitive).
     # wet consumes web-core's SSRF surface (is_safe_url / safe_httpx_client) AND, since 2.3.0,
-    # the remote render backends (CFBrowserRenderingClient / BrowserlessClient /
-    # RemoteRenderStrategy) for the browser provider chain + the under-rendered escalation fix.
+    # the remote render backends (BrowserlessClient / RemoteRenderStrategy) for the browser
+    # provider chain + the under-rendered escalation fix. (The Cloudflare Browser Rendering
+    # backend was cut in the de-host: browser rendering is native chromium or self-hosted
+    # browserless only.)
     "n24q02m-web-core>=2.5.1,<3",
+    # Shared stack core (de-host 2026-09): token auth 3-mode, per-task model cells,
+    # limiter, lifecycle lock, OpenAI-spec provider client. Git dep, pinned rev.
+    "hull-core",
     # MCP Server
     "mcp[cli]>=1.29.1,<2",
     # HTTP Client
@@ -37,10 +42,6 @@ dependencies = [
     "pydantic-settings",
     # Logging
     "loguru",
-    # LLM + Embedding + Reranking dispatch through mcp_core.llm (litellm
-    # passthrough via the mcp-core[llm] extra below). No direct provider SDK
-    # deps; the openai SDK remains transitive via litellm.
-    "httpx>=0.28.1",
     # Vector search for docs
     "sqlite-vec",
     # Local ONNX embedding + reranking (auto-fallback when no cloud API)
@@ -54,33 +55,8 @@ dependencies = [
     "jsonschema>=4.26.0",
     # Per-domain rate limiting for batch operations
     "aiolimiter>=1.2.1",
-    # 1.19.0 ships mcp_core.cli's argument-spec extra subcommand support;
-    # 1.20.0b2 keys build_cli's credential store by plugin slug; 1.21.0 adds
-    # RFC 9207 `iss` and fail-closed authorization-code minting; 1.22.0 ships
-    # the shared D1 + Vectorize clients; 1.24.0b1 separates OAuth JWT signing
-    # from CREDENTIAL_SECRET so tokens can be revoked without rekeying per-user
-    # vault data or changing stable subject IDs.
-    "n24q02m-mcp-core[llm]==1.24.6",
     # Schema migrations (auto-migrate-on-startup with backup)
     "alembic>=1.18.5",
-    # fastmcp arrives transitively via mcp-core; both bounds are pinned here,
-    # for different reasons.
-    # Floor: keeps a Renovate lockFileMaintenance refresh from resolving back
-    # to fastmcp 2.x, which carries 5 CVEs including a critical SSRF.
-    # Ceiling: fastmcp 4 moves the runtime onto fastmcp-slim and the protocol
-    # library from the MCP Python SDK v1 to v2 (`mcp>=2,<3`), where `mcp.types`
-    # is a re-export of the separate `mcp-types` package and its models rename
-    # every field to snake_case, keeping the camelCase spellings only as
-    # Pydantic aliases. The published mcp-core 1.24.0b1 does not yet carry a
-    # compatible ceiling, so preserve the SDK 1 / FastMCP 3 boundary here.
-    # Lift both bounds together only after the shared core and this server's
-    # imported FastMCP/ToolAnnotations surfaces migrate.
-    "fastmcp>=3.4.7,<5",
-    # Google Drive sync
-    "google-api-python-client>=2.198.0",
-    "google-auth>=2.56.2",
-    # S3-compatible sync (AWS S3, Cloudflare R2, Backblaze B2, MinIO)
-    "boto3>=1.43.56",
     # Production WSGI server for embedded SearXNG on Windows
     # (Werkzeug dev server deadlocks under concurrent engine requests)
     "waitress>=3.0.2; sys_platform == 'win32'",
@@ -88,8 +64,12 @@ dependencies = [
     # manylinux_*_aarch64 wheels and has no source dist, so the Docker
     # arm64 build fails. Cap below until upstream re-publishes arm64.
     "greenlet<3.5.6",
-    # urllib3 floor patches 2 HIGH CVEs (transitive via boto3/botocore,
-    # requests, google-api-python-client): GHSA-qccp-gfcp-xxvc (sensitive
+    # crawl4ai imports tiktoken unconditionally (table_extraction) but does not
+    # declare it; the old lock satisfied it transitively via litellm chains that
+    # the de-host removed. Declared explicitly so crawl4ai stays importable.
+    "tiktoken>=0.12",
+    # urllib3 floor patches 2 HIGH CVEs (transitive via requests/langsmith
+    # chains): GHSA-qccp-gfcp-xxvc (sensitive
     # headers forwarded across origins in proxied low-level redirects) +
     # GHSA-mf9v-mfxr-j63j (decompression-bomb safeguards bypassed in parts
     # of the streaming API). Both first patched in urllib3 2.7.0.
@@ -114,7 +94,6 @@ dev = [
     "pytest-cov>=7.1.0",
     "pytest-xdist>=3.8.0",
     "syrupy>=5.5.3",
-    "moto[s3]>=5.2.2",
 ]
 
 [project.scripts]
@@ -208,16 +187,16 @@ show_missing = true
 exclude_lines = ["pragma: no cover", "if TYPE_CHECKING:"]
 
 [tool.uv]
-# crawl4ai requires `unclecode-litellm==1.81.13`, a fork that ships the same
-# top-level `litellm` package as the upstream litellm this project already
-# depends on through mcp-core[llm]. Installing both writes two different
-# versions into one site-packages/litellm/, and which files survive is decided
-# by install order — CI has already failed on a run where the fork landed last:
-#   ImportError: cannot import name '_redact_string' from 'litellm._logging'
-# Drop the fork so exactly one litellm is installed. crawl4ai imports litellm
-# only inside its LLM helper functions, which this project never calls (it uses
-# AsyncWebCrawler/BrowserConfig/CrawlerRunConfig), and mcp_core.llm needs the
-# upstream 1.9x API.
+# crawl4ai (transitive via web-core) requires `unclecode-litellm==1.81.13`, a
+# fork that ships the same top-level `litellm` package as upstream litellm.
+# Since the de-host nothing in wet imports litellm (provider calls are plain
+# OpenAI-spec HTTP via hull-core), so the fork is made unreachable rather than
+# installed: crawl4ai imports litellm only inside its LLM helper functions,
+# which this project never calls (it uses AsyncWebCrawler/BrowserConfig/
+# CrawlerRunConfig).
 override-dependencies = ["unclecode-litellm ; sys_platform == 'unreachable'"]
 
 [tool.uv.sources]
+# Shared stack core (auth 3-mode, per-task model cells, limiter, lifecycle).
+# Pinned to the reviewed revision; bump deliberately, never via lockfile refresh.
+hull-core = { git = "https://github.com/n24q02m/hull.git", rev = "5262d54f4f0c1214dcedaef20531da98f9519bdf", subdirectory = "packages/core-py" }
