@@ -2,6 +2,53 @@
 
 <!-- version list -->
 
+## v3.16.0 (2026-09-26)
+
+### Bug Fixes
+
+- **wp3**: LLM gate via chat cell + test ports for gate/transport/tool-name seams
+  ([`9888ff6`](https://github.com/n24q02m/wet/commit/9888ff68d699858d1908d8c9a8cee577a6fa41d4))
+
+### Chores
+
+- **cd**: Drop dead deploy-cf job + CF dispatch inputs (spec §2 CF decommission)
+  ([`b508720`](https://github.com/n24q02m/wet/commit/b5087201528fc0a2766b850c78089d96a9cfbba0))
+
+- **wp3**: Gitignore local instance data and import artifacts
+  ([`2d26242`](https://github.com/n24q02m/wet/commit/2d2624234a82b9f8985129293111b6a42024d394))
+
+### Features
+
+- **isolate**: Sub-scope web cache + project_context (mode-3, spec 4 Q2)
+  ([`9443ef0`](https://github.com/n24q02m/wet/commit/9443ef0e8504128ba40837416bb7920d6d97a651))
+
+- **wp3**: CLI control plane + docs data-rescue tools (CliDocs lane)
+  ([`8868038`](https://github.com/n24q02m/wet/commit/8868038388b9453d78eaebd600f058488d5b177b))
+
+- **wp3**: Cut CF/auth layers per spec §5
+  ([`237fbef`](https://github.com/n24q02m/wet/commit/237fbefc013c3b625506dcd32ec1bd3a084e7d3a))
+
+- **wp3**: Deps — hull-core git dep (pinned 5262d54), litellm/mcp-core removed
+  ([`7095cd2`](https://github.com/n24q02m/wet/commit/7095cd27235adc9099db46ac0b3f94be132dd83b))
+
+- **wp3**: Hull-core auth 3-mode + per-sub isolation + sqlite-only docs store
+  ([`5edd076`](https://github.com/n24q02m/wet/commit/5edd07661207fba7d96459f664487a0758f676ea))
+
+- **wp3**: Providers via hull-core OpenAI-spec cells, litellm/mcp_core cut
+  ([`4345baa`](https://github.com/n24q02m/wet/commit/4345baaf0292fbaaa9e468228173cc0b2be860ab))
+
+- **wp3**: Sources de-hosted (Sources lane)
+  ([`c4ef628`](https://github.com/n24q02m/wet/commit/c4ef628841ad8f5a969f8eaefcf683e69642cf75))
+
+- **wp3**: Sub-scope project_context + per-sub cache keys (SubScope lane)
+  ([`e0ce6da`](https://github.com/n24q02m/wet/commit/e0ce6dae5f8788a083b12f419d26292bf56634b2))
+
+### Testing
+
+- **wp3**: De-host test sweep (T1/T2/T3) — 8 files deleted, rest ported to hull seams
+  ([`d32dc03`](https://github.com/n24q02m/wet/commit/d32dc0315ad78b05277f014a5484a8d1d038788b))
+
+
 ## v3.15.11 (2026-09-24)
 
 ### Bug Fixes
