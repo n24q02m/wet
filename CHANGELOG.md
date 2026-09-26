@@ -2,6 +2,14 @@
 
 <!-- version list -->
 
+## v3.16.3 (2026-09-26)
+
+### Bug Fixes
+
+- **ci**: Keep uv sources for git-pinned hull-core
+  ([`805fd59`](https://github.com/n24q02m/wet/commit/805fd591c7b8d9a343d7dc3fb8e0640a003f21ab))
+
+
 ## v3.16.2 (2026-09-26)
 
 ### Bug Fixes
