@@ -220,7 +220,11 @@ def lock_project(db: Any, project_path: Path) -> dict:
             }
         )
 
-    db.upsert_project_context(str(project_path), enriched)
+    # Lazy import: runtime pulls the hull provider stack, so keep it off the
+    # module import path for callers that only need manifest detection.
+    from wet_mcp.runtime import current_sub
+
+    db.upsert_project_context(str(project_path), enriched, sub=current_sub())
 
     return {
         "project_path": str(project_path),

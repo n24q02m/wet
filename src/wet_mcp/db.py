@@ -457,18 +457,38 @@ class DocsDB:
 
     def _create_project_context_table(self) -> None:
         # Phase 2 (spec section 5.4) — Cabinets project isolation.
+        # Mode-3 isolation (spec §4 Q2): the logical key is now
+        # (sub, project_path) so N callers can each hold their own lock for
+        # the same project. Legacy DBs keep the old project_path PRIMARY KEY
+        # shape; the guarded ALTER appends ``sub`` (all legacy rows become
+        # 'default') and the unique index below preserves the logical key.
         self._conn.execute("""
             CREATE TABLE IF NOT EXISTS project_context (
-                project_path TEXT PRIMARY KEY,
+                project_path TEXT NOT NULL,
+                sub TEXT NOT NULL DEFAULT 'default',
                 locked_libraries TEXT NOT NULL,
                 created_at REAL NOT NULL,
                 last_used_at REAL NOT NULL
             )
         """)
+        try:
+            self._conn.execute(
+                "ALTER TABLE project_context "
+                "ADD COLUMN sub TEXT NOT NULL DEFAULT 'default'"
+            )
+            self._conn.commit()
+            logger.debug("Migrated project_context table: added sub")
+        except sqlite3.OperationalError:
+            pass  # Column already exists
+        self._conn.execute("""
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_project_context_sub_path
+            ON project_context(sub, project_path)
+        """)
         self._conn.execute("""
             CREATE INDEX IF NOT EXISTS idx_project_context_last_used
             ON project_context(last_used_at)
         """)
+        self._conn.commit()
 
     def _create_libraries_table(self) -> None:
         # Libraries metadata (Phase 2 schema; pre-Alembic legacy databases
@@ -1925,13 +1945,19 @@ class DocsDB:
         return row is not None
 
     def upsert_project_context(
-        self, project_path: str, locked_libraries: list[dict]
+        self,
+        project_path: str,
+        locked_libraries: list[dict],
+        *,
+        sub: str = "default",
     ) -> None:
         """Persist a project's locked-library set (Cabinets isolation).
 
         Args:
-            project_path: Absolute project root path (used as PK).
+            project_path: Absolute project root path.
             locked_libraries: List of ``{"id": <library_id>, "version": <spec>}``.
+            sub: Caller namespace (mode-3 isolation); the logical key is
+                ``(sub, project_path)``.
 
         Silently no-ops on pre-Alembic legacy databases that lack the
         ``project_context`` table.
@@ -1944,33 +1970,36 @@ class DocsDB:
         now = _now_ts()
         payload = json.dumps(locked_libraries, ensure_ascii=False)
         existing = self._conn.execute(
-            "SELECT created_at FROM project_context WHERE project_path = ?",
-            (project_path,),
+            "SELECT created_at FROM project_context "
+            "WHERE sub = ? AND project_path = ?",
+            (sub, project_path),
         ).fetchone()
         if existing:
             self._conn.execute(
                 "UPDATE project_context "
                 "SET locked_libraries = ?, last_used_at = ? "
-                "WHERE project_path = ?",
-                (payload, now, project_path),
+                "WHERE sub = ? AND project_path = ?",
+                (payload, now, sub, project_path),
             )
         else:
             self._conn.execute(
                 "INSERT INTO project_context "
-                "(project_path, locked_libraries, created_at, last_used_at) "
-                "VALUES (?, ?, ?, ?)",
-                (project_path, payload, now, now),
+                "(project_path, sub, locked_libraries, created_at, last_used_at) "
+                "VALUES (?, ?, ?, ?, ?)",
+                (project_path, sub, payload, now, now),
             )
         self._conn.commit()
 
-    def get_project_context(self, project_path: str) -> dict | None:
+    def get_project_context(
+        self, project_path: str, *, sub: str = "default"
+    ) -> dict | None:
         """Return the lock entry for a project, or None if not locked."""
         if not self._ensure_project_context():
             return None
         row = self._conn.execute(
             "SELECT project_path, locked_libraries, created_at, last_used_at "
-            "FROM project_context WHERE project_path = ?",
-            (project_path,),
+            "FROM project_context WHERE sub = ? AND project_path = ?",
+            (sub, project_path),
         ).fetchone()
         if row is None:
             return None
@@ -1992,13 +2021,16 @@ class DocsDB:
             result["locked_libraries"] = []
         return result
 
-    def touch_project_context(self, project_path: str) -> None:
+    def touch_project_context(
+        self, project_path: str, *, sub: str = "default"
+    ) -> None:
         """Update last_used_at — call before each docs_query that honors a lock."""
         if not self._ensure_project_context():
             return
         self._conn.execute(
-            "UPDATE project_context SET last_used_at = ? WHERE project_path = ?",
-            (_now_ts(), project_path),
+            "UPDATE project_context SET last_used_at = ? "
+            "WHERE sub = ? AND project_path = ?",
+            (_now_ts(), sub, project_path),
         )
         self._conn.commit()
 
