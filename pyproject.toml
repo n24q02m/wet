@@ -63,7 +63,7 @@ dependencies = [
     # greenlet 3.5.0 (pulled transitively via patchright) ships no
     # manylinux_*_aarch64 wheels and has no source dist, so the Docker
     # arm64 build fails. Cap below until upstream re-publishes arm64.
-    "greenlet<3.5.6",
+    "greenlet<3.5.7",
     # crawl4ai imports tiktoken unconditionally (table_extraction) but does not
     # declare it; the old lock satisfied it transitively via litellm chains that
     # the de-host removed. Declared explicitly so crawl4ai stays importable.
