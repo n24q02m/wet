@@ -117,23 +117,33 @@ async def reembed(
     """
     from wet_mcp.config import settings
     from wet_mcp.embedder import (
+        CloudEmbeddingBackend,
         LocalEmbeddingBackend,
         no_local_embed_clause,
         resolve_embed_backend_for_request,
     )
-    from wet_mcp.runtime import DEFAULT_EMBEDDING_DIMS, model_cell
+    from wet_mcp.runtime import DEFAULT_EMBEDDING_DIMS, cell_configured, model_cell, provider_client
 
-    backend = resolve_embed_backend_for_request()
-    if backend is None:
-        return {
-            "status": "pending",
-            "reason": f"no embedding backend available ({no_local_embed_clause()})",
-        }
-
-    if isinstance(backend, LocalEmbeddingBackend):
-        identity = settings.resolve_local_embedding_model()
-    else:
+    # Cell-first: ``resolve_embed_backend_for_request`` serves the startup
+    # singleton, which only exists inside a running server process. The CLI
+    # repair entry must build the cloud backend itself when the host
+    # configured a cell (mirrors ``make_docs_db``'s identity rule), and fall
+    # back to the shared local leg only when there is no cell.
+    if cell_configured("embed"):
+        backend = CloudEmbeddingBackend(provider_client("embed"))
         identity = _embedding_identity(model_cell("embed"))
+    else:
+        backend = resolve_embed_backend_for_request()
+        if backend is None:
+            return {
+                "status": "pending",
+                "reason": f"no embedding backend available ({no_local_embed_clause()})",
+            }
+        if not isinstance(backend, LocalEmbeddingBackend):
+            # A server process resolved a cloud singleton; keep its identity.
+            identity = _embedding_identity(model_cell("embed"))
+        else:
+            identity = settings.resolve_local_embedding_model()
     dims = settings.embedding_dims or DEFAULT_EMBEDDING_DIMS
     target = Path(db_path) if db_path is not None else settings.get_db_path()
     if not target.exists():
