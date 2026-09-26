@@ -1,9 +1,9 @@
-"""LLM utilities for WET MCP Server — litellm passthrough via mcp_core.llm."""
+"""LLM utilities for WET MCP Server — chat via the [models.chat] provider cell."""
 
 import asyncio
 import base64
 import mimetypes
-import os
+from dataclasses import dataclass
 from pathlib import Path
 
 from loguru import logger
@@ -33,65 +33,79 @@ _AUDIO_INPUT_MODELS = {
 _AUDIO_OUTPUT_MODELS: set[str] = set()
 
 
-def _strip_provider(model: str) -> str:
-    """Strip provider prefix (e.g. 'gemini/gemini-3-flash-preview' -> 'gemini-3-flash-preview')."""
-    if "/" in model:
-        return model.split("/", 1)[1]
-    return model
+# ---------------------------------------------------------------------------
+# Chat cell client (single per-task cell, cached for the process lifetime)
+# ---------------------------------------------------------------------------
+
+# Process-shared OpenAI-spec client for the [models.chat] cell. One cell, one
+# client: base_url, api_key, and model come from the cell and never per call.
+_chat_client = None
+
+
+def _chat_provider_client():
+    """Return the cached chat-cell client (built lazily on first use)."""
+    global _chat_client
+    if _chat_client is None:
+        from wet_mcp.runtime import provider_client
+
+        _chat_client = provider_client("chat")
+    return _chat_client
 
 
 # ---------------------------------------------------------------------------
-# Provider detection
+# Result shape
 # ---------------------------------------------------------------------------
 
 
-def _has_llm_provider() -> bool:
-    """Check if any LLM provider API key is configured.
+@dataclass
+class _Message:
+    content: str
 
-    Sub-aware (delegates to ``credential_state.has_llm_provider``): in HTTP
-    multi-user mode it reads the request's per-sub credential bucket (keys
-    that never live in ``os.environ``), and in stdio / single-user it reads
-    ``os.environ`` (incl. the GOOGLE->GEMINI alias). Now also recognises
-    ANTHROPIC_API_KEY — dispatch is litellm passthrough, which supports
-    anthropic/*, so the gate no longer drifts from the relay's offer.
+
+@dataclass
+class _Choice:
+    message: _Message
+
+
+@dataclass
+class ChatResult:
+    """Minimal OpenAI-shaped completion result.
+
+    The chat cell returns plain assistant text; this wrapper keeps the
+    ``response.choices[0].message.content`` access pattern every existing
+    caller uses.
     """
-    from wet_mcp.credential_state import has_llm_provider
 
-    return has_llm_provider()
+    choices: list[_Choice]
 
-
-def _detect_provider(model: str) -> str:
-    """Detect provider from model string prefix.
-
-    Returns 'gemini', 'openai', or 'xai'.
-    Falls back to 'gemini' if no prefix.
-    """
-    if "/" in model:
-        prefix = model.split("/", 1)[0].lower()
-        if prefix in ("gemini", "google"):
-            return "gemini"
-        if prefix in ("openai", "gpt"):
-            return "openai"
-        if prefix in ("xai", "grok"):
-            return "xai"
-    # Default: check available keys
-    if os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY"):
-        return "gemini"
-    if os.getenv("XAI_API_KEY"):
-        return "xai"
-    if os.getenv("OPENAI_API_KEY"):
-        return "openai"
-    return "gemini"
+    def __init__(self, content: str) -> None:
+        self.choices = [_Choice(_Message(content))]
 
 
 # ---------------------------------------------------------------------------
-# Async completion (litellm passthrough via mcp_core.llm)
+# Provider availability
+# ---------------------------------------------------------------------------
+
+
+def has_llm_provider() -> bool:
+    """Whether the [models.chat] cell is configured (base_url + key + model)."""
+    from wet_mcp.runtime import cell_configured
+
+    return cell_configured("chat")
+
+
+# Back-compat alias (internal callers).
+_has_llm_provider = has_llm_provider
+
+
+# ---------------------------------------------------------------------------
+# Async completion (chat cell)
 # ---------------------------------------------------------------------------
 
 
 async def acompletion(
     *,
-    model: str,
+    model: str | None = None,
     messages: list[dict],
     temperature: float | None = None,
     max_tokens: int | None = None,
@@ -100,60 +114,29 @@ async def acompletion(
     api_base: str | None = None,
     api_key: str | None = None,
     **kwargs,
-) -> object:
-    """Unified async completion via mcp_core.llm (litellm passthrough).
+) -> ChatResult:
+    """Run one chat completion via the [models.chat] provider cell.
 
-    litellm infers the provider from the ``provider/model`` prefix and
-    returns OpenAI-shaped responses (``resp.choices[0].message.content``).
-    Fallback policy stays wet-owned: fallbacks are tried sequentially,
-    their exceptions are swallowed, and the primary exception is re-raised
-    when all fail.
+    The cell owns base_url, api_key, and model: the ``model``, ``api_base``
+    and ``api_key`` arguments are accepted for caller compatibility and
+    IGNORED -- the cell's model is verbatim, there are no provider prefixes.
+    ``fallbacks`` is likewise accepted and ignored: a single per-task cell has
+    no fallback chain, and its presence never fails the call.
     """
-    # Lazy import: litellm costs ~1-2s on first import.
-    from mcp_core.llm import acompletion as core_acompletion
+    client = _chat_provider_client()
 
-    call_kwargs: dict = dict(kwargs)
-    if temperature is not None:
-        call_kwargs["temperature"] = temperature
-    if max_tokens is not None:
-        call_kwargs["max_tokens"] = max_tokens
-    if response_format is not None:
-        call_kwargs["response_format"] = response_format
-
-    from wet_mcp.credential_state import api_base_for_task, api_key_for_model
-
-    resolved_api_base = api_base or api_base_for_task("LLM_API_BASE")
-    # Resolve the provider key AND custom endpoint from the request-scoped
-    # per-sub bucket (HTTP multi-user) or the process env (single-user); an
-    # explicit arg wins. Key is resolved per model so a fallback to a different
-    # provider gets its own key. Avoids relying on os.environ (cross-user
-    # bleed). Empty string -> None so litellm's own provider env fallback still
-    # applies single-user. api_base is SSRF-vetted downstream in dispatch.
-    resolved_api_key = api_key or api_key_for_model(model) or None
-
-    try:
-        return await core_acompletion(
-            model=model,
-            messages=messages,
-            api_base=resolved_api_base,
-            api_key=resolved_api_key,
-            **call_kwargs,
+    options = {
+        key: value
+        for key, value in (
+            ("temperature", temperature),
+            ("max_tokens", max_tokens),
+            ("response_format", response_format),
+            *kwargs.items(),
         )
-    except Exception as e:
-        # Try fallbacks
-        if fallbacks:
-            for fb_model in fallbacks:
-                try:
-                    return await core_acompletion(
-                        model=fb_model,
-                        messages=messages,
-                        api_base=resolved_api_base,
-                        api_key=api_key or api_key_for_model(fb_model) or None,
-                        **call_kwargs,
-                    )
-                except Exception:
-                    continue
-        raise e
+        if value is not None
+    }
+    content = await client.chat(messages, **options)
+    return ChatResult(content)
 
 
 # ---------------------------------------------------------------------------
@@ -162,56 +145,46 @@ async def acompletion(
 
 
 def get_llm_config() -> dict:
-    """Build the completion chain from the current subject, or local settings.
+    """Describe the [models.chat] cell for feature-gating and call sites.
 
-    Remote requests never inherit a process-wide model/fallback chain. An empty
-    subject chain disables the LLM capability instead of spending another
-    user's provider credentials.
+    ``model`` is ``None`` (and ``api_key`` empty) when the cell is
+    unconfigured -- callers treat a falsy model as feature-off. There is no
+    chain any more, so ``fallbacks`` is always empty, and temperature is left
+    to the provider default (the cell has no temperature field).
     """
-    from wet_mcp.credential_state import (
-        credentials_for_current_request,
-        get_current_sub,
-    )
+    from wet_mcp.runtime import model_cell
 
-    if get_current_sub() is not None or os.environ.get("PUBLIC_URL"):
-        creds = credentials_for_current_request()
-        models = (
-            settings.llm_chain_for_creds(creds)
-            if creds.get("LLM_MODELS", "").strip()
-            else []
-        )
-    else:
-        models = settings.llm_chain()
-    primary = models[0] if models else None
-    fallbacks = models[1:] if len(models) > 1 else None
-
+    cell = model_cell("chat")
+    if not cell.configured:
+        return {
+            "model": None,
+            "api_base": None,
+            "api_key": "",
+            "temperature": None,
+            "fallbacks": [],
+        }
     return {
-        "model": primary,
-        "fallbacks": fallbacks,
-        "temperature": settings.llm_temperature,
+        "model": cell.model,
+        "api_base": cell.base_url,
+        "api_key": cell.api_key,
+        "temperature": None,
+        "fallbacks": [],
     }
 
 
 def get_model_capabilities(model: str) -> dict:
-    """Check model's media capabilities.
+    """Check model's media capabilities against the static maps.
 
-    Vision comes from the litellm registry (``mcp_core.llm.supports_vision``);
-    models unknown to the registry fall back to the hardcoded map. Audio
-    flags stay hardcoded-map-based (no registry coverage).
+    The de-hosted stack has no provider registry to consult, so vision/audio
+    support is the hardcoded map only; the cell's model id is verbatim.
 
     Returns:
         Dict with 'vision', 'audio_input', 'audio_output' booleans.
     """
-    from mcp_core.llm import supports_vision
-
-    bare = _strip_provider(model)
-    vision = supports_vision(model)
-    if vision is None:
-        vision = bare in _VISION_MODELS
     return {
-        "vision": vision,
-        "audio_input": bare in _AUDIO_INPUT_MODELS,
-        "audio_output": bare in _AUDIO_OUTPUT_MODELS,
+        "vision": model in _VISION_MODELS,
+        "audio_input": model in _AUDIO_INPUT_MODELS,
+        "audio_output": model in _AUDIO_OUTPUT_MODELS,
     }
 
 
@@ -243,9 +216,12 @@ async def _read_and_truncate(path: str) -> str:
 async def analyze_media(
     media_path: str, prompt: str = "Describe this media in detail."
 ) -> str:
-    """Analyze media file using configured LLM with auto-capability detection."""
-    if not _has_llm_provider():
-        return "Error: LLM analysis requires API keys (GEMINI_API_KEY, OPENAI_API_KEY, or XAI_API_KEY) to be configured."
+    """Analyze media file using the configured chat cell with auto-capability detection."""
+    if not has_llm_provider():
+        return (
+            "Error: LLM analysis requires a configured [models.chat] provider "
+            "cell (base_url + api_key + model in ~/.wet/config.toml)."
+        )
 
     path_obj = Path(media_path).resolve()
     download_dir = Path(settings.download_dir).expanduser().resolve()
@@ -276,12 +252,7 @@ async def analyze_media(
                     "content": f"{prompt}\n\nFile Content:\n```\n{content}\n```",
                 }
             ]
-            response = await acompletion(
-                model=config["model"],
-                messages=messages,
-                fallbacks=config["fallbacks"],
-                temperature=config["temperature"],
-            )
+            response = await acompletion(messages=messages)
             return str(response.choices[0].message.content)
         except Exception as e:
             return f"Error analyzing text file: {e}"
@@ -318,14 +289,7 @@ async def analyze_media(
             }
         ]
 
-        response = await acompletion(
-            model=config["model"],
-            messages=messages,
-            fallbacks=config["fallbacks"],
-            temperature=config["temperature"],
-            api_base=config.get("api_base"),
-            api_key=config.get("api_key"),
-        )
+        response = await acompletion(messages=messages)
 
         return str(response.choices[0].message.content)
 
