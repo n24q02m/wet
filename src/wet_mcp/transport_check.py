@@ -71,7 +71,7 @@ def _is_http_transport() -> bool:
     backend (external ``SEARXNG_URL`` or an auto-spawned instance) and is never
     the constrained stdio-uvx context, so detection must not fire there.
 
-    This also covers Cloudflare Containers, which run the OCI image via a
+    This also covers hardened container images, which run the app via a
     non-Docker runtime that does NOT create the ``/.dockerenv`` marker the
     Docker short-circuit relies on -- without this the no-pip ``uv sync`` venv
     would be misdetected as stdio uvx and SearXNG actions wrongly rejected.
@@ -86,7 +86,7 @@ def _is_http_transport() -> bool:
 def _detect_uvx_tool_venv() -> bool:
     """Run the actual detection (no caching). Exposed for tests."""
     # Docker / HTTP short-circuit: containers running ``uv sync`` images (Docker
-    # or Cloudflare Containers) would otherwise trip the no-pip fallback even
+    # or hardened containers) would otherwise trip the no-pip fallback even
     # though they reach SearXNG via Docker daemon or an external SEARXNG_URL.
     # HTTP transport is by definition not stdio uvx, and also catches CF
     # Containers (no ``/.dockerenv`` marker).

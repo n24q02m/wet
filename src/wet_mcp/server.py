@@ -9,7 +9,9 @@ import json
 import math
 import os
 import re
+import socket
 import sys
+import threading
 import time
 
 # Fix Windows console encoding for Unicode output
@@ -28,7 +30,7 @@ from loguru import logger
 from mcp.server.fastmcp import FastMCP
 from mcp.types import ToolAnnotations
 
-from wet_mcp import credential_state, search_metrics
+from wet_mcp import search_metrics
 from wet_mcp.cache import WebCache
 from wet_mcp.config import settings
 from wet_mcp.db import (
@@ -36,6 +38,11 @@ from wet_mcp.db import (
     INDEX_STATE_FAILED,
     INDEX_STATE_RUNNING,
     DocsDB,
+)
+from wet_mcp.runtime import (
+    DEFAULT_EMBEDDING_DIMS,
+    current_sub,
+    model_cell,
 )
 from wet_mcp.searxng_runner import ensure_searxng, stop_searxng
 from wet_mcp.security import UNTRUSTED_SOURCE, build_external_tool_result
@@ -59,12 +66,6 @@ from wet_mcp.transport_check import is_uvx_tool_venv, uvx_searxng_blocked_error
 logger.remove()
 logger.add(sys.stderr, level=settings.log_level)
 
-# Default embedding dimensions for sqlite-vec when EMBEDDING_DIMS is unset.
-# Embeddings are truncated to this size, but a same-dim model swap still
-# yields an incompatible vector space -- DocsDB's embedding-model identity
-# guard (B2) catches that. Override via EMBEDDING_DIMS env var.
-_DEFAULT_EMBEDDING_DIMS = 768
-
 
 # ``region`` (search action): 2-letter ISO 3166-1 alpha-2 geo code.
 _REGION_RE = re.compile(r"^[A-Za-z]{2}$")
@@ -72,8 +73,9 @@ _REGION_RE = re.compile(r"^[A-Za-z]{2}$")
 # Reranking: retrieve more candidates than final limit, then rerank.
 _RERANK_CANDIDATE_MULTIPLIER = 3
 
-# Module-level state (set during lifespan)
-_web_cache: WebCache | None = None
+# Module-level state (set during lifespan). ``_web_cache`` routes to the
+# calling namespace's own cache file -- see :class:`_PerSubCache`.
+_web_cache: "_PerSubCache | None" = None
 _docs_db: DocsDB | None = None
 _embedding_dims: int = 0
 _backend_init_task: asyncio.Task | None = None
@@ -89,7 +91,7 @@ def _on_background_task_done(task: asyncio.Task, label: str) -> None:
     """Release a finished background task and report what it did.
 
     An exception nobody retrieves surfaces only as a GC-time "Task exception
-    was never retrieved" on stderr -- which, inside a Cloudflare container, is
+    was never retrieved" on stderr -- which, inside a slim container, is
     a place no operator can read. Log it here, with the traceback, at the
     moment it happens.
 
@@ -120,6 +122,69 @@ def _launch_background_task(coro, label: str) -> asyncio.Task:
     return task
 
 
+class _PerSubCache:
+    """Route WebCache operations to the caller's per-namespace cache file.
+
+    De-host multi-user layout (spec §4 Q2 + mode-3 storage contract): each
+    namespace gets its own SQLite file under ``~/.wet/subs/<namespace>/`` so
+    users on one process never share a cache file. Instances are opened
+    lazily per namespace and closed together on shutdown. WebCache itself
+    ALSO folds the sub into its keys, so isolation holds even if two
+    namespaces ever point at one file.
+    """
+
+    def __init__(self) -> None:
+        self._caches: dict[str, WebCache] = {}
+        self._lock = threading.Lock()
+
+    def _for(self, sub: str) -> WebCache:
+        cache = self._caches.get(sub)
+        if cache is None:
+            from wet_mcp.runtime import sub_root
+
+            path = sub_root(sub) / "cache.db"
+            path.parent.mkdir(parents=True, exist_ok=True)
+            cache = WebCache(path)
+            with self._lock:
+                self._caches[sub] = cache
+        return cache
+
+    def get(self, action, params, sub):  # noqa: ANN001, ANN201
+        return self._for(sub).get(action, params, sub)
+
+    def get_with_age(self, action, params, sub):  # noqa: ANN001, ANN201
+        return self._for(sub).get_with_age(action, params, sub)
+
+    def get_stale_with_age(self, action, params, sub):  # noqa: ANN001, ANN201
+        return self._for(sub).get_stale_with_age(action, params, sub)
+
+    def set(self, action, params, content, ttl_override=None, sub=None):  # noqa: ANN001, ANN201
+        return self._for(sub or "default").set(action, params, content, ttl_override, sub or "default")
+
+    def record_snapshot(self, url, content, sub):  # noqa: ANN001, ANN201
+        return self._for(sub).record_snapshot(url, content, sub)
+
+    def latest_snapshots(self, url, n, sub):  # noqa: ANN001, ANN201
+        return self._for(sub).latest_snapshots(url, n, sub)
+
+    def clear(self, action, sub):  # noqa: ANN001, ANN201
+        return self._for(sub).clear(action, sub)
+
+    def stats(self, sub=None):  # noqa: ANN001, ANN201
+        if sub:
+            return self._for(sub).stats(sub)
+        merged: dict[str, int] = {}
+        for cache in self._caches.values():
+            for key, value in cache.stats().items():
+                merged[key] = merged.get(key, 0) + value
+        return merged
+
+    def close(self) -> None:
+        for cache in self._caches.values():
+            cache.close()
+        self._caches.clear()
+
+
 async def _wait_for_backend_init() -> None:
     """Wait for startup backend initialization when it is still running."""
     task = _backend_init_task
@@ -147,147 +212,32 @@ def _missing_docs_db_methods(backend) -> list[str]:
 
 
 def make_docs_db(db_path: Path | None = None):
-    """Select docs DB backend: sqlite (default) or cf-d1 (D1 + Vectorize).
+    """Open the local docs DB (SQLite under ``~/.wet/``).
 
-    DOCS_DB_BACKEND is orthogonal to MCP_STORAGE_BACKEND. The selector is read
-    from the environment (so a standalone caller honors the live env); the
-    sqlite path uses the module Settings singleton (patchable in tests) and
-    preserves the B2 embedding-model identity guard; the cf-d1 path routes
-    relational + FTS5 to D1 and vectors to Vectorize via env-configured clients.
+    De-host: the CF D1 + Vectorize backend is gone — this is always a
+    :class:`DocsDB` on a local file (WAL). ``db_path`` overrides
+    ``settings.get_db_path()`` for callers that open a store at an explicit
+    location (``scripts/build_tier1_index.py --db-path``).
 
-    ``db_path`` overrides ``settings.get_db_path()`` for a caller that opens a
-    store at an explicit location -- ``scripts/build_tier1_index.py --db-path``
-    is the one that does. It exists so that caller does not have to rebuild the
-    embedding identity itself: the dims and model id below are what the guard
-    in ``DocsDB`` compares against, so a second implementation of them stamps a
-    store the server then refuses to open. It is meaningful only for the sqlite
-    backend; under cf-d1 there is no local file to point at.
+    The B2 embedding-model identity guard needs the CURRENT model identity:
+    the embed cell's model when the host configured ``[models.embed]``
+    (stamped by the re-embed pass as ``openai-spec:<model>``), otherwise the
+    local ONNX model id. Dims come from EMBEDDING_DIMS (default 768).
     """
-    import os
-
     from wet_mcp.config import settings
+    from wet_mcp.runtime import cell_configured
 
-    dims = settings.resolve_embedding_dims() or _DEFAULT_EMBEDDING_DIMS
-    backend = os.environ.get("DOCS_DB_BACKEND", settings.docs_db_backend)
-    if backend == "cf-d1" and db_path is not None:
-        raise RuntimeError(
-            f"make_docs_db(db_path={str(db_path)!r}) was called while "
-            "DOCS_DB_BACKEND=cf-d1 selects the D1 + Vectorize store, where "
-            "that path addresses nothing. Honouring the selector would write "
-            "to a store the caller did not name, and honouring the path would "
-            "ignore the selector. Unset DOCS_DB_BACKEND to use the local "
-            "SQLite store at that path, or drop the path to use cf-d1."
-        )
-    if backend == "cf-d1":
-        from mcp_core.storage.d1 import d1_backend_from_env
-        from mcp_core.storage.vectorize import vectorize_backend_from_env
-
-        from wet_mcp.db_cf import DocsDBCfBackend
-
-        cf_db = DocsDBCfBackend(
-            d1_backend_from_env(),
-            vectorize_backend_from_env(),
-            embedding_dims=dims,
-        )
-        # A backend that implements only part of DocsDB does not fail at
-        # startup, it fails mid-index: _background_index_and_search writes the
-        # chunks through add_chunks (present) and then raises AttributeError on
-        # mark_version_indexed (absent), inside a broad `except Exception` that
-        # only logs. The version never reaches status='indexed', so the next
-        # request re-indexes it, forever, while the row count keeps growing.
-        # Refuse the object here instead, where the missing names can be named.
-        missing = _missing_docs_db_methods(cf_db)
-        if missing:
-            raise RuntimeError(
-                f"DOCS_DB_BACKEND=cf-d1 built {type(cf_db).__name__}, which is "
-                f"missing {len(missing)} method(s) that callers invoke on a "
-                f"DocsDB: {', '.join(missing)}. Indexing would write chunks and "
-                "then fail on the first missing call, leaving every version "
-                "short of status='indexed' and re-indexed on every request. "
-                "Refusing to start until the backend implements them."
-            )
-        return cf_db
-    embed_backend = settings.resolve_embedding_backend()
-    if embed_backend == "cloud":
-        model_identity = settings.embedding_primary() or ""
-    elif embed_backend == "local":
+    dims = settings.embedding_dims or DEFAULT_EMBEDDING_DIMS
+    if cell_configured("embed"):
+        model_identity = f"openai-spec:{model_cell('embed').model}"
+    else:
         model_identity = settings.resolve_local_embedding_model()
-    else:  # unavailable -- local disabled + no cloud chain; no active embed model
-        model_identity = ""
     return DocsDB(
         settings.get_db_path() if db_path is None else db_path,
         embedding_dims=dims,
         model_identity=model_identity,
         reindex_on_model_change=settings.reindex_on_model_change,
     )
-
-
-def _require_credentials() -> dict[str, Any] | None:
-    """Check if credentials are configured. Returns an error payload if not, None if OK.
-
-    Branching:
-
-    * **HTTP multi-user request** (``_current_sub`` set via auth_scope) —
-      look up the per-sub PerPluginStore bucket. If empty, return
-      AWAITING_SETUP error so the user opens the relay form. If non-empty,
-      allow the call. The credentials stay request-scoped: the cloud
-      dispatch (embedder / reranker / llm) resolves the right provider key
-      per call via :func:`credential_state.api_key_for_model`. We do NOT
-      copy them into the process-global ``os.environ`` — that bled one
-      ``sub``'s keys into another's request (``os.environ`` is shared
-      mutable state, not contextvar-isolated).
-
-    * **Stdio / single-user HTTP / no JWT** — ``_current_sub`` is ``None``;
-      fall back to the legacy ``CredentialState`` machine driven by env
-      vars at startup (resolve_credential_state path). State machine:
-      AWAITING_SETUP -> blocked, LOCAL -> allow, CONFIGURED -> allow.
-    """
-    from wet_mcp.credential_state import (
-        CredentialState,
-        credentials_for_current_request,
-        get_current_sub,
-        get_setup_url,
-        get_state,
-    )
-
-    sub = get_current_sub()
-    if sub is not None:
-        creds = credentials_for_current_request()
-        if not creds:
-            return {
-                "error": "Credentials not configured",
-                "state": "awaiting_setup",
-                "sub": sub,
-                "instructions": (
-                    "Open the wet-mcp relay form (see the OAuth setup "
-                    "URL in your client) and submit at least one of "
-                    "JINA_AI_API_KEY / GEMINI_API_KEY / OPENAI_API_KEY "
-                    "/ COHERE_API_KEY for this user."
-                ),
-            }
-        # Credentials verified for this sub. They stay request-scoped:
-        # the cloud dispatch resolves the per-sub key per call via
-        # credential_state.api_key_for_model. Do NOT write them into
-        # os.environ (process-global -> cross-sub bleed).
-        return None
-
-    state = get_state()
-    if state == CredentialState.AWAITING_SETUP:
-        url = get_setup_url()
-        return {
-            "error": "Credentials not configured",
-            "state": "awaiting_setup",
-            "setup_url": url,
-            "instructions": (
-                "API keys required. Set one of "
-                "JINA_AI_API_KEY / GEMINI_API_KEY / OPENAI_API_KEY / "
-                "COHERE_API_KEY in the environment, or run wet-mcp in "
-                "HTTP mode (--http / MCP_TRANSPORT=http) to configure "
-                "via browser, or call config(action='setup_skip') to "
-                "opt into local-only mode."
-            ),
-        }
-    return None
 
 
 async def _warmup_searxng() -> None:
@@ -355,40 +305,6 @@ async def _lifespan_startup() -> asyncio.Task | None:
 
     logger.info("Starting WET MCP Server...")
 
-    # Non-blocking credential resolution (fast, <10ms)
-    from wet_mcp.credential_state import (
-        CredentialState,
-        get_state,
-        resolve_credential_state,
-        set_state,
-    )
-
-    resolve_credential_state()
-
-    # Stdio mode has no in-process credential form, so AWAITING_SETUP would
-    # block every tool call forever. Promote it to LOCAL so basic SearXNG
-    # search + local ONNX embed/rerank work with zero env. Tools that
-    # require specific upstream API creds (e.g. GDrive sync) still return
-    # a helpful runtime error if their env var is missing.
-    is_stdio = (
-        "--stdio" in sys.argv or os.environ.get("MCP_TRANSPORT") in (None, "", "stdio")
-    ) and not (
-        "--http" in sys.argv
-        or os.environ.get("MCP_TRANSPORT") == "http"
-        or os.environ.get("TRANSPORT_MODE") == "http"
-    )
-    if is_stdio and get_state() == CredentialState.AWAITING_SETUP:
-        logger.info(
-            "Stdio mode with no creds; running in LOCAL mode "
-            "(SearXNG + local ONNX embed/rerank, no cloud keys required)."
-        )
-        set_state(CredentialState.LOCAL)
-
-    # 1. Setup provider mode (sdk or local)
-    from wet_mcp.config import settings
-
-    mode = settings.setup_providers()
-
     # Warn about GitHub token for library docs discovery
     if not (os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN")):
         # Try to get token from gh CLI (GitHub CLI)
@@ -415,76 +331,47 @@ async def _lifespan_startup() -> asyncio.Task | None:
     if settings.auto_searxng_enabled() and not is_uvx_tool_venv():
         warmup_task = asyncio.create_task(_warmup_searxng())
 
-    # 2. Initialize web cache
+    # 2. Initialize the web cache (per-namespace files under ~/.wet/subs/)
     if settings.wet_cache:
-        cache_path = settings.get_cache_db_path()
-        cache_path.parent.mkdir(parents=True, exist_ok=True)
-        _web_cache = WebCache(cache_path)
-        logger.info("Web cache enabled")
+        _web_cache = _PerSubCache()
+        logger.info("Web cache enabled (per-sub under ~/.wet/subs/)")
 
     # 3. Initialize embedding backend (dual-backend: cloud or local)
-    _embedding_dims = settings.resolve_embedding_dims()
-    if _embedding_dims == 0:
-        _embedding_dims = _DEFAULT_EMBEDDING_DIMS
+    _embedding_dims = settings.embedding_dims or DEFAULT_EMBEDDING_DIMS
 
     async def _init_backends_task():
         try:
-            await _init_embedding_backend(mode)
-            await _init_reranker_backend(mode)
+            await _init_embedding_backend()
+            await _init_reranker_backend()
         except Exception as e:
             logger.error(f"Background backend init failed: {e}")
 
     _backend_init_task = _launch_background_task(_init_backends_task(), "init-backends")
 
-    # 5. Initialize docs DB (sqlite or cf-d1) via the backend factory, then run
-    #    Alembic migrations (auto-migrate-on-startup with backup-before-migrate
-    #    per spec §8). DocsDB._create_tables is still the bootstrap path for
-    #    fresh local DBs (CREATE TABLE IF NOT EXISTS); Alembic stamps the
-    #    baseline + applies forward migrations. The cf-d1 backend has no local
-    #    file, so the sqlite-only Alembic + warmup steps are skipped for it.
+    # 5. Initialize the docs DB (local SQLite under ~/.wet/), then run Alembic
+    #    migrations (auto-migrate-on-startup with backup-before-migrate).
+    #    DocsDB._create_tables is the bootstrap path for fresh DBs (CREATE
+    #    TABLE IF NOT EXISTS); Alembic stamps the baseline + applies forward
+    #    migrations.
     _docs_db = make_docs_db()
-    # The cf-d1 backend has no local file; Alembic + tier-1 warmup are
-    # sqlite-only. Gate on the same selector make_docs_db() uses (not isinstance)
-    # so the existing lifespan tests that patch DocsDB with a mock keep working.
-    _docs_backend = os.environ.get("DOCS_DB_BACKEND", settings.docs_db_backend)
-    if _docs_backend != "cf-d1":
-        try:
-            from wet_mcp.migrations import run_migrations_on_startup
+    try:
+        from wet_mcp.migrations import run_migrations_on_startup
 
-            run_migrations_on_startup(settings.get_db_path())
-        except Exception as e:  # pragma: no cover - never block startup
-            logger.warning(f"Migrations skipped: {e}")
+        run_migrations_on_startup(settings.get_db_path())
+    except Exception as e:  # pragma: no cover - never block startup
+        logger.warning(f"Migrations skipped: {e}")
 
-        # 5b. Tier 1 metadata warmup (Phase 2). Lazy chunk ingestion is
-        # triggered on first docs_query for an unseeded library.
-        try:
-            from wet_mcp.sources.tier1_warmup import maybe_warm
+    # 5b. Tier 1 metadata warmup (Phase 2). Lazy chunk ingestion is
+    # triggered on first docs_query for an unseeded library.
+    try:
+        from wet_mcp.sources.tier1_warmup import maybe_warm
 
-            await asyncio.to_thread(maybe_warm, _docs_db)
-        except Exception as e:  # pragma: no cover - never block startup
-            logger.warning(f"Tier 1 warmup skipped: {e}")
+        await asyncio.to_thread(maybe_warm, _docs_db)
+    except Exception as e:  # pragma: no cover - never block startup
+        logger.warning(f"Tier 1 warmup skipped: {e}")
 
-    # Start auto-sync via the active backend (XOR semantics):
-    # * SYNC_S3_BUCKET set -> S3 mode (operator deploy, Method 2/3 Docker).
-    #   The GDrive OAuth flow is skipped entirely.
-    # * No S3 bucket -> GDrive mode (Method 1 uvx, per-user Device Code).
-    from wet_mcp.sync import resolve_active_backend
-
-    active_backend = resolve_active_backend()
-    if active_backend == "s3":
-        logger.info(
-            f"Sync backend: s3 (bucket={settings.sync_s3_bucket}, "
-            f"prefix={settings.sync_s3_prefix})"
-        )
-        from wet_mcp.sync import start_s3_auto_sync
-
-        start_s3_auto_sync(_docs_db)
-    elif active_backend == "gdrive" and settings.google_drive_client_id:
-        logger.info("Sync backend: gdrive (Device Code OAuth via relay)")
-        from wet_mcp.sync import start_auto_sync
-
-        start_auto_sync(_docs_db)
-
+    # De-host: docs.db backup/sync is an OUT-OF-REPO rclone job (host cron /
+    # command) -- there is no in-process sync backend anymore.
     return warmup_task
 
 
@@ -511,20 +398,6 @@ async def _lifespan_shutdown(warmup_task: asyncio.Task | None) -> None:
         except (asyncio.CancelledError, Exception):
             pass
     _backend_init_task = None
-
-    # Stop auto-sync (whichever backend is active)
-    from wet_mcp.config import settings
-    from wet_mcp.sync import resolve_active_backend
-
-    active_backend = resolve_active_backend()
-    if active_backend == "s3":
-        from wet_mcp.sync import stop_s3_auto_sync
-
-        stop_s3_auto_sync()
-    elif active_backend == "gdrive" and settings.google_drive_client_id:
-        from wet_mcp.sync import stop_auto_sync
-
-        stop_auto_sync()
 
     # Close databases
     if _docs_db:
@@ -621,157 +494,123 @@ def _maybe_register_custom_rerank(local_model: str) -> None:
         logger.debug("Custom reranker registration skipped: {}", e)
 
 
-async def _init_embedding_backend(mode: str) -> None:
-    """Initialize the embedding backend based on credential state and config.
+async def _init_embedding_backend() -> None:
+    """Initialize the embedding backend from the per-task config cells.
 
-    - AWAITING_SETUP: skip init entirely (tools are blocked anyway)
-    - CONFIGURED: cloud only — no silent local fallback
-    - LOCAL (explicit skip): local only
+    Resolution (spec §4 — the cell owns the model, the host owns the key):
+
+    - ``[models.embed]`` cell configured (api_key present) -> cloud, no
+      silent local fallback: a broken host key must surface loudly, not
+      masquerade as a working local index.
+    - cell unconfigured and the local ONNX leg available -> local.
+    - neither -> logged unavailable; callers degrade to keyword-only.
     """
     global _embedding_dims
-    from wet_mcp.credential_state import CredentialState, get_state
     from wet_mcp.embedder import clear_backend, init_backend, no_local_embed_clause
+    from wet_mcp.runtime import cell_configured
 
-    cred_state = get_state()
-
-    if cred_state == CredentialState.AWAITING_SETUP:
-        logger.info("Embedding: skipped (credentials not configured)")
-        return
-
-    backend_type = settings.resolve_embedding_backend()
-
-    if backend_type == "unavailable":
-        logger.info(
-            "Embedding: unavailable (DISABLE_LOCAL_EMBED set + no cloud model configured)"
-        )
-        return
-
-    if cred_state == CredentialState.LOCAL or backend_type == "local":
-        if not settings.local_embed_available():
-            # Only reachable through the cred_state disjunct: whenever the
-            # local leg is out and no cloud chain exists, backend_type is
-            # already 'unavailable' and returned above. Building it anyway
-            # installed a singleton whose FIRST USE raises -- and, not being
-            # None, it also defeats the `is None` guard the background indexer
-            # uses to degrade loudly instead of dying (#1630).
-            logger.error(
-                "Embedding: local backend requested but unavailable "
-                f"({no_local_embed_clause()}); none initialised"
-            )
-            return
-        local_model = settings.resolve_local_embedding_model()
-        _maybe_register_custom_embed(local_model)
+    if cell_configured("embed"):
+        cell = model_cell("embed")
         try:
-            backend = await asyncio.to_thread(init_backend, "local", local_model)
+            backend = await asyncio.to_thread(init_backend, "cloud", cell.model)
             native_dims = await backend.check_available()
             if native_dims > 0:
                 if _embedding_dims == 0:
-                    _embedding_dims = _DEFAULT_EMBEDDING_DIMS
+                    _embedding_dims = DEFAULT_EMBEDDING_DIMS
                 logger.info(
-                    f"Embedding: local {local_model} "
-                    f"(native={native_dims}, stored={_embedding_dims})"
-                )
-            else:
-                clear_backend()
-                logger.error("Local embedding model not available")
-        except Exception as e:
-            clear_backend()
-            logger.error(f"Local embedding init failed: {e}")
-        return
-
-    # CONFIGURED + cloud backend -- no local fallback.
-    # Try each model in the chain (litellm fallback order) until one validates.
-    for candidate in settings.embedding_chain():
-        try:
-            backend = await asyncio.to_thread(init_backend, "cloud", candidate)
-            native_dims = await backend.check_available()
-            if native_dims > 0:
-                if _embedding_dims == 0:
-                    _embedding_dims = _DEFAULT_EMBEDDING_DIMS
-                logger.info(
-                    f"Embedding: {candidate} "
+                    f"Embedding: {cell.model} via {cell.base_url} "
                     f"(native={native_dims}, stored={_embedding_dims})"
                 )
                 return
             clear_backend()
+            logger.error(
+                f"Cloud embedding {cell.model} check returned no usable dims"
+            )
         except Exception as e:
             clear_backend()
-            logger.warning(f"Embedding model {candidate} not available: {e}")
-
-    logger.error("Cloud embedding not available and local fallback is disabled")
-
-
-async def _init_reranker_backend(mode: str) -> None:
-    """Initialize the reranker backend based on credential state and config.
-
-    - AWAITING_SETUP: skip init entirely (tools are blocked anyway)
-    - CONFIGURED: cloud only — no silent local fallback
-    - LOCAL (explicit skip): local only
-    """
-    from wet_mcp.credential_state import CredentialState, get_state
-
-    cred_state = get_state()
-
-    if cred_state == CredentialState.AWAITING_SETUP:
-        logger.info("Reranker: skipped (credentials not configured)")
+            logger.error(f"Cloud embedding init failed ({cell.model}): {e}")
         return
 
-    rerank_backend_type = settings.resolve_rerank_backend()
+    if not settings.local_embed_available():
+        logger.error(
+            "Embedding: unavailable ([models.embed] cell has no api_key and "
+            f"the local ONNX leg is out: {no_local_embed_clause()}); "
+            "embedding degrades to keyword-only"
+        )
+        return
 
-    if not rerank_backend_type:
+    local_model = settings.resolve_local_embedding_model()
+    _maybe_register_custom_embed(local_model)
+    try:
+        backend = await asyncio.to_thread(init_backend, "local", local_model)
+        native_dims = await backend.check_available()
+        if native_dims > 0:
+            if _embedding_dims == 0:
+                _embedding_dims = DEFAULT_EMBEDDING_DIMS
+            logger.info(
+                f"Embedding: local {local_model} "
+                f"(native={native_dims}, stored={_embedding_dims})"
+            )
+        else:
+            clear_backend()
+            logger.error("Local embedding model not available")
+    except Exception as e:
+        clear_backend()
+        logger.error(f"Local embedding init failed: {e}")
+
+
+async def _init_reranker_backend() -> None:
+    """Initialize the reranker backend from the per-task config cells.
+
+    Same resolution ladder as :func:`_init_embedding_backend` with one extra
+    branch: ``RERANK_ENABLED=false`` disables reranking entirely (empty
+    backend; searches keep source order).
+    """
+    from wet_mcp.reranker import clear_reranker, init_reranker
+    from wet_mcp.runtime import cell_configured
+
+    if not settings.rerank_enabled:
         logger.info("Reranking disabled")
         return
 
-    if rerank_backend_type == "unavailable":
-        logger.info(
-            "Reranker: unavailable (DISABLE_LOCAL_RERANK set + no cloud model configured)"
+    if cell_configured("rerank"):
+        cell = model_cell("rerank")
+        try:
+            reranker = await asyncio.to_thread(init_reranker, "cloud", cell.model)
+            # CloudReranker is async (hull-core httpx client); LocalReranker
+            # is sync ONNX and needs a worker thread.
+            available = await reranker.check_available()
+            if available:
+                logger.info(f"Reranker: {cell.model} via {cell.base_url}")
+                return
+            clear_reranker()
+            logger.error(f"Cloud reranker {cell.model} check failed")
+        except Exception as e:
+            clear_reranker()
+            logger.error(f"Cloud reranker init failed ({cell.model}): {e}")
+        return
+
+    if not settings.local_rerank_available():
+        logger.error(
+            "Reranker: unavailable ([models.rerank] cell has no api_key and "
+            "the local ONNX leg is out — DISABLE_LOCAL_RERANK set, or no "
+            "fastretrieval installed in this image); searches keep source order"
         )
         return
 
-    from wet_mcp.reranker import clear_reranker, init_reranker
-
-    if cred_state == CredentialState.LOCAL or rerank_backend_type == "local":
-        if not settings.local_rerank_available():
-            # Same landmine as the embedding path above: an installed-but-
-            # unusable singleton reads as "reranking is configured" everywhere
-            # downstream, and the local reranker swallows its own load
-            # failure, so every search silently returns unranked order.
-            logger.error(
-                "Reranker: local backend requested but unavailable "
-                "(DISABLE_LOCAL_RERANK set, or no fastretrieval installed in "
-                "this image); none initialised"
-            )
-            return
-        local_model = settings.resolve_local_rerank_model()
-        _maybe_register_custom_rerank(local_model)
-        try:
-            reranker = await asyncio.to_thread(init_reranker, "local", local_model)
-            available = await asyncio.to_thread(reranker.check_available)
-            if available:
-                logger.info(f"Reranker: local {local_model}")
-            else:
-                clear_reranker()
-                logger.error("Local reranker not available")
-        except Exception as e:
+    local_model = settings.resolve_local_rerank_model()
+    _maybe_register_custom_rerank(local_model)
+    try:
+        reranker = await asyncio.to_thread(init_reranker, "local", local_model)
+        available = await asyncio.to_thread(reranker.check_available)
+        if available:
+            logger.info(f"Reranker: local {local_model}")
+        else:
             clear_reranker()
-            logger.error(f"Local reranker init failed: {e}")
-        return
-
-    # CONFIGURED + cloud backend -- no local fallback.
-    # Try each model in the chain (litellm fallback order) until one validates.
-    for model in settings.rerank_chain():
-        try:
-            reranker = await asyncio.to_thread(init_reranker, "cloud", model)
-            available = await asyncio.to_thread(reranker.check_available)
-            if available:
-                logger.info(f"Reranker: {model} (cloud)")
-                return
-            clear_reranker()
-        except Exception as e:
-            clear_reranker()
-            logger.warning(f"Cloud reranker {model} not available: {e}")
-
-    logger.error("Cloud reranker not available and local fallback is disabled")
+            logger.error("Local reranker not available")
+    except Exception as e:
+        clear_reranker()
+        logger.error(f"Local reranker init failed: {e}")
 
 
 # --- Helpers ---
@@ -813,7 +652,7 @@ async def _embed(text: str, is_query: bool = False) -> list[float] | None:
         # semantic search behind a keyword-only fallback.
         logger.error(
             f"Embedding permanently failing: {e}. "
-            "Check EMBEDDING_MODELS and the provider API key."
+            "Check the [models.embed] cell in ~/.wet/config.toml."
         )
         raise
 
@@ -843,7 +682,7 @@ async def _embed_batch(texts: list[str]) -> list[list[float]] | None:
         # as a working semantic index.
         logger.error(
             f"Batch embedding permanently failing: {e}. "
-            "Check EMBEDDING_MODELS and the provider API key."
+            "Check the [models.embed] cell in ~/.wet/config.toml."
         )
         raise
 
@@ -859,7 +698,10 @@ async def _rerank_results(
     """
     await _wait_for_backend_init()
 
-    from wet_mcp.reranker import resolve_rerank_backend_for_request
+    from wet_mcp.reranker import (
+        CloudReranker,
+        resolve_rerank_backend_for_request,
+    )
 
     reranker = resolve_rerank_backend_for_request()
     if not reranker or len(results) < top_n:
@@ -867,7 +709,10 @@ async def _rerank_results(
 
     try:
         documents = [r["content"] for r in results]
-        ranked = await asyncio.to_thread(reranker.rerank, query, documents, top_n)
+        if isinstance(reranker, CloudReranker):
+            ranked = await reranker.rerank(query, documents, top_n)
+        else:
+            ranked = await asyncio.to_thread(reranker.rerank, query, documents, top_n)
         if ranked:
             reranked = []
             for idx, score in ranked:
@@ -916,14 +761,6 @@ from importlib.metadata import version as _pkgver  # noqa: E402
 
 mcp._mcp_server.version = _pkgver("wet-mcp")
 
-# Register the standard `config__open_relay` MCP tool so an LLM can re-trigger
-# the relay form when the server is reachable over HTTP. Helper lives in
-# mcp-core >=1.13.0b4; signature: (mcp, server_name, public_url). Pass
-# ``PUBLIC_URL`` (or ``None`` in stdio mode -> tool returns
-# ``status: 'stdio_unsupported'``).
-from mcp_core.relay.tool_helpers import register_open_relay_tool  # noqa: E402
-
-register_open_relay_tool(mcp, "wet-mcp", os.environ.get("PUBLIC_URL"))
 
 # Grace period (seconds) given to a cancelled task to clean up resources
 # (e.g. close browser tabs) before we abandon it entirely.
@@ -1128,11 +965,11 @@ async def _with_timeout(coro, action: str) -> Any:
 
 
 async def _run_configured_search(*, timeout: float | None = None, **kwargs: Any) -> str:
-    """Run the subject's chain, starting SearXNG only for local public use."""
+    """Run the configured backend chain, auto-starting local SearXNG."""
     searxng_url = None
     if (
-        credential_state.get_current_sub() is None
-        and not os.getenv("PUBLIC_URL")
+        settings.auto_searxng_enabled()
+        and not is_uvx_tool_venv()
         and "searxng" in search_backends.chain_backend_names()
     ):
         try:
@@ -1207,10 +1044,6 @@ async def search(  # noqa: PLR0913
 
     Use `help` tool with tool_name="search" for full parameter documentation.
     """
-    blocked = _require_credentials()
-    if blocked:
-        return blocked
-
     # Stdio uvx tool venv lacks pip, so the web-core SearXNG runner cannot
     # install/start a local SearXNG instance, and its hardcoded
     # ``localhost:8080`` fallback is wrong for our pinned Docker port.
@@ -1258,7 +1091,6 @@ async def search(  # noqa: PLR0913
                 }
             region_normalized = region_normalized.upper() or None
             cache_params = {
-                "subject": credential_state.get_current_sub(),
                 "query": normalized_query,
                 "categories": categories,
                 "max_results": max_results,
@@ -1271,7 +1103,7 @@ async def search(  # noqa: PLR0913
             }
             if _web_cache:
                 cache_hit = await asyncio.to_thread(
-                    _web_cache.get_with_age, "search", cache_params
+                    _web_cache.get_with_age, "search", cache_params, current_sub()
                 )
                 if cache_hit:
                     cached_content, cache_age = cache_hit
@@ -1291,7 +1123,7 @@ async def search(  # noqa: PLR0913
                 # Stale-While-Revalidate: serve stale if within 2x TTL window
                 try:
                     stale_hit = await asyncio.to_thread(
-                        _web_cache.get_stale_with_age, "search", cache_params
+                        _web_cache.get_stale_with_age, "search", cache_params, current_sub()
                     )
                 except Exception:
                     stale_hit = None
@@ -1392,7 +1224,7 @@ async def search(  # noqa: PLR0913
                     return _payload(raw)
                 if _web_cache:
                     await asyncio.to_thread(
-                        _web_cache.set, "search", cache_params, raw, ttl
+                        _web_cache.set, "search", cache_params, raw, ttl, current_sub()
                     )
                 return _payload(raw)
 
@@ -1480,7 +1312,7 @@ async def search(  # noqa: PLR0913
             result = json.dumps(data, ensure_ascii=False, indent=2)
             if _web_cache:
                 await asyncio.to_thread(
-                    _web_cache.set, "search", cache_params, result, ttl
+                    _web_cache.set, "search", cache_params, result, ttl, current_sub()
                 )
             return _payload(result)
 
@@ -1490,7 +1322,6 @@ async def search(  # noqa: PLR0913
                     "error": 'Error: query is required for research action. Example: search(action="research", query="transformer attention mechanism")'
                 }
             cache_params = {
-                "subject": credential_state.get_current_sub(),
                 "query": query,
                 "max_results": max_results,
                 "time_range": time_range,
@@ -1501,7 +1332,7 @@ async def search(  # noqa: PLR0913
             }
             if _web_cache:
                 cached = await asyncio.to_thread(
-                    _web_cache.get, "research", cache_params
+                    _web_cache.get, "research", cache_params, current_sub()
                 )
                 if cached:
                     return _payload(cached)
@@ -1518,7 +1349,7 @@ async def search(  # noqa: PLR0913
             )
             if _web_cache and not result.startswith("Error"):
                 await asyncio.to_thread(
-                    _web_cache.set, "research", cache_params, result
+                    _web_cache.set, "research", cache_params, result, current_sub()
                 )
             return _payload(result)
 
@@ -1782,10 +1613,6 @@ async def extract(  # noqa: PLR0913
     _MAX_CRAWL_PAGES = 100
     _MAX_DEPTH = 5
 
-    blocked = _require_credentials()
-    if blocked:
-        return blocked
-
     max_pages = min(max_pages, _MAX_CRAWL_PAGES)
     depth = min(depth, _MAX_DEPTH)
 
@@ -1799,7 +1626,7 @@ async def extract(  # noqa: PLR0913
             cache_params = {"urls": sorted(urls), "format": format, "stealth": stealth}
             if _web_cache:
                 cached = await asyncio.to_thread(
-                    _web_cache.get, "extract", cache_params
+                    _web_cache.get, "extract", cache_params, current_sub()
                 )
                 if cached:
                     return _payload(cached)
@@ -1808,7 +1635,7 @@ async def extract(  # noqa: PLR0913
                 "extract",
             )
             if _web_cache and not result.startswith("Error"):
-                await asyncio.to_thread(_web_cache.set, "extract", cache_params, result)
+                await asyncio.to_thread(_web_cache.set, "extract", cache_params, result, current_sub())
             return _payload(result)
 
         case "batch":
@@ -1837,7 +1664,7 @@ async def extract(  # noqa: PLR0913
                 "max_pages": max_pages,
             }
             if _web_cache:
-                cached = await asyncio.to_thread(_web_cache.get, "crawl", cache_params)
+                cached = await asyncio.to_thread(_web_cache.get, "crawl", cache_params, current_sub())
                 if cached:
                     return _payload(cached)
             result = await _with_timeout(
@@ -1851,7 +1678,7 @@ async def extract(  # noqa: PLR0913
                 "crawl",
             )
             if _web_cache and not result.startswith("Error"):
-                await asyncio.to_thread(_web_cache.set, "crawl", cache_params, result)
+                await asyncio.to_thread(_web_cache.set, "crawl", cache_params, result, current_sub())
             return _payload(result)
 
         case "map":
@@ -1866,7 +1693,7 @@ async def extract(  # noqa: PLR0913
                 "max_pages": max_pages,
             }
             if _web_cache:
-                cached = await asyncio.to_thread(_web_cache.get, "map", cache_params)
+                cached = await asyncio.to_thread(_web_cache.get, "map", cache_params, current_sub())
                 if cached:
                     return _payload(cached)
             result = await _with_timeout(
@@ -1874,7 +1701,7 @@ async def extract(  # noqa: PLR0913
                 "map",
             )
             if _web_cache and not result.startswith("Error"):
-                await asyncio.to_thread(_web_cache.set, "map", cache_params, result)
+                await asyncio.to_thread(_web_cache.set, "map", cache_params, result, current_sub())
             return _payload(result)
 
         case "convert":
@@ -1989,10 +1816,10 @@ async def extract(  # noqa: PLR0913
                         diff_items.append({"url": target_url, "error": item["error"]})
                         continue
                     await asyncio.to_thread(
-                        _web_cache.record_snapshot, target_url, item.get("markdown", "")
+                        _web_cache.record_snapshot, target_url, item.get("markdown", ""), current_sub()
                     )
                 snapshots = await asyncio.to_thread(
-                    _web_cache.latest_snapshots, target_url, 2
+                    _web_cache.latest_snapshots, target_url, 2, current_sub()
                 )
                 diff_items.append(_build_diff_result(target_url, snapshots))
             return _payload(diff_items[0] if len(diff_items) == 1 else diff_items)
@@ -2064,10 +1891,6 @@ async def media(  # noqa: PLR0913
 
     Use `help` tool with tool_name="media" for full documentation.
     """
-    blocked = _require_credentials()
-    if blocked:
-        return blocked
-
     from wet_mcp.sources.crawler import download_media
 
     match action:
@@ -2164,7 +1987,7 @@ async def help(tool_name: str = "search") -> str:
     - Need to FIND information? Use `search` (returns result listings with URLs)
     - Need to READ a page? Use `extract` (returns full page content from a URL)
     - Need media files? Use `media` (discover, download images/videos/audio)
-    - Need server settings? Use `config` (status, cache, settings, warmup, sync setup)
+    - Need server settings? Use `config` (status, cache, settings, warmup)
     """
     allowed_tools = {"search", "extract", "media", "config"}
     if tool_name not in allowed_tools:
@@ -2188,15 +2011,11 @@ async def help(tool_name: str = "search") -> str:
 
 
 def _active_docs_backend() -> str:
-    """The docs-store selector, resolved exactly as ``make_docs_db`` resolves it.
+    """The docs-store backend name, mirrored with ``make_docs_db``.
 
-    Deliberately a byte-for-byte mirror of the expression in ``make_docs_db``
-    (env first, Settings singleton as the default; no strip/lower). Normalizing
-    here would let ``config(action="status")`` report ``cf-d1`` for a value that
-    ``make_docs_db`` fell through to SQLite on -- a status line that disagrees
-    with the object actually serving requests is the bug this reports on.
+    De-host there is exactly one backend: the local SQLite store.
     """
-    return os.environ.get("DOCS_DB_BACKEND", settings.docs_db_backend)
+    return "sqlite"
 
 
 def _backend_model_identity(backend: Any) -> str | None:
@@ -2231,22 +2050,25 @@ async def _handle_config_status() -> dict[str, Any]:
     embed_backend = resolve_embed_backend_for_request()
     reranker = resolve_rerank_backend_for_request()
 
-    # The docs store is either a local SQLite file or Cloudflare D1 + Vectorize.
-    # On cf-d1 no local file is opened, so reporting settings.get_db_path()
-    # sends the operator to back up / inspect / copy a file that holds none of
-    # the served data. `path` is kept (readers keep their key) but goes null,
-    # and `backend` names which store the number in `docs_indexed` came from.
-    # No D1 identifier is exposed here: the tokens are secrets outright, and
-    # the account/database ids in MCP_D1_BASE_URL name the target a leaked
-    # token would open, while answering nothing the operator asked.
+    # The docs store is the local SQLite file under ~/.wet/. The path is
+    # host-owned info: status is read by the operator on the box, so the
+    # path is shown as-is and `backend` names where `docs_indexed` came from.
     docs_backend = _active_docs_backend()
-    from wet_mcp.sync import resolve_active_backend
+    from wet_mcp.runtime import hull_settings, sub_root
 
-    sync_backend = resolve_active_backend()
+    hs = hull_settings()
     status = {
+        "auth": {
+            "mode": hs.server.auth,
+            "host": hs.server.host,
+            "port": hs.server.port,
+            # The namespace of the caller reading this status (mode 3:
+            # per-user storage roots live under ~/.wet/subs/<namespace>/).
+            "namespace": current_sub(),
+        },
         "database": {
             "backend": docs_backend,
-            "path": (None if docs_backend == "cf-d1" else str(settings.get_db_path())),
+            "path": str(settings.get_db_path()),
             "docs_indexed": (_docs_db.stats() if _docs_db else {}),
             # docs_indexed alone cannot say why a number is what it is: zero
             # chunks reads the same whether nothing was ever indexed, an
@@ -2272,18 +2094,8 @@ async def _handle_config_status() -> dict[str, Any]:
         },
         "cache": {
             "enabled": settings.wet_cache,
-            "path": (str(settings.get_cache_db_path()) if settings.wet_cache else None),
-        },
-        "sync": {
-            "enabled": sync_backend != "disabled",
-            "provider": sync_backend,
-            "folder": settings.sync_folder,
-            "interval": settings.sync_interval,
-            "google_drive_client_id": (
-                bool(settings.google_drive_client_id)
-                if sync_backend == "gdrive"
-                else False
-            ),
+            # Per-caller cache file (mode-3 isolation): ~/.wet/subs/<ns>/cache.db
+            "path": (str(sub_root() / "cache.db") if settings.wet_cache else None),
         },
         "settings": {
             "log_level": settings.log_level,
@@ -2301,9 +2113,6 @@ def _handle_config_set(key: str | None, value: str | None) -> dict[str, Any]:
         "log_level",
         "tool_timeout",
         "wet_cache",
-        "sync_enabled",
-        "sync_folder",
-        "sync_interval",
         "wet_search_budget",
     }
     if key not in valid_keys:
@@ -2323,9 +2132,9 @@ def _handle_config_set(key: str | None, value: str | None) -> dict[str, Any]:
         settings.log_level = value.upper()
         logger.remove()
         logger.add(sys.stderr, level=settings.log_level)
-    elif key in ("tool_timeout", "sync_interval", "wet_search_budget"):
+    elif key in ("tool_timeout", "wet_search_budget"):
         setattr(settings, key, int(value))
-    elif key in ("wet_cache", "sync_enabled"):
+    elif key == "wet_cache":
         setattr(settings, key, value.lower() in ("true", "1", "yes"))
     else:
         setattr(settings, key, value)
@@ -2338,7 +2147,7 @@ def _handle_config_set(key: str | None, value: str | None) -> dict[str, Any]:
 
 async def _handle_config_cache_clear() -> dict[str, Any]:
     if _web_cache:
-        await asyncio.to_thread(_web_cache.clear)
+        await asyncio.to_thread(_web_cache.clear, None, current_sub())
         return {"status": "cache cleared"}
     return {"error": "Cache is not enabled"}
 
@@ -2373,113 +2182,10 @@ async def _handle_config_warmup() -> dict[str, Any]:
     return await run_warmup()
 
 
-async def _handle_config_setup_sync(remote_type: str | None) -> dict[str, Any]:
-    from wet_mcp.setup_tool import run_setup_sync
-
-    return await run_setup_sync(remote_type or "drive")
-
-
-def _handle_config_setup_status() -> dict[str, Any]:
-    from mcp_core.storage.per_plugin_store import PerPluginStore
-
-    from wet_mcp import credential_state as _cs
-
-    _saved = PerPluginStore(_cs.PLUGIN_NAME).load() or {}
-    _env_keys = [k for k in _cs.CLOUD_KEYS if os.environ.get(k)]
-    _store_keys = [k for k in _cs.CLOUD_KEYS if _saved.get(k)]
-    _providers = list(dict.fromkeys(_env_keys + _store_keys))
-    if _providers:
-        _derived_state = "configured"
-    elif _cs.get_state() == _cs.CredentialState.LOCAL:
-        _derived_state = "local"
-    else:
-        _derived_state = "awaiting_setup"
-    return {
-        "state": _derived_state,
-        "setup_url": _cs.get_setup_url(),
-        "cloud_keys_in_env": _env_keys,
-        "providers_configured": _providers,
-    }
-
-
-def _handle_config_setup_start(force: bool) -> dict[str, Any]:
-    from wet_mcp import credential_state as _cs
-
-    if _cs.get_state() == _cs.CredentialState.CONFIGURED and not force:
-        return {
-            "status": "already_configured",
-            "message": "Already configured. Use force=true to reconfigure.",
-        }
-    url = _cs.get_setup_url()
-    if url:
-        return {
-            "status": "setup_started",
-            "setup_url": url,
-            "message": "Open this URL to configure cloud provider keys.",
-        }
-    return {
-        "status": "stdio_unsupported",
-        "message": (
-            "Browser-based setup is HTTP-mode only. For stdio mode, set "
-            "cloud provider keys directly as env vars (JINA_AI_API_KEY, "
-            "GEMINI_API_KEY, OPENAI_API_KEY, COHERE_API_KEY, ...)."
-        ),
-    }
-
-
-def _handle_config_setup_skip() -> dict[str, Any]:
-    from mcp_core import set_local_mode
-
-    from wet_mcp.credential_state import CredentialState, set_state
-
-    set_local_mode("wet-mcp")
-    set_state(CredentialState.LOCAL)
-    return {
-        "status": "ok",
-        "message": "Local mode set. Relay will not trigger on restart.",
-    }
-
-
-def _handle_config_setup_reset() -> dict[str, Any]:
-    from wet_mcp.credential_state import reset_state
-
-    reset_state()
-    return {
-        "status": "ok",
-        "message": "Credentials cleared. Next tool call will offer setup.",
-    }
-
-
-async def _handle_config_setup_complete() -> dict[str, Any]:
-    from wet_mcp.credential_state import (
-        CredentialState,
-        resolve_credential_state,
-    )
-    from wet_mcp.credential_state import (
-        get_state as _get_state,
-    )
-
-    resolve_credential_state()
-    state = _get_state()
-    mode = settings.setup_providers()
-
-    # Re-init embedding + reranker if now configured
-    if state == CredentialState.CONFIGURED:
-        await _init_embedding_backend(mode)
-        await _init_reranker_backend(mode)
-
-    return {
-        "status": "ok",
-        "state": state.value,
-        "message": "Credential state refreshed.",
-    }
-
-
 @mcp.tool(
     description=(
         "Server config and management. Actions: "
-        "status|set|cache_clear|docs_reindex|warmup|setup_sync|"
-        "setup_status|setup_start|setup_skip|setup_reset|setup_complete. "
+        "status|set|cache_clear|docs_reindex|warmup. "
         "Use help tool with tool_name='config' for full docs."
     ),
     annotations=ToolAnnotations(
@@ -2502,15 +2208,13 @@ async def config(
     Actions:
     - status: Show current config and status
     - set: Update runtime setting (key + value required)
-    - cache_clear: Clear web cache
+    - cache_clear: Clear the caller's web cache
     - docs_reindex: Force re-index a library (key = library name)
-    - warmup: Pre-download models and run first-time setup
-    - setup_sync: Configure Google Drive sync (OAuth Device Code flow)
-    - setup_status: Show current credential state and configured keys
-    - setup_start: Trigger relay setup / show setup URL (force=true to reconfigure)
-    - setup_skip: Use local ONNX models (explicit opt-in, no cloud features)
-    - setup_reset: Clear all credentials and reset state
-    - setup_complete: Re-resolve credentials from environment
+    - warmup: Pre-download local models and run first-time setup
+
+    Provider/model configuration (per-task cells) and auth mode are
+    host-owned: edit ~/.wet/config.toml and restart — there is no
+    setup wizard anymore (de-host: host-only keys, no per-user credentials).
     """
     match action:
         case "status":
@@ -2528,24 +2232,6 @@ async def config(
         case "warmup":
             return await _handle_config_warmup()
 
-        case "setup_sync":
-            return await _handle_config_setup_sync(remote_type)
-
-        case "setup_status":
-            return _handle_config_setup_status()
-
-        case "setup_start":
-            return _handle_config_setup_start(force)
-
-        case "setup_skip":
-            return _handle_config_setup_skip()
-
-        case "setup_reset":
-            return _handle_config_setup_reset()
-
-        case "setup_complete":
-            return await _handle_config_setup_complete()
-
         case _:
             import difflib
 
@@ -2553,12 +2239,6 @@ async def config(
                 "cache_clear",
                 "docs_reindex",
                 "set",
-                "setup_complete",
-                "setup_reset",
-                "setup_skip",
-                "setup_start",
-                "setup_status",
-                "setup_sync",
                 "status",
                 "warmup",
             ]
@@ -2976,7 +2656,7 @@ async def _background_index_and_search(
         embeddings = None
         # Set when the chunks are about to be stored without vectors. The log
         # lines below never leave the container -- which is the whole reason
-        # #1630 needed a D1 query to diagnose -- so the reason is recorded on
+        # Diagnosing a silent empty index needs the failure reason on disk -- so it is recorded on
         # the version too, where `config(action="status")` and the docs query
         # path can both read it back.
         keyword_only_reason: str | None = None
@@ -3421,146 +3101,103 @@ async def _do_immediate_fallback_search(
     return fallback_data
 
 
-async def _per_request_sub_scope(
-    claims: dict,
-    next_,
-) -> None:
-    """auth_scope middleware: pin the current request's JWT ``sub`` to
-    a contextvar so per-tool-call handlers can resolve per-user creds.
+def build_http_app(settings=None):
+    """Build the authenticated HTTP MCP app (Starlette), no port bind.
 
-    Invoked by mcp-core's BearerMCPApp AFTER JWT verification, BEFORE the
-    inner ASGI MCP handler runs. The ``next_()`` coroutine dispatches the
-    actual MCP request inside the same asyncio task, so the contextvar
-    set here is visible to ``_require_credentials`` and friends, and is
-    reset on the way out so a stale sub does not leak between requests
-    (a critical guarantee for multi-user safety).
+    Composition (de-host): the MCP SDK's ``streamable_http_app()`` carries
+    only the session-manager lifespan, so this outer Starlette app runs BOTH
+    lifespans — wet's own (SearXNG warmup, cache/docs-db init, backend init)
+    and the session manager's — via an AsyncExitStack. :class:`HullAuthMiddleware`
+    (pure ASGI) authenticates every request BEFORE the MCP handler and binds
+    the identity to a contextvar that tools read with
+    :func:`hull_core.auth.context.current_user`.
     """
-    from wet_mcp.credential_state import _current_sub
+    from contextlib import AsyncExitStack, asynccontextmanager
 
-    sub = claims.get("sub")
-    if not isinstance(sub, str) or not sub.strip():
-        raise RuntimeError("multi-user mode: authenticated subject required")
-    token = _current_sub.set(sub)
+    from hull_core.auth.asgi import HullAuthMiddleware
+    from starlette.applications import Starlette
+    from starlette.routing import Mount
+
+    from wet_mcp.runtime import build_authenticator
+
+    inner = mcp.streamable_http_app()
+    authenticator = build_authenticator(settings)
+
+    @asynccontextmanager
+    async def _combined_lifespan(app):  # noqa: ANN001, ANN202
+        async with AsyncExitStack() as stack:
+            await stack.enter_async_context(_lifespan(mcp))
+            await stack.enter_async_context(inner.router.lifespan_context(inner))
+            yield
+
+    app = HullAuthMiddleware(inner, authenticator)
+    return Starlette(lifespan=_combined_lifespan, routes=[Mount("/", app=app)])
+
+
+def _is_loopback_host(host: str) -> bool:
+    if host in ("localhost", "::1", "[::1]"):
+        return True
     try:
-        await next_()
-    finally:
-        _current_sub.reset(token)
+        return int(socket.inet_aton(host).hex(), 16) & 0xFF000000 == 0x7F000000
+    except OSError:
+        return False
 
 
-async def run_http_server(port: int = 0) -> None:
-    """Run wet-mcp as HTTP server. Local single-user (default) or remote
-    multi-user (when ``PUBLIC_URL`` env set).
+class ServerConfigError(ValueError):
+    """Invalid server start configuration."""
 
-    Local mode binds 127.0.0.1 on an auto-picked port with a single shared
-    ``~/.wet-mcp/config.json`` (PerPluginStore); ``MCP_HOST`` and
-    ``MCP_PORT`` override that bind when the operator sets them. Remote
-    multi-user mode binds 0.0.0.0:8080, requires ``MCP_DCR_SERVER_SECRET``
-    as proof of intentional multi-user deployment, and scopes credentials
-    per JWT ``sub`` (see ``credential_state.store_for_sub`` and the
-    :func:`_per_request_sub_scope` ``auth_scope`` middleware).
+
+def run_server_blocking(
+    host: str | None = None,
+    port: int | None = None,
+    settings=None,
+) -> None:
+    """Blocking entry point: acquire the lifecycle lock, serve until stopped.
+
+    The ONLY way wet-mcp runs (spec §3): one HTTP process, MCP endpoint at
+    ``http://host:port/mcp``, auth per ``~/.wet/config.toml`` ([server]
+    auth = no-auth | token | multi). In no-auth mode a non-loopback bind is
+    refused — an unauthenticated listener must never leave localhost.
     """
-    from mcp_core.transport.local_server import run_http_server as _run_http
+    import uvicorn
 
-    from wet_mcp.credential_state import save_credentials, wire_gdrive_callbacks
-    from wet_mcp.relay_schema import RELAY_SCHEMA
+    from wet_mcp.runtime import hull_settings
 
-    public_url = os.environ.get("PUBLIC_URL")
-    if public_url:
-        if not os.environ.get("MCP_DCR_SERVER_SECRET"):
-            raise SystemExit(
-                "wet-mcp refuses to start: PUBLIC_URL set but "
-                "MCP_DCR_SERVER_SECRET missing. Multi-user remote mode "
-                "requires the DCR secret as proof of intentional multi-user "
-                "deployment (prevents accidental single-user credential leak)."
-            )
-        host = os.environ.get("MCP_HOST", "0.0.0.0")  # nosec B104
-        port = int(os.environ.get("MCP_PORT", "8080"))
-    else:
-        # Single-user mode honours MCP_HOST / MCP_PORT too, but only when the
-        # operator sets them; unset keeps loopback + auto-port so the desktop
-        # flow (browser setup form opened on this same machine) is untouched.
-        # Without this, wet-mcp deployed as an HTTP service in a container is
-        # unreachable from sibling containers: it binds loopback on a port
-        # picked at random, so no published port maps to it -- and the `http`
-        # Docker target's own MCP_PORT=8080 / EXPOSE 8080 were dead letters.
-        # int() is left unguarded, as in the multi-user branch above: a typo'd
-        # MCP_PORT must abort startup rather than silently degrade back to a
-        # random port the operator never published.
-        host = os.environ.get("MCP_HOST", "127.0.0.1")
-        port_env = os.environ.get("MCP_PORT")
-        if port_env is not None:
-            port = int(port_env)
-        if host not in ("127.0.0.1", "localhost", "::1"):
-            # Single-user mode keeps ONE credential set for the whole server,
-            # so reaching the port is enough to use it. Warn rather than
-            # refuse: the operator asked for this bind explicitly, and the
-            # reachability may already be fenced off (compose network, etc).
-            logger.warning(
-                f"MCP_HOST={host} binds wet-mcp beyond loopback while in "
-                "single-user mode: anything that can reach this port shares "
-                "the one credential set stored for this server. Set PUBLIC_URL "
-                "(with MCP_DCR_SERVER_SECRET) to scope credentials per user."
-            )
+    hs = hull_settings()
+    bind_host = host or hs.server.host
+    bind_port = port or hs.server.port
 
-    # MCP_AUTH_DISABLE=1 skips Bearer JWT verification on /mcp -- for
-    # deployments behind an external auth boundary (reverse proxy / API
-    # gateway). See mcp-core BearerMCPApp.auth_disabled (>=1.15.0-beta.3).
-    auth_disabled = os.environ.get("MCP_AUTH_DISABLE") == "1"
+    if hs.server.auth == "no-auth" and not _is_loopback_host(bind_host):
+        raise ServerConfigError(
+            f"auth = 'no-auth' only permits loopback binds, refusing host "
+            f"{bind_host!r} (set [server] auth to 'token' or 'multi' in "
+            "~/.wet/config.toml for a shared listener)"
+        )
 
-    # Only attach the per-request sub scope when running in multi-user
-    # remote mode (PUBLIC_URL set). Single-user / local HTTP keeps the
-    # legacy env-driven credential path so existing single-user setups
-    # are not perturbed.
-    auth_scope = _per_request_sub_scope if public_url else None
+    from hull_core.lifecycle.lock import LifecycleLock
 
-    await _run_http(
-        mcp,  # ty: ignore[invalid-argument-type]
-        server_name="wet-mcp",
-        relay_schema=RELAY_SCHEMA,
-        host=host,
-        port=port,
-        on_credentials_saved=save_credentials,
-        # 2-arg hook: receive BOTH mark_setup_complete and mark_setup_failed
-        # so GDrive device code failures (Google invalid_grant / expired /
-        # denied) propagate to the browser form instead of leaving it
-        # stuck on "Waiting for authorization..." forever.
-        setup_complete_hook=wire_gdrive_callbacks,
-        auth_scope=auth_scope,
-        auth_disabled=auth_disabled,
-        stable_sub_enabled=True,
-    )
+    lock = LifecycleLock("wet", bind_port)
+    with lock:
+        app = build_http_app(hs)
+        logger.info(
+            f"wet-mcp MCP endpoint: http://{bind_host}:{bind_port}/mcp "
+            f"(auth mode: {hs.server.auth})"
+        )
+        uvicorn.run(app, host=bind_host, port=bind_port, log_level="info")
 
 
 def main() -> None:
-    """Entry point: stdio by default, ``--http`` (or env) opts into HTTP.
+    """Blocking server entry (used by `wet server start` and `python -m wet-mcp`).
 
-    Stdio mode (default): runs FastMCP over stdin/stdout for direct MCP
-    client integration (Claude Code, Cursor, VS Code Copilot, ...).
-    Stdio reads credentials from env vars only; wet-mcp's basic SearXNG
-    search works with zero env, while tools that require upstream API
-    keys (e.g. Google Drive sync) return a helpful error if their env
-    vars are missing -- no boot-time exit.
-
-    HTTP mode: opt-in via ``--http`` flag, ``MCP_TRANSPORT=http``, or
-    ``TRANSPORT_MODE=http``. HTTP is always multi-user-capable: setting
-    ``PUBLIC_URL`` (with ``MCP_DCR_SERVER_SECRET`` for proof of intent)
-    binds 0.0.0.0:8080 and scopes credentials per JWT ``sub``;
-    otherwise it binds 127.0.0.1 for single-user local browser setup.
-
-    See ``~/projects/.superpower/mcp-core/specs/2026-05-01-stdio-pure-http-multiuser.md``.
+    De-host: there is no stdio spawn mode and no ``--http`` flag anymore —
+    the server is always the HTTP MCP endpoint. Bind host/port come from
+    ``~/.wet/config.toml`` ([server] host/port), overridable via
+    WET_HOST / WET_PORT env for container deployments.
     """
-    http_requested = (
-        "--http" in sys.argv
-        or os.environ.get("MCP_TRANSPORT") == "http"
-        or os.environ.get("TRANSPORT_MODE") == "http"
-    )
-
-    if http_requested:
-        asyncio.run(run_http_server())
-        return
-
-    # Default: stdio. No bridge layer, no daemon discovery.
-    mcp.run(transport="stdio")
+    host = os.environ.get("WET_HOST") or None
+    port_env = os.environ.get("WET_PORT")
+    port = int(port_env) if port_env else None
+    run_server_blocking(host=host, port=port)
 
 
 if __name__ == "__main__":  # pragma: no cover
