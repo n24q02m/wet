@@ -49,10 +49,7 @@ def new_chunk_id() -> str:
 
     Chunk identity belongs to the DB layer, not to the caller: the chunkers in
     wet_mcp.sources.docs emit content only, and server._background_index_and_search
-    hands their output to add_chunks untouched. Both backends call this so a
-    chunk written to D1 and the same chunk written to SQLite are shaped alike --
-    db_cf.DocsDBCfBackend used to read c["id"] instead, which the chunker never
-    supplies (issue #1618).
+    hands their output to add_chunks untouched.
     """
     return uuid.uuid4().hex[:12]
 
