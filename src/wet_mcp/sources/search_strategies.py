@@ -135,12 +135,12 @@ async def find_similar(
     keywords = await _extract_keywords(content, title)
 
     # Step 3: Search with domain exclusion
-    from wet_mcp.credential_state import get_current_sub
+    from wet_mcp.runtime import DEFAULT_NAMESPACE, current_sub
     from wet_mcp.sources.search_backends import chain_backend_names, run_search_chain
 
     if (
         not searxng_url
-        and get_current_sub() is None
+        and current_sub() == DEFAULT_NAMESPACE
         and not os.getenv("PUBLIC_URL")
         and "searxng" in chain_backend_names()
     ):

@@ -13,19 +13,29 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 from typing import Any
 
 from loguru import logger
 
-from wet_mcp.credential_state import LLM_PROVIDER_KEYS
 from wet_mcp.sources.search_backends import run_search_chain
 
-# LLM-provider key env names, in spec-section-5.6 fallback priority. The
-# canonical list now lives in ``credential_state.LLM_PROVIDER_KEYS`` so the
-# availability gate is single-sourced (it previously omitted ANTHROPIC even
-# though dispatch is litellm passthrough, which supports anthropic/*).
-# Aliased here for the tests that key off ``ao._PROVIDER_KEYS``.
-_PROVIDER_KEYS = LLM_PROVIDER_KEYS
+# LLM-provider key env names, in spec-section-5.6 fallback priority. Checked
+# against host-level ``os.environ`` only: per-sub credential buckets were
+# removed in the 2026-09 de-host (keys are host-only), so every mode sees the
+# same host-configured provider set. GOOGLE_API_KEY is the GEMINI alias;
+# ANTHROPIC and XAI round out the cloud chat providers the setup form offers
+# (the list previously omitted ANTHROPIC). Aliased here for the tests that
+# key off ``ao._PROVIDER_KEYS``.
+_PROVIDER_KEYS = (
+    "GEMINI_API_KEY",
+    "GOOGLE_API_KEY",
+    "OPENAI_API_KEY",
+    "OPENROUTER_API_KEY",
+    "ANTHROPIC_API_KEY",
+    "XAI_API_KEY",
+    "GOOGLE_VERTEX_EXPRESS_API_KEY",
+)
 
 _DEFAULT_MAX_URLS = 5
 _HARD_MAX_URLS = 20
@@ -39,15 +49,15 @@ _EXTRACT_CONCURRENCY = 3
 def detect_llm_provider() -> str | None:
     """Return the first configured provider key name, or ``None``.
 
-    Sub-aware (delegates to ``credential_state.detect_llm_provider_key``): in
-    HTTP multi-user mode it reads the request's per-sub credential bucket so
-    keys that are never in ``os.environ`` are seen; in stdio / single-user it
-    reads ``os.environ`` (incl. the GOOGLE->GEMINI alias). ``None`` means the
-    orchestrator should bail out with a structured error rather than try.
+    Reads host-level ``os.environ`` only (order: ``_PROVIDER_KEYS`` fallback
+    priority, incl. the GOOGLE->GEMINI alias). Per-sub credential buckets were
+    removed in the 2026-09 de-host. ``None`` means the orchestrator should
+    bail out with a structured error rather than try.
     """
-    from wet_mcp.credential_state import detect_llm_provider_key
-
-    return detect_llm_provider_key()
+    for key in _PROVIDER_KEYS:
+        if os.getenv(key):
+            return key
+    return None
 
 
 def _no_provider_error() -> str:
