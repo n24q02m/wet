@@ -1,8 +1,41 @@
-"""Tests for setup_tool module -- warmup and setup_sync as MCP-callable functions."""
+"""Tests for setup_tool module -- warmup as an MCP-callable function.
+
+De-host: the GDrive ``setup_sync`` flow and the ``setup_status`` /
+``setup_start`` / ``setup_reset`` config actions are gone (provider cells
+are host-owned in ``~/.wet/config.toml``); only ``run_warmup`` and the
+``config(action="warmup")`` dispatch remain.
+"""
 
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from structured import text
+
+
+def _no_cells():
+    """No provider cell configured (host never wrote ~/.wet/config.toml)."""
+
+    def _cell_configured(task, settings=None):
+        return False
+
+    return _cell_configured
+
+
+def _all_cells():
+    """Both embed and rerank cells configured."""
+
+    def _cell_configured(task, settings=None):
+        return task in ("embed", "rerank")
+
+    return _cell_configured
+
+
+def _embed_cell_only():
+    """Only the embed cell configured (no rerank cell)."""
+
+    def _cell_configured(task, settings=None):
+        return task == "embed"
+
+    return _cell_configured
 
 
 class TestRunWarmup:
@@ -12,15 +45,16 @@ class TestRunWarmup:
         """run_warmup() must return a dict with 'status' key."""
         with (
             patch("wet_mcp.setup.run_auto_setup"),
+            patch("wet_mcp.runtime.cell_configured", _no_cells()),
             patch("wet_mcp.setup_tool.settings") as mock_settings,
             patch("fastretrieval.TextEmbedding") as mock_embed,
         ):
-            mock_settings.setup_providers.return_value = "local"
             mock_settings.rerank_enabled = False
             mock_settings.resolve_local_embedding_model.return_value = "Qwen/test-model"
-            mock_settings.resolve_local_rerank_model.return_value = "Qwen/test-reranker"
+
             mock_embed.return_value.embed.return_value = iter([[0.1] * 768])
 
+            from wet_mcp import setup_tool
             from wet_mcp.setup_tool import run_warmup
 
             result = await run_warmup()
@@ -30,21 +64,19 @@ class TestRunWarmup:
         assert result["status"] == "ok"
 
     async def test_warmup_cloud_models_success(self):
-        """When cloud models are available, skip local downloads."""
+        """When the provider cells are configured and healthy, skip local downloads."""
         with (
             patch("wet_mcp.setup.run_auto_setup"),
+            patch("wet_mcp.runtime.cell_configured", _all_cells()),
             patch("wet_mcp.setup_tool.settings") as mock_settings,
             patch("wet_mcp.embedder.init_backend") as mock_init_backend,
             patch("wet_mcp.reranker.init_reranker") as mock_init_reranker,
         ):
-            mock_settings.setup_providers.return_value = "sdk"
-            mock_settings.embedding_chain.return_value = ["text-embedding-3-large"]
-            mock_settings.rerank_enabled = True
-            mock_settings.rerank_chain.return_value = ["rerank-v3"]
-
-            mock_backend = MagicMock()
-            mock_backend.check_available = AsyncMock(return_value=768)
-            mock_init_backend.return_value = mock_backend
+            cell = MagicMock()
+            cell.model = "text-embedding-3-large"
+            mock_init_backend.return_value = MagicMock(
+                check_available=AsyncMock(return_value=768)
+            )
 
             mock_reranker = MagicMock()
             mock_reranker.check_available.return_value = True
@@ -60,19 +92,16 @@ class TestRunWarmup:
         assert "reranker" in result
 
     async def test_warmup_cloud_fallback_to_local(self):
-        """When cloud fails, fall back to local model download."""
+        """When the configured cell fails its check, fall back to local download."""
         with (
             patch("wet_mcp.setup.run_auto_setup"),
+            patch("wet_mcp.runtime.cell_configured", _embed_cell_only()),
             patch("wet_mcp.setup_tool.settings") as mock_settings,
             patch("wet_mcp.embedder.init_backend") as mock_init_backend,
             patch("fastretrieval.TextEmbedding") as mock_embed,
         ):
-            mock_settings.setup_providers.return_value = "sdk"
-            mock_settings.embedding_chain.return_value = ["gemini/embed"]
-            mock_settings.rerank_chain.return_value = []
             mock_settings.rerank_enabled = False
             mock_settings.resolve_local_embedding_model.return_value = "Qwen/test-model"
-            mock_settings.resolve_local_rerank_model.return_value = "Qwen/test-reranker"
 
             mock_init_backend.side_effect = Exception("no API key")
 
@@ -92,10 +121,10 @@ class TestRunWarmup:
                 "wet_mcp.setup.run_auto_setup",
                 side_effect=Exception("setup failed"),
             ),
+            patch("wet_mcp.runtime.cell_configured", _no_cells()),
             patch("wet_mcp.setup_tool.settings") as mock_settings,
             patch("fastretrieval.TextEmbedding") as mock_embed,
         ):
-            mock_settings.setup_providers.return_value = "local"
             mock_settings.rerank_enabled = False
             mock_settings.resolve_local_embedding_model.return_value = "Qwen/test-model"
 
@@ -112,11 +141,11 @@ class TestRunWarmup:
         """Both local embedding and reranker are downloaded when rerank enabled."""
         with (
             patch("wet_mcp.setup.run_auto_setup"),
+            patch("wet_mcp.runtime.cell_configured", _no_cells()),
             patch("wet_mcp.setup_tool.settings") as mock_settings,
             patch("fastretrieval.TextEmbedding") as mock_embed,
             patch("fastretrieval.TextCrossEncoder") as mock_reranker,
         ):
-            mock_settings.setup_providers.return_value = "local"
             mock_settings.rerank_enabled = True
             mock_settings.resolve_local_embedding_model.return_value = "Qwen/test-model"
             mock_settings.resolve_local_rerank_model.return_value = "Qwen/test-reranker"
@@ -136,11 +165,11 @@ class TestRunWarmup:
         """Corrupted cache triggers clear + retry."""
         with (
             patch("wet_mcp.setup.run_auto_setup"),
+            patch("wet_mcp.runtime.cell_configured", _no_cells()),
             patch("wet_mcp.setup_tool.settings") as mock_settings,
             patch("wet_mcp.setup_tool.clear_model_cache") as mock_clear,
             patch("fastretrieval.TextEmbedding") as mock_embed,
         ):
-            mock_settings.setup_providers.return_value = "local"
             mock_settings.rerank_enabled = False
             mock_settings.resolve_local_embedding_model.return_value = "Qwen/test-model"
 
@@ -165,46 +194,8 @@ class TestRunWarmup:
         mock_clear.assert_called_once()
 
 
-class TestRunSetupSync:
-    """Tests for run_setup_sync() returning structured dict."""
-
-    async def test_setup_sync_returns_dict_with_status(self):
-        """run_setup_sync() must return a dict with 'status' key."""
-        with patch("wet_mcp.sync.setup_google_auth", return_value=True):
-            from wet_mcp.setup_tool import run_setup_sync
-
-            result = await run_setup_sync("drive")
-
-        assert isinstance(result, dict)
-        assert "status" in result
-        assert result["status"] == "ok"
-
-    async def test_setup_sync_auth_fails(self):
-        """Returns error when auth fails."""
-        with patch("wet_mcp.sync.setup_google_auth", return_value=False):
-            from wet_mcp.setup_tool import run_setup_sync
-
-            result = await run_setup_sync()
-
-        assert result["status"] == "error"
-        assert "failed" in result["error"].lower()
-
-    async def test_setup_sync_exception(self):
-        """Sync setup exception returns error dict."""
-        with patch(
-            "wet_mcp.sync.setup_google_auth",
-            side_effect=Exception("auth error"),
-        ):
-            from wet_mcp.setup_tool import run_setup_sync
-
-            result = await run_setup_sync()
-
-        assert result["status"] == "error"
-        assert "auth error" in result["error"]
-
-
 class TestSetupMcpTool:
-    """Tests for warmup/setup_sync/setup_* actions in config tool."""
+    """Tests for the warmup action in the config tool."""
 
     async def test_config_tool_warmup_action(self):
         """config tool with action='warmup' calls run_warmup."""
@@ -218,121 +209,23 @@ class TestSetupMcpTool:
             result = await config(action="warmup")
             assert '"status": "ok"' in text(result)
 
-    async def test_config_tool_setup_sync_action(self):
-        """config tool with action='setup_sync' calls run_setup_sync."""
-        with patch(
-            "wet_mcp.setup_tool.run_setup_sync",
-            new_callable=AsyncMock,
-            return_value={
-                "status": "ok",
-                "remote_type": "drive",
-                "message": "Sync setup complete",
-            },
-        ):
-            from wet_mcp.server import config
-
-            result = await config(action="setup_sync", remote_type="drive")
-            assert '"status": "ok"' in text(result)
-
     async def test_config_tool_invalid_action(self):
-        """config tool with invalid action returns error string."""
+        """config tool with invalid action returns an error payload."""
         from wet_mcp.server import config
 
         result = await config(action="invalid_xyz_action")
         assert '"error"' in text(result)
         assert "Unknown action" in text(result)
 
-    async def test_config_tool_setup_sync_default_remote(self):
-        """setup_sync action without remote_type uses 'drive'."""
-        with patch(
-            "wet_mcp.setup_tool.run_setup_sync",
-            new_callable=AsyncMock,
-            return_value={
-                "status": "ok",
-                "remote_type": "drive",
-                "message": "Sync setup complete",
-            },
-        ) as mock_sync:
-            from wet_mcp.server import config
+    async def test_removed_setup_actions_report_unknown(self):
+        """The de-host removed setup_sync/setup_status/setup_start/setup_reset.
 
-            await config(action="setup_sync")
-            mock_sync.assert_called_once_with("drive")
+        They must not silently resurrect: each reports the same unknown-action
+        error an operator would get for any typo, naming the valid actions.
+        """
+        from wet_mcp.server import config
 
-    async def test_config_tool_dispatches_setup_status_action(self):
-        """setup_status action (formerly on setup tool) should work via config tool."""
-        with (
-            patch("wet_mcp.credential_state.get_state") as mock_get_state,
-            patch("wet_mcp.credential_state.get_setup_url", return_value=None),
-            patch("wet_mcp.credential_state.CLOUD_KEYS", []),
-        ):
-            mock_state = MagicMock()
-            mock_state.value = "configured"
-            mock_get_state.return_value = mock_state
-
-            from wet_mcp.server import config
-
-            result = await config(action="setup_status")
-            assert "unknown action" not in text(result).lower()
-            assert "state" in text(result)
-
-    async def test_config_tool_dispatches_setup_start_action_already_configured(self):
-        """setup_start returns already_configured when configured and not forced."""
-        from wet_mcp.credential_state import CredentialState
-
-        with patch(
-            "wet_mcp.credential_state.get_state",
-            return_value=CredentialState.CONFIGURED,
-        ):
-            from wet_mcp.server import config
-
-            result = await config(action="setup_start")
-            assert "unknown action" not in text(result).lower()
-            assert "already_configured" in text(result)
-
-    async def test_config_tool_dispatches_setup_start_action_returns_setup_url(self):
-        """setup_start returns the relay URL when a setup form is active."""
-        from wet_mcp.credential_state import CredentialState
-
-        with (
-            patch(
-                "wet_mcp.credential_state.get_state",
-                return_value=CredentialState.AWAITING_SETUP,
-            ),
-            patch(
-                "wet_mcp.credential_state.get_setup_url",
-                return_value="http://127.0.0.1:8080/authorize",
-            ),
-        ):
-            from wet_mcp.server import config
-
-            result = await config(action="setup_start")
-            assert "unknown action" not in text(result).lower()
-            assert "setup_started" in text(result)
-            assert "http://127.0.0.1:8080/authorize" in text(result)
-
-    async def test_config_tool_dispatches_setup_start_action_stdio_unsupported(self):
-        """setup_start reports stdio_unsupported when no relay URL is active."""
-        from wet_mcp.credential_state import CredentialState
-
-        with (
-            patch(
-                "wet_mcp.credential_state.get_state",
-                return_value=CredentialState.AWAITING_SETUP,
-            ),
-            patch("wet_mcp.credential_state.get_setup_url", return_value=None),
-        ):
-            from wet_mcp.server import config
-
-            result = await config(action="setup_start", force=True)
-            assert "unknown action" not in text(result).lower()
-            assert "stdio_unsupported" in text(result)
-
-    async def test_config_tool_dispatches_setup_reset_action(self):
-        """setup_reset action (formerly on setup tool) should work via config tool."""
-        with patch("wet_mcp.credential_state.reset_state") as mock_reset:
-            from wet_mcp.server import config
-
-            result = await config(action="setup_reset")
-            assert "unknown action" not in text(result).lower()
-            assert '"status": "ok"' in text(result)
-            mock_reset.assert_called_once()
+        for action in ("setup_sync", "setup_status", "setup_start", "setup_reset"):
+            result = await config(action=action)
+            assert "Unknown action" in text(result), action
+            assert "warmup" in text(result), action

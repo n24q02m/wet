@@ -64,8 +64,8 @@ def messages(records: list["Record"], level: str) -> list[str]:
 
 
 @pytest.fixture(autouse=True)
-def _single_user_stdio_context():
-    """Keep this module off the real embedder and on the stdio credential path.
+def _single_user_context():
+    """Keep this module off the real embedder and in the single-user context.
 
     Three order-dependent hazards, all observed under ``pytest-randomly``:
 
@@ -74,28 +74,24 @@ def _single_user_stdio_context():
       failing assertion into a 30s timeout that kills the run. Tests that need
       a backend patch the same target inside their own ``with`` block, which
       takes precedence.
-    * ``credential_state._current_sub`` is a ContextVar that some tests set and
-      never clear, and pytest-asyncio copies the ambient context into the test
-      task. A leaked ``sub`` sends ``_require_credentials`` down the HTTP
-      multi-user branch, so the ``search`` tool returns an awaiting_setup
-      payload and never reaches the post-processing under test.
+    * the request-identity ContextVar (``hull_core.auth.context``) is copied
+      into the test task by pytest-asyncio; a leaked identity from another
+      module changes cache/storage roots. Reset to the local (no-auth)
+      identity so every test here runs in the single-user context.
     * conftest's ``_disable_uvx_tool_venv_detection`` neutralises
       ``is_uvx_tool_venv`` only on whatever object is registered as
-      ``sys.modules["wet_mcp.server"]``. ``test_serverinfo_version.py`` pops
-      that key and re-imports, so from then on the module object bound at the
-      top of this file is a *different* object, and conftest patches the other
-      one. Measured under a random seed: ``{'uvx': True, 'same_module':
-      False}``; reproduced deterministically with
-      ``pytest tests/test_serverinfo_version.py tests/test_silent_failure_surfacing.py -p no:randomly``.
-      The detector genuinely returns True here -- it keys off a missing
-      ``pip``, which this uv-managed venv has none of -- so the unpatched copy
-      makes ``search`` bail out at the SearXNG gate and return the
-      blocked-error string before any post-processing runs. Pin the name on
-      the object these tests actually call into.
+      ``sys.modules["wet_mcp.server"]``. A module that pops that key and
+      re-imports leaves the object bound at the top of this file a *different*
+      object, and conftest patches the other one. The detector genuinely
+      returns True here -- it keys off a missing ``pip``, which this
+      uv-managed venv has none of -- so the unpatched copy makes ``search``
+      bail out at the SearXNG gate and return the blocked-error string before
+      any post-processing runs. Pin the name on the object these tests
+      actually call into.
     """
-    from wet_mcp.credential_state import set_current_sub
+    from hull_core.auth.context import AuthContext, reset_current_user, set_current_user
 
-    set_current_sub(None)
+    token = set_current_user(AuthContext.local())
     previous_db = server._docs_db
     with (
         patch("wet_mcp.embedder.resolve_embed_backend_for_request", return_value=None),
@@ -103,19 +99,19 @@ def _single_user_stdio_context():
     ):
         yield
     server._docs_db = previous_db
+    reset_current_user(token)
 
 
 def _diag() -> dict:
     """Ambient state that decides whether the search tool even runs its body."""
     import sys
 
-    from wet_mcp.credential_state import get_current_sub, get_state
+    from hull_core.auth.context import current_user
 
     return {
         "uvx": server.is_uvx_tool_venv(),
         "same_module": server is sys.modules.get("wet_mcp.server"),
-        "sub": get_current_sub(),
-        "cred_state": get_state(),
+        "namespace": current_user().namespace,
     }
 
 

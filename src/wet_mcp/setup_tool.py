@@ -1,10 +1,11 @@
-"""Setup tool -- warmup and setup-sync logic as MCP-callable functions.
+"""Setup tool -- warmup logic as MCP-callable functions.
 
 Extracted from __main__.py CLI commands into async functions that return
 structured dicts for MCP tool responses.
 """
 
 import asyncio
+import inspect
 import os
 import shutil
 from pathlib import Path
@@ -40,43 +41,54 @@ def clear_model_cache(model_name: str) -> str | None:
 
 
 async def _validate_cloud_models(settings_obj) -> dict:
-    """Check if cloud embedding and reranking models are valid."""
-    from wet_mcp.embedder import init_backend
-    from wet_mcp.reranker import init_reranker
+    """Validate the per-task cloud cells ([models.embed] / [models.rerank]).
 
-    embedding_info = None
-    for candidate in settings_obj.embedding_chain():
+    Returns ``{"cloud_ready": False}`` when no cell is configured; a
+    configured cell that fails its check is reported under ``errors``.
+    """
+    from wet_mcp.runtime import cell_configured, model_cell
+
+    result: dict = {"cloud_ready": False}
+
+    if cell_configured("embed"):
+        cell = model_cell("embed")
+        from wet_mcp.embedder import init_backend
+
         try:
-            backend = init_backend("cloud", candidate)
+            backend = init_backend("cloud", cell.model)
             dims = await backend.check_available()
             if dims > 0:
-                embedding_info = {"model": candidate, "dims": dims}
-                break
+                result["embedding"] = {"model": cell.model, "dims": dims}
+            else:
+                result.setdefault("errors", []).append(
+                    f"embed cell {cell.model}: check_available returned no dims"
+                )
         except Exception as exc:
-            logger.debug(f"Cloud embedding candidate {candidate} failed: {exc}")
-            continue
+            logger.debug(f"Cloud embedding {cell.model} failed: {exc}")
+            result.setdefault("errors", []).append(f"embed cell {cell.model}: {exc}")
 
-    if not embedding_info:
-        return {"cloud_ready": False}
+    if cell_configured("rerank"):
+        cell = model_cell("rerank")
+        from wet_mcp.reranker import init_reranker
 
-    reranker_info = None
-    for rerank_model in settings_obj.rerank_chain():
         try:
-            reranker = init_reranker("cloud", rerank_model)
-            # reranker.check_available() is sync (unlike embedder.check_available());
-            # adding async reranker backends will require awaiting here
-            if reranker.check_available():
-                reranker_info = {"model": rerank_model}
-                break
+            reranker = init_reranker("cloud", cell.model)
+            checked = reranker.check_available()
+            if inspect.isawaitable(checked):
+                checked = await checked
+            if checked:
+                result["reranker"] = {"model": cell.model}
+            else:
+                result.setdefault("errors", []).append(
+                    f"rerank cell {cell.model}: check_available false"
+                )
         except Exception as exc:
-            logger.debug(f"Cloud reranker {rerank_model} failed: {exc}")
-            continue
+            logger.debug(f"Cloud reranker {cell.model} failed: {exc}")
+            result.setdefault("errors", []).append(f"rerank cell {cell.model}: {exc}")
 
-    return {
-        "cloud_ready": True,
-        "embedding": embedding_info,
-        "reranker": reranker_info,
-    }
+    if result.get("embedding") or result.get("reranker"):
+        result["cloud_ready"] = True
+    return result
 
 
 def _download_local_embedding(settings_obj) -> dict:
@@ -169,29 +181,20 @@ def _download_local_reranker(settings_obj) -> dict:
 
 
 async def _warmup_cloud_models(steps: list[dict]) -> dict | None:
-    """Check cloud models if API keys are configured and return early if ready.
+    """Check the configured cloud cells and return early if any is ready."""
+    from wet_mcp.runtime import cell_configured
 
-    Returns:
-        Structured warmup dict if cloud models are ready, None otherwise.
-    """
-    mode = settings.setup_providers()
-    if mode != "sdk":
+    if not (cell_configured("embed") or cell_configured("rerank")):
         return None
 
     cloud_result = await _validate_cloud_models(settings)
     if cloud_result["cloud_ready"]:
-        steps.append(
-            {
-                "step": "cloud_models",
-                "status": "ok",
-                "provider_mode": mode,
-            }
-        )
+        steps.append({"step": "cloud_models", "status": "ok"})
         return {
             "status": "ok",
             "mode": "cloud",
             "steps": steps,
-            "embedding": cloud_result["embedding"],
+            "embedding": cloud_result.get("embedding"),
             "reranker": cloud_result.get("reranker"),
         }
 
@@ -199,7 +202,7 @@ async def _warmup_cloud_models(steps: list[dict]) -> dict | None:
         {
             "step": "cloud_models",
             "status": "fallback",
-            "message": "Cloud models not available, falling back to local",
+            "message": "Configured cloud cells unavailable, falling back to local",
         }
     )
     return None
@@ -251,74 +254,3 @@ async def run_warmup() -> dict:
         "mode": "local",
         "steps": steps,
     }
-
-
-async def run_setup_sync(
-    remote_type: str = "drive",
-    client_id: str | None = None,
-    client_secret: str | None = None,
-) -> dict:
-    """Run Google Drive sync setup (OAuth Device Code flow).
-
-    ``client_id``/``client_secret`` optionally override the upstream OAuth
-    client identity for this call (BYO client, e.g. from the CLI's ``auth
-    google --client-id/--client-secret`` flags) without mutating the
-    ``wet_mcp.config.settings`` singleton -- both default to ``None``,
-    which falls back to ``settings.google_drive_client_id/secret`` exactly
-    as before.
-
-    Returns a structured dict with setup results. When the upstream Google
-    Drive credentials (BYO pair, or ``GOOGLE_DRIVE_CLIENT_ID`` /
-    ``..._CLIENT_SECRET`` env vars) are missing this returns an explicit
-    ``missing_env`` error so stdio users understand which env var to set,
-    instead of a generic "authentication failed" message.
-    """
-    try:
-        from wet_mcp.config import settings
-
-        effective_id = client_id or settings.google_drive_client_id
-        effective_secret = client_secret or settings.google_drive_client_secret
-        if not effective_id or not effective_secret:
-            missing = [
-                name
-                for name, value in (
-                    ("GOOGLE_DRIVE_CLIENT_ID", effective_id),
-                    ("GOOGLE_DRIVE_CLIENT_SECRET", effective_secret),
-                )
-                if not value
-            ]
-            return {
-                "status": "error",
-                "provider": "google_drive",
-                "error": (
-                    "Google Drive sync requires upstream OAuth credentials. "
-                    f"Missing env var(s): {', '.join(missing)}. "
-                    "Set them in the wet-mcp environment (stdio mode reads "
-                    "creds from env only) or configure via the HTTP setup "
-                    "form (run with --http / MCP_TRANSPORT=http)."
-                ),
-                "missing_env": missing,
-            }
-
-        from wet_mcp.sync import setup_google_auth
-
-        success = await setup_google_auth(
-            client_id=client_id, client_secret=client_secret
-        )
-        if success:
-            return {
-                "status": "ok",
-                "provider": "google_drive",
-                "message": "Google Drive sync setup complete. Token saved locally.",
-            }
-        return {
-            "status": "error",
-            "provider": "google_drive",
-            "error": "Authentication failed or was cancelled",
-        }
-    except Exception as exc:
-        return {
-            "status": "error",
-            "provider": "google_drive",
-            "error": str(exc),
-        }

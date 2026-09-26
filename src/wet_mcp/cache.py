@@ -6,6 +6,11 @@ the shared SQLite connection; WAL mode provides persistence-friendly reads.
 
 Cache is transparent — callers use ``get``/``set`` and the cache handles
 expiry automatically. Old entries are purged periodically.
+
+Cache entries are namespaced per caller: the key folds in the caller's
+``sub`` namespace (mode-3 isolation, spec §4 Q2), so one process serving
+N users never leaks results across callers. Content snapshots are kept
+per ``(sub, url)`` rather than per URL alone.
 """
 
 import hashlib
@@ -33,10 +38,19 @@ _PURGE_INTERVAL = 50
 _SNAPSHOT_RETENTION = 5
 
 
-def _cache_key(action: str, params: dict) -> str:
-    """Generate a deterministic cache key from action + params."""
+def _cache_key(action: str, params: dict, sub: str = "default") -> str:
+    """Generate a deterministic cache key from caller namespace + action + params.
+
+    The ``sub`` namespace is folded into the hashed dict (mode-3 isolation,
+    spec §4 Q2) instead of concatenated onto the payload, so params of a
+    different shape can never collide across namespaces.
+    """
     # Sort keys for deterministic hashing
-    raw = json.dumps({"action": action, **params}, sort_keys=True, ensure_ascii=False)
+    raw = json.dumps(
+        {"action": action, "sub": sub, "params": params},
+        sort_keys=True,
+        ensure_ascii=False,
+    )
     return hashlib.sha256(raw.encode()).hexdigest()
 
 
@@ -71,7 +85,8 @@ class WebCache:
                 content TEXT NOT NULL,
                 created_at REAL NOT NULL,
                 expires_at REAL NOT NULL,
-                hit_count INTEGER NOT NULL DEFAULT 0
+                hit_count INTEGER NOT NULL DEFAULT 0,
+                sub TEXT NOT NULL DEFAULT 'default'
             )
         """)
         self._conn.execute("""
@@ -90,18 +105,33 @@ class WebCache:
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 url TEXT NOT NULL,
                 fetched_at REAL NOT NULL,
-                content TEXT NOT NULL
+                content TEXT NOT NULL,
+                sub TEXT NOT NULL DEFAULT 'default'
             )
         """)
         self._conn.execute("""
             CREATE INDEX IF NOT EXISTS idx_snapshots_url_fetched
             ON snapshots(url, fetched_at DESC)
         """)
+        # Idempotent column adds for legacy caches that pre-date per-caller
+        # namespacing (mode-3 isolation, spec §4 Q2). Fresh tables already
+        # carry ``sub`` in the DDL above, so the ALTER raises duplicate-column
+        # and is swallowed.
+        for sql in (
+            "ALTER TABLE web_cache ADD COLUMN sub TEXT NOT NULL DEFAULT 'default'",
+            "ALTER TABLE snapshots ADD COLUMN sub TEXT NOT NULL DEFAULT 'default'",
+        ):
+            try:
+                self._conn.execute(sql)
+                self._conn.commit()
+                logger.debug("Migrated cache table: added sub column")
+            except sqlite3.OperationalError:
+                pass  # Column already exists
         self._conn.commit()
 
-    def get(self, action: str, params: dict) -> str | None:
-        """Get cached result if exists and not expired."""
-        key = _cache_key(action, params)
+    def get(self, action: str, params: dict, sub: str = "default") -> str | None:
+        """Get cached result if exists and not expired (within ``sub``)."""
+        key = _cache_key(action, params, sub)
         now = time.time()
 
         # One connection is shared by asyncio worker threads, so the update
@@ -120,13 +150,15 @@ class WebCache:
         logger.debug(f"Cache MISS: {action} ({key[:12]}...)")
         return None
 
-    def get_with_age(self, action: str, params: dict) -> tuple[str, int] | None:
+    def get_with_age(
+        self, action: str, params: dict, sub: str = "default"
+    ) -> tuple[str, int] | None:
         """Like ``get`` but also returns ``cache_age_seconds`` (now - created_at).
 
         Returns ``None`` on miss or expiry. Used by callers that want to
         derive a freshness signal from the cache age.
         """
-        key = _cache_key(action, params)
+        key = _cache_key(action, params, sub)
         now = time.time()
 
         with self._lock:
@@ -144,7 +176,9 @@ class WebCache:
         logger.debug(f"Cache MISS: {action} ({key[:12]}...)")
         return None
 
-    def get_stale_with_age(self, action: str, params: dict) -> tuple[str, int] | None:
+    def get_stale_with_age(
+        self, action: str, params: dict, sub: str = "default"
+    ) -> tuple[str, int] | None:
         """Serve a TTL-expired entry for stale-while-revalidate reads.
 
         Returns ``(content, age)`` even when ``expires_at`` has passed, as
@@ -154,7 +188,7 @@ class WebCache:
         caller decides freshness: the existing per-result freshness signal
         already flags ``"stale"`` once ``age > ttl / 2``.
         """
-        key = _cache_key(action, params)
+        key = _cache_key(action, params, sub)
         now = time.time()
 
         with self._lock:
@@ -172,15 +206,22 @@ class WebCache:
         return row["content"], age
 
     def set(
-        self, action: str, params: dict, content: str, ttl_override: int | None = None
+        self,
+        action: str,
+        params: dict,
+        content: str,
+        ttl_override: int | None = None,
+        sub: str = "default",
     ) -> None:
         """Store result in cache with TTL.
 
         ``ttl_override`` lets callers pin a custom TTL (e.g. 300s for
         time-filtered search queries) without mutating the per-action
-        defaults shared by all callers.
+        defaults shared by all callers. The entry is stored under the
+        caller's ``sub`` namespace; the persisted ``params`` column keeps
+        the original params JSON, not the sub-wrapped key payload.
         """
-        key = _cache_key(action, params)
+        key = _cache_key(action, params, sub)
         now = time.time()
         ttl = ttl_override if ttl_override is not None else self._ttls.get(action, 3600)
         expires_at = now + ttl
@@ -188,8 +229,8 @@ class WebCache:
         with self._lock:
             self._conn.execute(
                 """INSERT OR REPLACE INTO web_cache
-                   (key, action, params, content, created_at, expires_at, hit_count)
-                   VALUES (?, ?, ?, ?, ?, ?, 0)""",
+                   (key, action, params, content, created_at, expires_at, hit_count, sub)
+                   VALUES (?, ?, ?, ?, ?, ?, 0, ?)""",
                 (
                     key,
                     action,
@@ -197,6 +238,7 @@ class WebCache:
                     content,
                     now,
                     expires_at,
+                    sub,
                 ),
             )
             self._conn.commit()
@@ -208,36 +250,39 @@ class WebCache:
 
         logger.debug(f"Cache SET: {action} ({key[:12]}...) TTL={ttl}s")
 
-    def record_snapshot(self, url: str, content: str) -> None:
-        """Append a content snapshot for ``url``, pruning to the last N.
+    def record_snapshot(self, url: str, content: str, sub: str = "default") -> None:
+        """Append a content snapshot for ``(sub, url)``, pruning to the last N.
 
         Unlike ``set()``, this never overwrites — each call adds a new row so
         ``latest_snapshots`` has history to diff against. Retention keeps at
-        most ``_SNAPSHOT_RETENTION`` rows per URL.
+        most ``_SNAPSHOT_RETENTION`` rows per ``(sub, url)`` pair.
         """
         now = time.time()
         with self._lock:
             self._conn.execute(
-                "INSERT INTO snapshots (url, fetched_at, content) VALUES (?, ?, ?)",
-                (url, now, content),
+                "INSERT INTO snapshots (url, fetched_at, content, sub) "
+                "VALUES (?, ?, ?, ?)",
+                (url, now, content, sub),
             )
             self._conn.execute(
                 """
                 DELETE FROM snapshots
-                WHERE url = ? AND id NOT IN (
+                WHERE sub = ? AND url = ? AND id NOT IN (
                     SELECT id FROM snapshots
-                    WHERE url = ?
+                    WHERE sub = ? AND url = ?
                     ORDER BY fetched_at DESC, id DESC
                     LIMIT ?
                 )
                 """,
-                (url, url, _SNAPSHOT_RETENTION),
+                (sub, url, sub, url, _SNAPSHOT_RETENTION),
             )
             self._conn.commit()
         logger.debug(f"Snapshot recorded for {url}")
 
-    def latest_snapshots(self, url: str, n: int = 2) -> list[dict]:
-        """Return up to ``n`` most recent snapshots for ``url``, newest first.
+    def latest_snapshots(
+        self, url: str, n: int = 2, sub: str = "default"
+    ) -> list[dict]:
+        """Return up to ``n`` most recent snapshots for ``(sub, url)``, newest first.
 
         Each item is ``{"fetched_at": float, "content": str}``.
         """
@@ -245,11 +290,11 @@ class WebCache:
             rows = self._conn.execute(
                 """
                 SELECT fetched_at, content FROM snapshots
-                WHERE url = ?
+                WHERE sub = ? AND url = ?
                 ORDER BY fetched_at DESC, id DESC
                 LIMIT ?
                 """,
-                (url, n),
+                (sub, url, n),
             ).fetchall()
         return [
             {"fetched_at": row["fetched_at"], "content": row["content"]} for row in rows
@@ -267,33 +312,45 @@ class WebCache:
         if purged > 0:
             logger.debug(f"Purged {purged} expired cache entries")
 
-    def clear(self, action: str | None = None) -> int:
-        """Clear cache entries. If action specified, only clear that action."""
+    def clear(self, action: str | None = None, sub: str = "default") -> int:
+        """Clear this namespace's cache entries.
+
+        If action specified, only clear that action; only rows belonging to
+        ``sub`` are ever removed — other callers' entries are untouched.
+        """
         with self._lock:
             if action:
                 cursor = self._conn.execute(
-                    "DELETE FROM web_cache WHERE action = ?", (action,)
+                    "DELETE FROM web_cache WHERE sub = ? AND action = ?",
+                    (sub, action),
                 )
             else:
-                cursor = self._conn.execute("DELETE FROM web_cache")
+                cursor = self._conn.execute(
+                    "DELETE FROM web_cache WHERE sub = ?", (sub,)
+                )
             self._conn.commit()
             return cursor.rowcount
 
-    def stats(self) -> dict:
-        """Get cache statistics."""
+    def stats(self, sub: str | None = None) -> dict:
+        """Get cache statistics.
+
+        With ``sub``, returns counts for that caller namespace only;
+        without it, counts span every namespace.
+        """
         now = time.time()
         with self._lock:
-            rows = self._conn.execute(
-                """
+            sql = """
                 SELECT action,
                        COUNT(*) as total,
                        SUM(CASE WHEN expires_at > ? THEN 1 ELSE 0 END) as active,
                        SUM(hit_count) as total_hits
                 FROM web_cache
-                GROUP BY action
-                """,
-                (now,),
-            ).fetchall()
+            """
+            params: tuple = (now,)
+            if sub is not None:
+                sql += "WHERE sub = ? "
+                params += (sub,)
+            rows = self._conn.execute(sql + "GROUP BY action", params).fetchall()
 
         return {
             row["action"]: {

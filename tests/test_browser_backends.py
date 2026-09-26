@@ -1,4 +1,13 @@
-"""WS-2/WS-4: browser backend provider chain factory + key-gated captcha tier."""
+"""Browser backend chain factory + key-gated captcha tier (de-hosted).
+
+The headless (JS-render) leg resolves ``BROWSER_BACKENDS`` into a chain of
+``native`` (in-process chromium) and ``browserless`` (self-host REST)
+strategies; the Cloudflare browser-rendering backend was cut in the de-host.
+A backend whose credentials are missing is skipped with a warning, and a
+chain that resolves to nothing falls back to native unless
+``DISABLE_LOCAL_BROWSER`` is set. The CAPTCHA tier stays key-gated
+(CAPSOLVER_API_KEY, host BYO).
+"""
 
 from __future__ import annotations
 
@@ -20,18 +29,16 @@ def test_browser_chain_default_native(monkeypatch):
 def test_browser_chain_csv(monkeypatch):
     monkeypatch.delenv("BROWSER_BACKENDS", raising=False)
     s = Settings(
-        browser_backends="cf-browser-rendering, browserless",
+        browser_backends="browserless, native",
         disable_local_browser=False,
     )
-    assert s.browser_backend_chain() == ["cf-browser-rendering", "browserless"]
+    assert s.browser_backend_chain() == ["browserless", "native"]
 
 
 def test_browser_chain_disable_local_drops_native(monkeypatch):
     monkeypatch.delenv("BROWSER_BACKENDS", raising=False)
-    s = Settings(
-        browser_backends="native,cf-browser-rendering", disable_local_browser=True
-    )
-    assert s.browser_backend_chain() == ["cf-browser-rendering"]
+    s = Settings(browser_backends="native,browserless", disable_local_browser=True)
+    assert s.browser_backend_chain() == ["browserless"]
 
 
 def test_browser_chain_env_overrides_setting(monkeypatch):
@@ -51,8 +58,6 @@ def _set_browser(monkeypatch, **kwargs):
     defaults = {
         "browser_backends": "native",
         "disable_local_browser": False,
-        "cf_account_id": "",
-        "cf_browser_rendering_token": "",
         "browserless_url": "",
         "browserless_token": "",
         "capsolver_api_key": "",
@@ -68,19 +73,21 @@ def test_headless_native_default(monkeypatch):
     assert "headless" in strats
 
 
-def test_headless_cf_backend_when_creds_present(monkeypatch):
+def test_headless_browserless_backend_when_creds_present(monkeypatch):
+    # Creds present (self-host base_url, optional ?token=) -> the browserless
+    # leg is built and the native fallback is NOT appended on top.
     _set_browser(
         monkeypatch,
-        browser_backends="cf-browser-rendering",
-        cf_account_id="acct",
-        cf_browser_rendering_token="tok",
+        browser_backends="browserless",
+        browserless_url="https://bl.example.com",
+        browserless_token="tok",
     )
     strats = _build_headless_strategies(stealth=True)
-    assert "cf_render" in strats
+    assert "browserless" in strats
     assert "headless" not in strats
 
 
-def test_headless_browserless_backend(monkeypatch):
+def test_headless_browserless_backend_keyless_selfhost(monkeypatch):
     _set_browser(
         monkeypatch,
         browser_backends="browserless",
@@ -91,16 +98,17 @@ def test_headless_browserless_backend(monkeypatch):
 
 
 def test_headless_skips_missing_creds_and_falls_back_to_native(monkeypatch):
-    # cf requested but no creds + local NOT disabled -> native fallback.
-    _set_browser(monkeypatch, browser_backends="cf-browser-rendering")
+    # browserless requested but no base_url + local NOT disabled -> the leg is
+    # skipped with a warning and native keeps JS-render escalation available.
+    _set_browser(monkeypatch, browser_backends="browserless")
     strats = _build_headless_strategies(stealth=True)
     assert "headless" in strats
-    assert "cf_render" not in strats
+    assert "browserless" not in strats
 
 
 def test_headless_empty_when_local_disabled_and_no_cloud_creds(monkeypatch):
     _set_browser(
-        monkeypatch, browser_backends="cf-browser-rendering", disable_local_browser=True
+        monkeypatch, browser_backends="browserless", disable_local_browser=True
     )
     strats = _build_headless_strategies(stealth=True)
     assert strats == {}  # gracefully no headless leg
@@ -109,12 +117,11 @@ def test_headless_empty_when_local_disabled_and_no_cloud_creds(monkeypatch):
 def test_headless_chain_order_native_after_cloud(monkeypatch):
     _set_browser(
         monkeypatch,
-        browser_backends="cf-browser-rendering,native",
-        cf_account_id="acct",
-        cf_browser_rendering_token="tok",
+        browser_backends="browserless,native",
+        browserless_url="https://bl.example.com",
     )
     strats = _build_headless_strategies(stealth=True)
-    assert set(strats) == {"cf_render", "headless"}
+    assert set(strats) == {"browserless", "headless"}
 
 
 # ---------------------------------------------------------------------------

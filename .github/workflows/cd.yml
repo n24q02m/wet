@@ -18,16 +18,6 @@ on:
         required: false
         type: string
         default: ""
-      recreate_container:
-        description: "Recovery only: delete the exact existing CF Container ID before redeploying the selected image."
-        required: false
-        type: boolean
-        default: false
-      incident_no_canary:
-        description: "Security incident only: skip the public post-deploy canary while an exact-host edge block is active; verify manually after unblocking."
-        required: false
-        type: boolean
-        default: false
 
 env:
 # Release lane: merge to main auto-publishes stable; beta only via manual dispatch (release_type=beta).
@@ -272,63 +262,3 @@ jobs:
             -f 'client_payload[repo]=wet-mcp' \
             -f 'client_payload[tag]=${{ needs.release.outputs.tag }}'
 
-  deploy-cf:
-    name: Deploy Cloudflare Worker+Container
-    # Builds the http-slim image on a GitHub Linux runner and deploys it to
-    # Cloudflare so any release == CF live on that version — a beta dispatch redeploys
-    # the beta, a stable dispatch is maintainer-gated (replaces the
-    # manual local deploy_cf.py step + its Windows Docker OOM). It only needs the
-    # `release` job because deploy_cf.py builds and pushes its own
-    # Cloudflare-internal image, so this deploy remains independent of public
-    # artifact publication.
-    # NOTE: in CI the template renders the image at the NEW tag, so deploy_cf.py's
-    # auto-rollback (prev_ref != new) is inert here; a failed canary still fails
-    # this job (exit 1, no silent bad deploy). Live-image prev_ref for true CI
-    # rollback is a tracked follow-up.
-    needs: [release]
-    # Gated off 2026-09-13: the CF deploy token was removed as off-manifest
-    # (no entry in mcp-secret-routing.json = process violation). Re-enable =
-    # create a proper token (CF dashboard -> manifest entry -> repo secret
-    # CF_DEPLOY_TOKEN), then set the repo variable CF_DEPLOY_ENABLED=true.
-    if: vars.CF_DEPLOY_ENABLED == 'true' && needs.release.outputs.released == 'true'
-    runs-on: ubuntu-latest
-    steps:
-      - name: Harden Runner
-        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
-        with:
-          egress-policy: audit
-      - name: Checkout the released tag
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          ref: ${{ needs.release.outputs.tag }}
-      - name: Setup Bun (bunx wrangler)
-        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
-      - name: Install worker deps (wrangler bundles worker.ts, needs @cloudflare/containers)
-        run: bun install --frozen-lockfile
-      - name: Setup Python
-        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
-        with:
-          python-version: "3.13"
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
-      # CF_DEPLOY_TOKEN needs D1:edit on top of Workers/Containers edit: the
-      # script now applies migrations/ to the remote D1 before the worker rolls
-      # (wrangler deploy never did — issue #1617).
-      - name: Deploy to Cloudflare (build http-slim + push + migrate D1 + deploy + canary)
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CF_DEPLOY_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          CF_KV_ID: ${{ secrets.CF_KV_ID }}
-          CF_D1_ID: ${{ secrets.CF_D1_ID }}
-          CF_VECTORIZE_ID: ${{ secrets.CF_VECTORIZE_ID }}
-          PUBLIC_URL: ${{ secrets.PUBLIC_URL }}
-          IMAGE_TAG: ${{ needs.release.outputs.version }}
-        run: |
-          extra_args=()
-          if [[ "${{ inputs.recreate_container }}" == "true" ]]; then
-            extra_args+=(--recreate-container)
-          fi
-          if [[ "${{ inputs.incident_no_canary }}" == "true" ]]; then
-            extra_args+=(--no-canary)
-          fi
-          python scripts/deploy_cf.py --from-template --tag "${IMAGE_TAG}" "${extra_args[@]}"

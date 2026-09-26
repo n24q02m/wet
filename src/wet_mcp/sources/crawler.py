@@ -227,17 +227,17 @@ _agent_lock = asyncio.Lock()
 def _build_headless_strategies(stealth: bool) -> dict[str, Any]:
     """Resolve the BROWSER_BACKENDS chain into named headless strategies.
 
-    Each headless backend (native chromium / Cloudflare Browser Rendering /
-    self-host browserless) enters the agent chain as its own strategy, so the
-    agent's existing escalate-on-validation-failure machinery provides runtime
-    fallback between them (e.g. a 5xx/timeout on CF advances to browserless).
+    Each headless backend (native chromium / self-host browserless) enters the
+    agent chain as its own strategy, so the agent's existing
+    escalate-on-validation-failure machinery provides runtime fallback between
+    them (e.g. a 5xx/timeout on native advances to browserless).
     Backends whose credentials are missing are skipped with a warning. If the
     chain resolves to nothing AND local browser is NOT disabled, fall back to
     native so local extraction keeps a JS-render escalation; if local IS
     disabled with no cloud creds, the headless leg is intentionally absent
     (extract degrades to basic_http/tls_spoof).
     """
-    from web_core.browsers import BrowserlessClient, CFBrowserRenderingClient
+    from web_core.browsers import BrowserlessClient
     from web_core.scraper.strategies import RemoteRenderStrategy
 
     out: dict[str, Any] = {}
@@ -247,13 +247,6 @@ def _build_headless_strategies(stealth: bool) -> dict[str, Any]:
                 out["headless"] = HeadlessStrategy(
                     timeout=settings.crawler_timeout, stealth=stealth
                 )
-            elif backend == "cf-browser-rendering":
-                client = CFBrowserRenderingClient(
-                    settings.cf_account_id,
-                    settings.cf_browser_rendering_token,
-                    timeout=settings.crawler_timeout,
-                )
-                out["cf_render"] = RemoteRenderStrategy(client)
             elif backend == "browserless":
                 client = BrowserlessClient(
                     settings.browserless_url,
@@ -276,8 +269,8 @@ def _build_scraping_agent(stealth: bool = True) -> ScrapingAgent:
     """Build a ScrapingAgent with the canonical wet strategy chain.
 
     Order matches spec §4.2 escalation: ``basic_http`` → ``tls_spoof`` → the
-    headless provider chain (``native`` / ``cf-browser-rendering`` /
-    ``browserless``, resolved from BROWSER_BACKENDS). ``api_direct``/
+    headless provider chain (``native`` / ``browserless``, resolved from
+    BROWSER_BACKENDS). ``api_direct``/
     ``patchright`` are intentionally omitted (api_direct rarely beats basic_http
     on arbitrary URLs; patchright pulls in heavier optional deps); ``captcha`` is
     appended separately as a key-gated tier (see _build_scraping_agent callers).

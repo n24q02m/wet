@@ -1,308 +1,144 @@
-"""Tests for src/wet_mcp/reranker.py — Dual-backend reranking.
+"""Tests for src/wet_mcp/reranker.py — dual-backend reranking over hull cells.
 
-Covers CloudReranker (litellm passthrough via mcp_core.llm), LocalReranker,
-factory functions, and graceful fallback behavior.
+Covers CloudReranker (async; the [models.rerank] cell's OpenAI-spec client),
+LocalReranker (sync local ONNX cross-encoder), the per-request resolver, and
+the init_reranker factory.
 """
 
-import os
 from types import SimpleNamespace
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+import wet_mcp.reranker as reranker_mod
 from wet_mcp.reranker import (
     CloudReranker,
     LocalReranker,
     get_reranker,
     init_reranker,
+    resolve_rerank_backend_for_request,
 )
 
 
-def _rerank_response(items: list[tuple[int, float]]) -> MagicMock:
-    """Build a litellm-shaped RerankResponse mock (.results list of dicts)."""
-    mock_response = MagicMock()
-    mock_response.results = [
-        {"index": idx, "relevance_score": score} for idx, score in items
-    ]
-    return mock_response
+def _cell_client(model: str = "rerank-v4.0-pro") -> MagicMock:
+    """A hull OpenAICompatClient stand-in for one [models.rerank] cell."""
+    client = MagicMock()
+    client.cell = SimpleNamespace(model=model)
+    client.rerank = AsyncMock()
+    return client
+
+
+def _rerank_response(items: list[tuple[int, float]]) -> list[dict]:
+    """A hull-client shaped rerank result (list of dicts)."""
+    return [{"index": idx, "relevance_score": score} for idx, score in items]
+
+
+@pytest.fixture(autouse=True)
+def _reset_reranker_singletons():
+    """Keep the module-level singletons from leaking between tests."""
+    original_backend = reranker_mod._backend
+    original_shared = reranker_mod._shared_local_backend
+    reranker_mod._backend = None
+    reranker_mod._shared_local_backend = None
+    yield
+    reranker_mod._backend = original_backend
+    reranker_mod._shared_local_backend = original_shared
 
 
 # -----------------------------------------------------------------------
-# CloudReranker
+# CloudReranker (async)
 # -----------------------------------------------------------------------
 
 
 class TestCloudReranker:
-    def test_rerank_success(self):
+    async def test_rerank_success(self):
         """Reranking returns sorted (index, score) tuples."""
-        reranker = CloudReranker(model="rerank-v4.0-pro", api_key="test-key")
+        client = _cell_client()
+        client.rerank.return_value = _rerank_response([(0, 0.3), (1, 0.9), (2, 0.6)])
+        reranker = CloudReranker(client)
 
-        with patch("mcp_core.llm.rerank") as mock_rerank:
-            mock_rerank.return_value = _rerank_response([(0, 0.3), (1, 0.9), (2, 0.6)])
-            results = reranker.rerank(
-                "test query",
-                ["doc a", "doc b", "doc c"],
-                top_n=2,
-            )
+        results = await reranker.rerank(
+            "test query", ["doc a", "doc b", "doc c"], top_n=2
+        )
 
         assert len(results) == 2
-        # Sorted by score descending
-        assert results[0][0] == 1  # index of "doc b"
-        assert results[0][1] == 0.9
-        assert results[1][0] == 2  # index of "doc c"
-        assert results[1][1] == 0.6
+        assert results[0] == (1, 0.9)  # index of "doc b", sorted by score desc
+        assert results[1] == (2, 0.6)
 
-    def test_rerank_empty_documents(self):
-        """Empty documents return empty results."""
-        reranker = CloudReranker(api_key="test-key")
-        results = reranker.rerank("query", [], top_n=5)
+    async def test_rerank_empty_documents(self):
+        """Empty documents return empty results without an API call."""
+        client = _cell_client()
+        reranker = CloudReranker(client)
+
+        results = await reranker.rerank("query", [], top_n=5)
+
         assert results == []
+        client.rerank.assert_not_awaited()
 
-    def test_rerank_api_error_returns_empty(self):
+    async def test_rerank_api_error_returns_empty(self):
         """API errors return empty results (graceful fallback)."""
-        reranker = CloudReranker(api_key="test-key")
+        client = _cell_client()
+        client.rerank.side_effect = Exception("API error")
+        reranker = CloudReranker(client)
 
-        with patch("mcp_core.llm.rerank", side_effect=Exception("API error")):
-            results = reranker.rerank("query", ["doc1", "doc2"])
+        results = await reranker.rerank("query", ["doc1", "doc2"])
 
         assert results == []
 
-    def test_rerank_forwards_params(self):
-        """Model mapping, query, documents, top_n and api_key are forwarded."""
-        reranker = CloudReranker(model="rerank-v4.0-pro", api_key="test-key")
+    async def test_rerank_forwards_params(self):
+        """Query, documents and top_n are forwarded to the cell client."""
+        client = _cell_client()
+        client.rerank.return_value = _rerank_response([(0, 0.9)])
+        reranker = CloudReranker(client)
 
-        with patch("mcp_core.llm.rerank") as mock_rerank:
-            mock_rerank.return_value = _rerank_response([(0, 0.9)])
-            reranker.rerank("test query", ["doc a"], top_n=3)
+        await reranker.rerank("test query", ["doc a"], top_n=3)
 
-            call_kwargs = mock_rerank.call_args[1]
-            assert call_kwargs["model"] == "cohere/rerank-v4.0-pro"
-            assert call_kwargs["query"] == "test query"
-            assert call_kwargs["documents"] == ["doc a"]
-            assert call_kwargs["top_n"] == 3
-            assert call_kwargs["api_key"] == "test-key"
-            assert call_kwargs["api_base"] is None
+        client.rerank.assert_awaited_once_with("test query", ["doc a"], top_n=3)
 
-    def test_rerank_api_base_env(self, monkeypatch):
-        """RERANK_API_BASE env var is forwarded as api_base."""
-        monkeypatch.setenv("RERANK_API_BASE", "https://proxy.example.com")
-        reranker = CloudReranker(api_key="test-key")
+    async def test_check_available_success(self):
+        """Returns True when the model is available."""
+        client = _cell_client()
+        client.rerank.return_value = _rerank_response([(0, 0.5)])
 
-        with patch("mcp_core.llm.rerank") as mock_rerank:
-            mock_rerank.return_value = _rerank_response([(0, 0.9)])
-            reranker.rerank("query", ["doc"])
-            assert mock_rerank.call_args[1]["api_base"] == "https://proxy.example.com"
+        assert await CloudReranker(client).check_available() is True
 
-    def test_check_available_success(self):
-        """Returns True when model is available."""
-        reranker = CloudReranker(api_key="test-key")
+    async def test_check_available_failure(self):
+        """Returns False when the model is not available."""
+        client = _cell_client()
+        client.rerank.side_effect = Exception("Not found")
 
-        with patch("mcp_core.llm.rerank") as mock_rerank:
-            mock_rerank.return_value = _rerank_response([(0, 0.5)])
-            assert reranker.check_available() is True
+        assert await CloudReranker(client).check_available() is False
 
-    def test_check_available_failure(self):
-        """Returns False when model is not available."""
-        reranker = CloudReranker(api_key="test-key")
-
-        with patch("mcp_core.llm.rerank", side_effect=Exception("Not found")):
-            assert reranker.check_available() is False
-
-    def test_default_model(self):
-        """Default model is rerank-v4.0-pro (mapped to cohere/ at call time)."""
-        reranker = CloudReranker(api_key="test-key")
-        assert reranker.model == "rerank-v4.0-pro"
-        assert reranker._litellm_model() == "cohere/rerank-v4.0-pro"
-
-    def test_no_api_key_stays_none(self):
-        """Without an explicit key, api_key=None lets litellm use env vars."""
-        reranker = CloudReranker()
-        assert reranker.api_key is None
-
-        with patch("mcp_core.llm.rerank") as mock_rerank:
-            mock_rerank.return_value = _rerank_response([(0, 0.5)])
-            reranker.rerank("query", ["doc"])
-            assert mock_rerank.call_args[1]["api_key"] is None
-
-    def test_empty_api_key_normalised_to_none(self):
-        """Empty-string api_key is normalised to None (litellm env fallback)."""
-        reranker = CloudReranker(api_key="")
-        assert reranker.api_key is None
-
-        with patch("mcp_core.llm.rerank") as mock_rerank:
-            mock_rerank.return_value = _rerank_response([(0, 0.5)])
-            reranker.rerank("query", ["doc"])
-            assert mock_rerank.call_args[1]["api_key"] is None
-
-    def test_none_results_guarded(self):
-        """RerankResponse.results=None yields [] instead of raising."""
-        reranker = CloudReranker(api_key="test-key")
-
-        mock_response = MagicMock()
-        mock_response.results = None
-
-        with patch("mcp_core.llm.rerank", return_value=mock_response):
-            assert reranker.rerank("query", ["doc1", "doc2"]) == []
-
-    def test_pydantic_object_results_shape(self):
-        """litellm rerank pydantic items (.index/.relevance_score) are handled."""
-        reranker = CloudReranker(api_key="test-key")
-
-        mock_response = MagicMock()
-        mock_response.results = [
-            SimpleNamespace(index=0, relevance_score=0.3),
-            SimpleNamespace(index=1, relevance_score=0.9),
-        ]
-
-        with patch("mcp_core.llm.rerank", return_value=mock_response):
-            results = reranker.rerank("query", ["doc a", "doc b"], top_n=2)
-
-        # Sorted by score descending, object items parsed via attr-access.
-        assert results == [(1, 0.9), (0, 0.3)]
+    async def test_model_from_cell(self):
+        reranker = CloudReranker(_cell_client("voyage-2.5-lite"))
+        assert reranker.model == "voyage-2.5-lite"
 
 
-class TestCloudRerankerModelMapping:
-    """_litellm_model maps wet's model naming to litellm provider prefixes."""
+class TestCloudRerankerApiKeyValidation:
+    """check_available() distinguishes API key errors from other failures."""
 
-    def test_prefixed_models_pass_through(self):
-        assert (
-            CloudReranker(model="cohere/rerank-v4.0-pro")._litellm_model()
-            == "cohere/rerank-v4.0-pro"
-        )
-        assert (
-            CloudReranker(model="jina_ai/jina-reranker-v3")._litellm_model()
-            == "jina_ai/jina-reranker-v3"
-        )
+    @pytest.mark.parametrize("error", ["401 Unauthorized", "403 Forbidden", "Invalid API key"])
+    async def test_auth_errors_return_false(self, error):
+        client = _cell_client()
+        client.rerank.side_effect = Exception(error)
 
-    def test_bare_jina_gets_prefix(self):
-        assert (
-            CloudReranker(model="jina-reranker-v3")._litellm_model()
-            == "jina_ai/jina-reranker-v3"
-        )
+        assert await CloudReranker(client).check_available() is False
 
-    def test_bare_cohere_gets_prefix(self):
-        assert (
-            CloudReranker(model="rerank-v3.5")._litellm_model() == "cohere/rerank-v3.5"
-        )
+    async def test_non_auth_error_returns_false(self):
+        client = _cell_client()
+        client.rerank.side_effect = Exception("Model not found")
 
+        assert await CloudReranker(client).check_available() is False
 
-class TestCloudflareGatewayJinaRoute:
-    """Cloudflare AI Gateway's custom Jina route needs Cohere dispatch."""
+    async def test_success_returns_true(self):
+        client = _cell_client()
+        client.rerank.return_value = _rerank_response([(0, 0.9)])
 
-    def test_gateway_jina_uses_cohere_and_explicit_single_user_jina_key(
-        self, monkeypatch
-    ):
-        gateway_base = (
-            "https://gateway.ai.cloudflare.com/v1/account/gateway/custom-jina/v1"
-        )
-        monkeypatch.setenv("JINA_AI_API_BASE", gateway_base)
-        monkeypatch.delenv("RERANK_API_BASE", raising=False)
-        monkeypatch.setenv("JINA_AI_API_KEY", "jina-single-user-key")
-        monkeypatch.delenv("COHERE_API_KEY", raising=False)
-
-        from wet_mcp.credential_state import set_current_sub
-
-        set_current_sub(None)
-        reranker = CloudReranker(model="jina_ai/jina-reranker-v3")
-
-        with patch("mcp_core.llm.rerank") as mock_rerank:
-            mock_rerank.return_value = _rerank_response([(0, 0.9)])
-            reranker.rerank("query", ["document"], top_n=1)
-
-        call_kwargs = mock_rerank.call_args[1]
-        assert call_kwargs["model"] == "cohere/jina-reranker-v3"
-        assert call_kwargs["api_base"] == f"{gateway_base}/rerank"
-        assert call_kwargs["api_key"] == "jina-single-user-key"
-        assert os.environ["JINA_AI_API_KEY"] == "jina-single-user-key"
-
-    def test_gateway_jina_prefers_rerank_base_without_double_suffix(self, monkeypatch):
-        rerank_base = (
-            "https://gateway.ai.cloudflare.com/v1/account/gateway/custom-jina/v1/rerank"
-        )
-        monkeypatch.setenv("RERANK_API_BASE", rerank_base)
-        monkeypatch.setenv(
-            "JINA_AI_API_BASE",
-            "https://gateway.ai.cloudflare.com/v1/other/route/custom-jina/v1",
-        )
-
-        reranker = CloudReranker(model="jina_ai/jina-reranker-v3", api_key="jina-key")
-        with patch("mcp_core.llm.rerank") as mock_rerank:
-            mock_rerank.return_value = _rerank_response([(0, 0.9)])
-            reranker.rerank("query", ["document"], top_n=1)
-
-        call_kwargs = mock_rerank.call_args[1]
-        assert call_kwargs["model"] == "cohere/jina-reranker-v3"
-        assert call_kwargs["api_base"] == rerank_base
-        assert call_kwargs["api_key"] == "jina-key"
-
-    @pytest.mark.parametrize(
-        ("model", "api_base", "expected_model"),
-        [
-            (
-                "jina_ai/jina-reranker-v3",
-                "https://api.jina.ai/v1",
-                "jina_ai/jina-reranker-v3",
-            ),
-            (
-                "cohere/rerank-v3.5",
-                "https://gateway.ai.cloudflare.com/v1/account/gateway/cohere/v1",
-                "cohere/rerank-v3.5",
-            ),
-        ],
-    )
-    def test_adapter_only_targets_cloudflare_jina_route(
-        self, monkeypatch, model, api_base, expected_model
-    ):
-        monkeypatch.setenv("RERANK_API_BASE", api_base)
-        reranker = CloudReranker(model=model, api_key="provider-key")
-
-        with patch("mcp_core.llm.rerank") as mock_rerank:
-            mock_rerank.return_value = _rerank_response([(0, 0.9)])
-            reranker.rerank("query", ["document"], top_n=1)
-
-        call_kwargs = mock_rerank.call_args[1]
-        assert call_kwargs["model"] == expected_model
-        assert call_kwargs["api_base"] == api_base
-        assert call_kwargs["api_key"] == "provider-key"
-
-    def test_gateway_jina_uses_per_sub_key_and_never_mutates_process_env(
-        self, monkeypatch, tmp_path
-    ):
-        gateway_base = (
-            "https://gateway.ai.cloudflare.com/v1/account/gateway/custom-jina/v1"
-        )
-        monkeypatch.setenv("WET_DATA_DIR", str(tmp_path))
-        monkeypatch.setenv("CREDENTIAL_SECRET", "test-secret")
-        monkeypatch.setenv("JINA_AI_API_KEY", "operator-key")
-        monkeypatch.delenv("RERANK_API_BASE", raising=False)
-        monkeypatch.delenv("COHERE_API_KEY", raising=False)
-
-        from wet_mcp.credential_state import set_current_sub, store_for_sub
-
-        store_for_sub(
-            "user_a",
-            {"JINA_AI_API_KEY": "user-a-key", "JINA_AI_API_BASE": gateway_base},
-        )
-        reranker = CloudReranker(model="jina_ai/jina-reranker-v3")
-
-        try:
-            set_current_sub("user_a")
-            with patch("mcp_core.llm.rerank") as mock_rerank:
-                mock_rerank.return_value = _rerank_response([(0, 0.9)])
-                reranker.rerank("query", ["document"], top_n=1)
-
-            call_kwargs = mock_rerank.call_args[1]
-            assert call_kwargs["model"] == "cohere/jina-reranker-v3"
-            assert call_kwargs["api_base"] == f"{gateway_base}/rerank"
-            assert call_kwargs["api_key"] == "user-a-key"
-            assert os.environ["JINA_AI_API_KEY"] == "operator-key"
-            assert "COHERE_API_KEY" not in os.environ
-        finally:
-            set_current_sub(None)
+        assert await CloudReranker(client).check_available() is True
 
 
 # -----------------------------------------------------------------------
-# LocalReranker
+# LocalReranker (sync)
 # -----------------------------------------------------------------------
 
 
@@ -317,17 +153,12 @@ class TestLocalReranker:
 
         with patch.object(reranker, "_get_model", return_value=mock_model):
             results = reranker.rerank(
-                "test query",
-                ["doc a", "doc b", "doc c"],
-                top_n=2,
+                "test query", ["doc a", "doc b", "doc c"], top_n=2
             )
 
         assert len(results) == 2
-        # Sorted by score descending
-        assert results[0][0] == 1  # doc b
-        assert results[0][1] == 0.9
-        assert results[1][0] == 2  # doc c
-        assert results[1][1] == 0.6
+        assert results[0] == (1, 0.9)
+        assert results[1] == (2, 0.6)
 
     def test_rerank_empty_documents(self):
         """Empty documents return empty results."""
@@ -336,7 +167,7 @@ class TestLocalReranker:
         assert results == []
 
     def test_rerank_passes_pairs(self):
-        """Reranker receives (query, document) pairs."""
+        """Reranker receives (query, documents) pairs."""
         reranker = LocalReranker()
 
         mock_model = MagicMock()
@@ -345,7 +176,6 @@ class TestLocalReranker:
         with patch.object(reranker, "_get_model", return_value=mock_model):
             reranker.rerank("my query", ["doc1", "doc2"])
 
-        # Verify pairs passed to model
         assert mock_model.rerank.call_args[0][0] == "my query"
         assert mock_model.rerank.call_args[0][1] == ["doc1", "doc2"]
 
@@ -375,98 +205,78 @@ class TestLocalReranker:
         with patch.object(reranker, "_get_model", side_effect=Exception("Load error")):
             assert reranker.check_available() is False
 
-
-# -----------------------------------------------------------------------
-# Factory functions
-# -----------------------------------------------------------------------
-
-
-class TestCloudRerankerApiKeyValidation:
-    """check_available() distinguishes API key errors from other failures."""
-
-    def test_api_key_401_returns_false(self):
-        """401 errors return False."""
-        reranker = CloudReranker(api_key="bad-key")
-        with patch("mcp_core.llm.rerank", side_effect=Exception("401 Unauthorized")):
-            assert reranker.check_available() is False
-
-    def test_api_key_403_returns_false(self):
-        """403 errors return False."""
-        reranker = CloudReranker(api_key="bad-key")
-        with patch("mcp_core.llm.rerank", side_effect=Exception("403 Forbidden")):
-            assert reranker.check_available() is False
-
-    def test_invalid_key_detected(self):
-        """'invalid' keyword triggers warning path."""
-        reranker = CloudReranker(api_key="bad-key")
-        with patch("mcp_core.llm.rerank", side_effect=Exception("Invalid API key")):
-            assert reranker.check_available() is False
-
-    def test_non_auth_error_returns_false(self):
-        """Non-auth errors also return False."""
-        reranker = CloudReranker(api_key="test-key")
-        with patch("mcp_core.llm.rerank", side_effect=Exception("Model not found")):
-            assert reranker.check_available() is False
-
-    def test_success_returns_true(self):
-        """Successful check returns True."""
-        reranker = CloudReranker(api_key="test-key")
-        with patch("mcp_core.llm.rerank") as mock_rerank:
-            mock_rerank.return_value = _rerank_response([(0, 0.9)])
-            assert reranker.check_available() is True
-
-
-class TestLocalRerankerGetModelWarning:
-    """_get_model() and check_available edge cases."""
-
     def test_check_available_import_error(self):
         """Returns False when fastretrieval is not installed."""
         reranker = LocalReranker()
         with patch.object(reranker, "_get_model", side_effect=ImportError("No module")):
             assert reranker.check_available() is False
 
-    def test_check_available_success(self):
-        """Returns True when local reranker works."""
-        reranker = LocalReranker()
-        mock_model = MagicMock()
-        mock_model.rerank.return_value = iter([0.8])
-        with patch.object(reranker, "_get_model", return_value=mock_model):
-            assert reranker.check_available() is True
+
+# -----------------------------------------------------------------------
+# Per-request resolution + factory
+# -----------------------------------------------------------------------
 
 
 class TestRerankerFactory:
-    def test_init_cloud_reranker(self):
-        """init_reranker('cloud') creates CloudReranker."""
-        reranker = init_reranker("cloud", api_key="test-key")
+    def test_init_cloud_reranker_uses_cell_client(self, monkeypatch):
+        """init_reranker('cloud') wraps the [models.rerank] cell's client."""
+        client = _cell_client("cell-rerank-model")
+        monkeypatch.setattr(
+            "wet_mcp.runtime.cell_configured",
+            lambda task, settings=None: task == "rerank",
+        )
+        monkeypatch.setattr(
+            "wet_mcp.runtime.provider_client", lambda task, settings=None: client
+        )
+
+        reranker = init_reranker("cloud")
+
         assert isinstance(reranker, CloudReranker)
+        assert reranker.model == "cell-rerank-model"
         assert get_reranker() is reranker
 
+    def test_init_cloud_requires_configured_cell(self, monkeypatch):
+        monkeypatch.setattr(
+            "wet_mcp.runtime.cell_configured", lambda task, settings=None: False
+        )
+        with pytest.raises(RuntimeError, match="not configured"):
+            init_reranker("cloud")
+
     def test_init_local_reranker(self):
-        """init_reranker('local') creates LocalReranker."""
         reranker = init_reranker("local")
         assert isinstance(reranker, LocalReranker)
         assert get_reranker() is reranker
 
     def test_init_unknown_backend(self):
-        """Unknown backend type raises ValueError."""
         with pytest.raises(ValueError, match="Unknown reranker"):
             init_reranker("unknown")
 
     def test_get_reranker_none_before_init(self):
-        """get_reranker returns None before initialization."""
-        import wet_mcp.reranker as mod
-
-        mod._backend = None
         assert get_reranker() is None
 
-    def test_init_cloud_default_model(self):
-        """Cloud reranker uses default model when none specified."""
-        reranker = init_reranker("cloud", api_key="test-key")
-        assert isinstance(reranker, CloudReranker)
-        assert reranker.model == "rerank-v4.0-pro"
 
-    def test_init_cloud_custom_model(self):
-        """Cloud reranker accepts custom model."""
-        reranker = init_reranker("cloud", model="rerank-v3.5", api_key="test-key")
-        assert isinstance(reranker, CloudReranker)
-        assert reranker.model == "rerank-v3.5"
+class TestResolveRerankBackendForRequest:
+    def test_startup_singleton_wins(self):
+        """A startup-resolved reranker serves every request unchanged."""
+        sentinel = LocalReranker("sentinel")
+        reranker_mod._backend = sentinel
+
+        assert resolve_rerank_backend_for_request() is sentinel
+
+    def test_falls_back_to_shared_local(self, monkeypatch):
+        """No singleton + local leg enabled -> process-shared local reranker."""
+        backend = resolve_rerank_backend_for_request()
+        assert isinstance(backend, LocalReranker)
+        assert resolve_rerank_backend_for_request() is backend
+
+    def test_none_when_rerank_disabled(self, monkeypatch):
+        from wet_mcp.config import settings
+
+        monkeypatch.setattr(settings, "rerank_enabled", False)
+        assert resolve_rerank_backend_for_request() is None
+
+    def test_none_when_local_leg_disabled(self, monkeypatch):
+        from wet_mcp.config import settings
+
+        monkeypatch.setattr(settings, "disable_local_rerank", True)
+        assert resolve_rerank_backend_for_request() is None

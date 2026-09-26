@@ -81,3 +81,14 @@ htmlcov/
 *.bak
 /*.patch
 /*.diff
+
+# WP3 de-host: local instance data + import artifacts (never commit)
+.wet/
+docs.db
+docs.db-*
+*.sqlite
+*.sqlite3
+*.sqlite-*
+*.db-wal
+*.db-shm
+*_FULL-*.sql

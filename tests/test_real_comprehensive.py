@@ -1,13 +1,12 @@
 """Comprehensive real-world testing for wet-mcp.
 
-Tests all configuration combinations:
-1. Embedding: local ONNX vs custom LLM API base (litellm passthrough)
-2. Reranking: local ONNX vs custom LLM API base (litellm passthrough)
-3. SearXNG: embedded vs external (oci-vm-infra)
+Tests the kept surface across configuration combinations:
+1. Embedding: local ONNX vs an OpenAI-compatible provider cell
+2. Reranking: local ONNX vs an OpenAI-compatible /rerank cell (hull client)
+3. SearXNG: embedded vs external (self-hosted)
 4. All 4 tools: search, extract, media, config
 5. Docs search: fixed cases (vinejs, inertia, dry-rb)
 6. Markitdown: PDF extraction
-7. Sync: config validation
 
 Run with: uv run pytest tests/test_real_comprehensive.py -v -m integration --timeout=120
 """
@@ -142,7 +141,7 @@ class TestSearchTool:
 
 
 # ---------------------------------------------------------------------------
-# 3. Search with external SearXNG (oci-vm-infra)
+# 3. Search with external SearXNG (self-hosted)
 # ---------------------------------------------------------------------------
 
 
@@ -218,7 +217,7 @@ class TestExtractTool:
 
 
 # ---------------------------------------------------------------------------
-# 5. Custom LLM API base mode — embedding + reranking
+# 5. OpenAI-compatible provider cell mode — chat + rerank via hull client
 # ---------------------------------------------------------------------------
 
 
@@ -254,41 +253,25 @@ class TestCustomApiBaseProxy:
             data = resp.json()
             assert data["choices"][0]["message"]["content"]
 
-    async def test_proxy_rerank(self):
-        """Test reranking via proxy using OpenAI-compatible endpoint."""
-        import httpx
+    def _cell_client(self):
+        """A hull OpenAI-spec client pointed at the proxy (as a cell would be)."""
+        from hull_core.config.models import ModelCell
+        from hull_core.providers.openai_spec import OpenAICompatClient
 
-        async with httpx.AsyncClient(timeout=30) as client:
-            resp = await client.post(
-                f"{LLM_API_BASE}/rerank",
-                headers={
-                    "Authorization": f"Bearer {LLM_API_KEY}",
-                    "Content-Type": "application/json",
-                },
-                json={
-                    "model": "mcp/rerank-multilingual-v3",
-                    "query": "What is Python?",
-                    "documents": [
-                        "Python is a programming language",
-                        "Java is a programming language",
-                        "The weather is nice today",
-                    ],
-                },
-            )
-            assert resp.status_code == 200, f"Rerank failed: {resp.text}"
-            data = resp.json()
-            assert len(data["results"]) > 0
+        cell = ModelCell(
+            task="rerank",
+            base_url=LLM_API_BASE,
+            api_key=LLM_API_KEY,
+            model="rerank-multilingual-v3",
+        )
+        return OpenAICompatClient(cell)
 
-    async def test_proxy_rerank_via_cloud_reranker(self, monkeypatch):
-        """Test reranking through wet's CloudReranker with RERANK_API_BASE."""
-        monkeypatch.setenv("RERANK_API_BASE", LLM_API_BASE)
-
+    async def test_proxy_rerank_via_cell_client(self):
+        """Reranking through wet's cell seam (hull OpenAICompatClient)."""
         from wet_mcp.reranker import CloudReranker
 
-        reranker = CloudReranker(
-            model="cohere/rerank-multilingual-v3", api_key=LLM_API_KEY
-        )
-        results = reranker.rerank(
+        reranker = CloudReranker(self._cell_client())
+        results = await reranker.rerank(
             query="What is Python?",
             documents=[
                 "Python is a programming language",
@@ -303,81 +286,6 @@ class TestCustomApiBaseProxy:
             f"Expected Python doc first, got index {results[0][0]}"
         )
         assert results[0][1] > 0.5, f"Expected high score, got {results[0][1]}"
-
-
-# ---------------------------------------------------------------------------
-# 5b. LiteLLM SDK mode (direct API keys)
-# ---------------------------------------------------------------------------
-
-
-class TestLiteLLMSDK:
-    """Test with LiteLLM SDK mode (GOOGLE_API_KEY for Gemini)."""
-
-    @pytest.fixture(autouse=True)
-    def _get_api_keys(self):
-        """Get API keys from running wet-mcp process."""
-        import subprocess
-
-        result = subprocess.run(
-            [
-                "bash",
-                "-c",
-                "cat /proc/$(pgrep -f 'bin/wet-mcp' | head -1)/environ 2>/dev/null | tr '\\0' '\\n' | grep '^API_KEYS='",
-            ],
-            capture_output=True,
-            text=True,
-        )
-        if result.returncode != 0 or not result.stdout.strip():
-            pytest.skip("No running wet-mcp process with API_KEYS")
-        self.api_keys_raw = result.stdout.strip().split("=", 1)[1]
-
-    async def test_sdk_embedding_gemini(self):
-        """Test embedding via Gemini API directly."""
-        # Parse GOOGLE_API_KEY from API_KEYS format
-        google_key = None
-        for pair in self.api_keys_raw.split(","):
-            if pair.startswith("GOOGLE_API_KEY:"):
-                google_key = pair.split(":", 1)[1]
-                break
-        if not google_key:
-            pytest.skip("GOOGLE_API_KEY not found in API_KEYS")
-
-        import litellm
-
-        resp = await litellm.aembedding(
-            model="gemini/gemini-embedding-001",
-            input=["Hello world"],
-            api_key=google_key,
-        )
-        assert len(resp.data) == 1
-        assert len(resp.data[0]["embedding"]) > 0
-
-    async def test_sdk_chat_gemini(self):
-        """Test chat via Gemini API directly."""
-        google_key = None
-        for pair in self.api_keys_raw.split(","):
-            if pair.startswith("GOOGLE_API_KEY:"):
-                google_key = pair.split(":", 1)[1]
-                break
-        if not google_key:
-            pytest.skip("GOOGLE_API_KEY not found in API_KEYS")
-
-        import litellm
-
-        resp = await litellm.acompletion(
-            model="gemini/gemini-2.5-flash",
-            messages=[{"role": "user", "content": "Say hi"}],
-            api_key=google_key,
-            max_tokens=1024,
-        )
-        # Gemini 2.5 Flash uses thinking tokens — content may be in
-        # provider_specific_fields or regular content
-        msg = resp.choices[0].message
-        has_content = msg.content or (
-            msg.provider_specific_fields
-            and msg.provider_specific_fields.get("thoughts")
-        )
-        assert has_content, f"No content or thoughts: {msg}"
 
 
 # ---------------------------------------------------------------------------
@@ -429,41 +337,19 @@ class TestConfigTool:
         assert settings.tool_timeout > 0
         assert settings.wet_cache is True or settings.wet_cache is False
 
-    async def test_config_embedding_backend_resolution(self):
+    async def test_local_backend_availability_flags(self):
+        """De-host: backend availability is the local-leg flags + cell state."""
         from wet_mcp.config import settings
+        from wet_mcp.runtime import cell_configured
 
-        backend = settings.resolve_embedding_backend()
-        assert backend in ("cloud", "local")
-
-    async def test_config_rerank_backend_resolution(self):
-        from wet_mcp.config import settings
-
-        backend = settings.resolve_rerank_backend()
-        assert backend in ("cloud", "local")
+        assert isinstance(settings.local_embed_available(), bool)
+        assert isinstance(settings.local_rerank_available(), bool)
+        assert cell_configured("embed") in (True, False)
+        assert cell_configured("chat") in (True, False)
 
 
 # ---------------------------------------------------------------------------
-# 8. Sync config validation
-# ---------------------------------------------------------------------------
-
-
-class TestSyncConfig:
-    """Test sync configuration (without actual Google Drive)."""
-
-    async def test_sync_disabled_by_default(self):
-        from wet_mcp.config import settings
-
-        assert settings.sync_enabled is False
-
-    async def test_sync_config_fields(self):
-        from wet_mcp.config import settings
-
-        assert settings.sync_folder == "wet-mcp"
-        assert settings.sync_interval == 0
-
-
-# ---------------------------------------------------------------------------
-# 9. Media tool
+# 8. Media tool
 # ---------------------------------------------------------------------------
 
 
@@ -484,7 +370,7 @@ class TestMediaTool:
 
 
 # ---------------------------------------------------------------------------
-# 10. End-to-end: docs search with indexing
+# 9. End-to-end: docs search with indexing
 # ---------------------------------------------------------------------------
 
 

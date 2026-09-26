@@ -1,27 +1,76 @@
-"""Tests for wet_mcp.__main__ — CLI entry point and setup_tool functions."""
+"""Tests for wet_mcp.__main__ — ``python -m wet_mcp`` dispatch + setup_tool helpers.
+
+Dispatch contract (de-host): no args (or ``--serve``) runs the BLOCKING HTTP
+server via ``wet_mcp.server.run_server_blocking``; any other argv delegates to
+the ``wet`` CLI control plane. There is no stdio mode and no ``--http`` flag.
+"""
 
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import numpy as np
+import pytest
 
 
-class TestCli:
-    """__main__._cli is a thin wrapper delegating to wet_mcp.cli.main.
+# ---------------------------------------------------------------------------
+# python -m wet_mcp dispatch
+# ---------------------------------------------------------------------------
 
-    Subcommand dispatch (bare/--http/auth/warmup/docs) is exercised in
-    tests/test_cli.py against the real mcp_core build_cli builder; this
-    only verifies the delegation wiring for `python -m wet_mcp`.
-    """
 
-    @patch("wet_mcp.__main__._cli_main")
-    def test_delegates_to_cli_main(self, mock_cli_main):
-        from wet_mcp.__main__ import _cli
+class TestModuleDispatch:
+    """__main__.main routes bare/--serve argv to the server, else to the CLI."""
 
-        mock_cli_main.return_value = 0
-        rc = _cli()
+    def test_bare_invocation_runs_blocking_server(self):
+        from wet_mcp import __main__ as m
 
-        mock_cli_main.assert_called_once_with()
+        with patch("wet_mcp.server.run_server_blocking") as mock_serve:
+            rc = m.main([])
+
+        mock_serve.assert_called_once_with(host=None, port=None)
         assert rc == 0
+
+    def test_serve_flag_with_port_override(self):
+        from wet_mcp import __main__ as m
+
+        with patch("wet_mcp.server.run_server_blocking") as mock_serve:
+            rc = m.main(["--serve", "--port", "9999"])
+
+        mock_serve.assert_called_once_with(host=None, port=9999)
+        assert rc == 0
+
+    def test_serve_flag_with_host_and_port(self):
+        from wet_mcp import __main__ as m
+
+        with patch("wet_mcp.server.run_server_blocking") as mock_serve:
+            rc = m.main(["--serve", "--host", "0.0.0.0", "--port", "7000"])
+
+        mock_serve.assert_called_once_with(host="0.0.0.0", port=7000)
+        assert rc == 0
+
+    def test_subcommand_delegates_to_cli(self):
+        from wet_mcp import __main__ as m
+
+        with patch("wet_mcp.cli.main", return_value=0) as mock_cli_main:
+            rc = m.main(["config", "path"])
+
+        mock_cli_main.assert_called_once_with(["config", "path"])
+        assert rc == 0
+
+    def test_missing_server_entry_falls_back_to_server_main(self, monkeypatch):
+        """Defensive fallback when run_server_blocking is absent."""
+        import wet_mcp.server as server_mod
+        from wet_mcp import __main__ as m
+
+        monkeypatch.setattr(server_mod, "run_server_blocking", None, raising=False)
+        with patch.object(server_mod, "main") as mock_server_main:
+            rc = m.main([])
+
+        mock_server_main.assert_called_once_with()
+        assert rc == 0
+
+
+# ---------------------------------------------------------------------------
+# setup_tool: local model download helpers (kept warmup building blocks)
+# ---------------------------------------------------------------------------
 
 
 class TestClearModelCache:
@@ -122,8 +171,6 @@ class TestDownloadLocalEmbedding:
         mock_settings.resolve_local_embedding_model.return_value = "org/model"
 
         mock_te.side_effect = ImportError("fastretrieval not installed")
-
-        import pytest
 
         with pytest.raises(ImportError, match="not installed"):
             _download_local_embedding(mock_settings)
@@ -248,23 +295,39 @@ class TestDownloadLocalReranker:
 
         mock_tce.side_effect = RuntimeError("GPU not available")
 
-        import pytest
-
         with pytest.raises(RuntimeError, match="GPU not available"):
             _download_local_reranker(mock_settings)
 
 
+# ---------------------------------------------------------------------------
+# setup_tool: cloud cell validation ([models.embed] / [models.rerank])
+# ---------------------------------------------------------------------------
+
+
+def _cell(model: str):
+    from types import SimpleNamespace
+
+    return SimpleNamespace(model=model)
+
+
 class TestValidateCloudModels:
-    """_validate_cloud_models checks cloud embedding and reranking."""
+    """_validate_cloud_models probes the per-task provider cells."""
 
     @patch("wet_mcp.reranker.init_reranker")
     @patch("wet_mcp.embedder.init_backend")
-    async def test_cloud_embedding_and_reranker_success(self, mock_init, mock_rr_init):
+    async def test_configured_cells_both_ready(self, mock_init, mock_rr_init, monkeypatch):
         from wet_mcp.setup_tool import _validate_cloud_models
 
-        mock_settings = MagicMock()
-        mock_settings.embedding_chain.return_value = ["gemini/embed-1"]
-        mock_settings.rerank_chain.return_value = ["cohere/rerank"]
+        monkeypatch.setattr(
+            "wet_mcp.runtime.cell_configured",
+            lambda task, settings=None: task in ("embed", "rerank"),
+        )
+        monkeypatch.setattr(
+            "wet_mcp.runtime.model_cell",
+            lambda task, settings=None: _cell(
+                "gemini/embed-1" if task == "embed" else "cohere/rerank"
+            ),
+        )
 
         mock_backend = MagicMock()
         mock_backend.check_available = AsyncMock(return_value=768)
@@ -274,34 +337,50 @@ class TestValidateCloudModels:
         mock_reranker.check_available.return_value = True
         mock_rr_init.return_value = mock_reranker
 
-        result = await _validate_cloud_models(mock_settings)
+        result = await _validate_cloud_models(MagicMock())
 
         assert result["cloud_ready"] is True
         assert result["embedding"]["model"] == "gemini/embed-1"
         assert result["reranker"]["model"] == "cohere/rerank"
+        # The cell owns the model: init_backend gets the cell's model id.
+        mock_init.assert_called_once_with("cloud", "gemini/embed-1")
+        mock_rr_init.assert_called_once_with("cloud", "cohere/rerank")
 
     @patch("wet_mcp.embedder.init_backend")
-    async def test_cloud_embedding_fails(self, mock_init):
+    async def test_embed_cell_check_fails(self, mock_init, monkeypatch):
         from wet_mcp.setup_tool import _validate_cloud_models
 
-        mock_settings = MagicMock()
-        mock_settings.embedding_chain.return_value = ["model-a"]
+        monkeypatch.setattr(
+            "wet_mcp.runtime.cell_configured",
+            lambda task, settings=None: task == "embed",
+        )
+        monkeypatch.setattr(
+            "wet_mcp.runtime.model_cell",
+            lambda task, settings=None: _cell("model-a"),
+        )
 
         mock_backend = MagicMock()
         mock_backend.check_available = AsyncMock(return_value=0)
         mock_init.return_value = mock_backend
 
-        result = await _validate_cloud_models(mock_settings)
+        result = await _validate_cloud_models(MagicMock())
         assert result["cloud_ready"] is False
+        assert result["errors"]
 
     @patch("wet_mcp.reranker.init_reranker")
     @patch("wet_mcp.embedder.init_backend")
-    async def test_cloud_reranker_fails(self, mock_init, mock_rr_init):
+    async def test_rerank_check_false_keeps_embed_ready(
+        self, mock_init, mock_rr_init, monkeypatch
+    ):
         from wet_mcp.setup_tool import _validate_cloud_models
 
-        mock_settings = MagicMock()
-        mock_settings.embedding_chain.return_value = ["gemini/embed"]
-        mock_settings.rerank_chain.return_value = ["cohere/rerank"]
+        monkeypatch.setattr(
+            "wet_mcp.runtime.cell_configured", lambda task, settings=None: True
+        )
+        monkeypatch.setattr(
+            "wet_mcp.runtime.model_cell",
+            lambda task, settings=None: _cell("gemini/embed"),
+        )
 
         mock_backend = MagicMock()
         mock_backend.check_available = AsyncMock(return_value=768)
@@ -311,18 +390,24 @@ class TestValidateCloudModels:
         mock_reranker.check_available.return_value = False
         mock_rr_init.return_value = mock_reranker
 
-        result = await _validate_cloud_models(mock_settings)
+        result = await _validate_cloud_models(MagicMock())
         assert result["cloud_ready"] is True
-        assert result["reranker"] is None
+        assert "reranker" not in result
 
     @patch("wet_mcp.reranker.init_reranker")
     @patch("wet_mcp.embedder.init_backend")
-    async def test_cloud_reranker_init_exception(self, mock_init, mock_rr_init):
+    async def test_rerank_init_exception_reported_not_raised(
+        self, mock_init, mock_rr_init, monkeypatch
+    ):
         from wet_mcp.setup_tool import _validate_cloud_models
 
-        mock_settings = MagicMock()
-        mock_settings.embedding_chain.return_value = ["gemini/embed"]
-        mock_settings.rerank_chain.return_value = ["cohere/rerank"]
+        monkeypatch.setattr(
+            "wet_mcp.runtime.cell_configured", lambda task, settings=None: True
+        )
+        monkeypatch.setattr(
+            "wet_mcp.runtime.model_cell",
+            lambda task, settings=None: _cell("gemini/embed"),
+        )
 
         mock_backend = MagicMock()
         mock_backend.check_available = AsyncMock(return_value=768)
@@ -330,51 +415,35 @@ class TestValidateCloudModels:
 
         mock_rr_init.side_effect = Exception("reranker init failed")
 
-        result = await _validate_cloud_models(mock_settings)
+        result = await _validate_cloud_models(MagicMock())
         assert result["cloud_ready"] is True
-        assert result["reranker"] is None
+        assert "reranker" not in result
+        assert result["errors"]
 
     @patch("wet_mcp.embedder.init_backend")
-    async def test_explicit_model_tried_first(self, mock_init):
+    async def test_embed_init_exception_reported_not_raised(self, mock_init, monkeypatch):
         from wet_mcp.setup_tool import _validate_cloud_models
 
-        mock_settings = MagicMock()
-        mock_settings.embedding_chain.return_value = ["explicit/model"]
-        mock_settings.rerank_chain.return_value = []
-
-        mock_backend = MagicMock()
-        mock_backend.check_available = AsyncMock(return_value=512)
-        mock_init.return_value = mock_backend
-
-        result = await _validate_cloud_models(mock_settings)
-
-        mock_init.assert_called_once_with("cloud", "explicit/model")
-        assert result["cloud_ready"] is True
-
-    @patch("wet_mcp.embedder.init_backend")
-    async def test_no_rerank_model_skips_check(self, mock_init):
-        from wet_mcp.setup_tool import _validate_cloud_models
-
-        mock_settings = MagicMock()
-        mock_settings.embedding_chain.return_value = ["gemini/embed"]
-        mock_settings.rerank_chain.return_value = []
-
-        mock_backend = MagicMock()
-        mock_backend.check_available = AsyncMock(return_value=768)
-        mock_init.return_value = mock_backend
-
-        result = await _validate_cloud_models(mock_settings)
-        assert result["cloud_ready"] is True
-        assert result["reranker"] is None
-
-    @patch("wet_mcp.embedder.init_backend")
-    async def test_cloud_exception_returns_not_ready(self, mock_init):
-        from wet_mcp.setup_tool import _validate_cloud_models
-
-        mock_settings = MagicMock()
-        mock_settings.embedding_chain.return_value = ["model-a"]
-
+        monkeypatch.setattr(
+            "wet_mcp.runtime.cell_configured",
+            lambda task, settings=None: task == "embed",
+        )
+        monkeypatch.setattr(
+            "wet_mcp.runtime.model_cell",
+            lambda task, settings=None: _cell("model-a"),
+        )
         mock_init.side_effect = Exception("init failed")
 
-        result = await _validate_cloud_models(mock_settings)
+        result = await _validate_cloud_models(MagicMock())
         assert result["cloud_ready"] is False
+        assert result["errors"]
+
+    async def test_no_cells_configured(self, monkeypatch):
+        from wet_mcp.setup_tool import _validate_cloud_models
+
+        monkeypatch.setattr(
+            "wet_mcp.runtime.cell_configured", lambda task, settings=None: False
+        )
+
+        result = await _validate_cloud_models(MagicMock())
+        assert result == {"cloud_ready": False}

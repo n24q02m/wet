@@ -1,12 +1,20 @@
+"""Tests for wet_mcp.config (de-host: slim, env-driven operational knobs).
+
+The instance config (auth mode, bind, per-task provider cells) lives in
+``~/.wet/config.toml`` and is loaded via :mod:`wet_mcp.runtime` (hull-core);
+this module only tests the operational ``Settings`` that remains here:
+search/browser/crawler/cache knobs, path helpers, and the local-ONNX
+availability toggles.
+"""
+
 import os
 from unittest import mock
+from unittest.mock import patch
 
 import pytest
-from pydantic import SecretStr
 from pydantic_settings.sources import EnvSettingsSource
 
 from wet_mcp.config import Settings
-from wet_mcp.credential_state import CLOUD_KEYS
 
 
 def _settings_env_names() -> set[str]:
@@ -26,38 +34,12 @@ def _settings_env_names() -> set[str]:
     }
 
 
-# Env vars that steer these tests but are NOT declared as ``Settings`` fields,
-# so they cannot be derived from the model and must be named by hand:
-#   * ``CLOUD_KEYS`` -- provider API keys read straight from ``os.environ`` by
-#     wet's litellm passthrough (embedder.py, reranker.py, llm.py) and by
-#     credential_state.resolve_credential_state(). Imported from
-#     ``credential_state`` rather than retyped so the two lists cannot diverge.
-#   * ``GOOGLE_API_KEY`` -- the GEMINI alias that ``Settings._key_available`` /
-#     ``resolve_provider_mode`` probe directly via ``os.getenv``; not itself a
-#     Settings field.
-#   * ``USE_BUNDLED_GOOGLE_CLIENT`` -- read inside
-#     ``mcp_core.auth.resolve_bundled_client`` while resolving the
-#     ``google_drive_client_*`` field defaults; the kill-switch var itself has
-#     no corresponding Settings field.
-#   * ``EMBEDDING_API_BASE`` / ``RERANK_API_BASE`` / ``LLM_API_BASE`` -- the
-#     per-task custom-endpoint overrides read directly via ``os.getenv`` in
-#     embedder.py / reranker.py / llm.py, never declared as Settings fields.
-_EXTRA_ENV_NAMES = {
-    *CLOUD_KEYS,
-    "GOOGLE_API_KEY",
-    "USE_BUNDLED_GOOGLE_CLIENT",
-    "EMBEDDING_API_BASE",
-    "RERANK_API_BASE",
-    "LLM_API_BASE",
-}
-# litellm's per-provider endpoint override lives beside each provider key
-# (JINA_AI_API_KEY -> JINA_AI_API_BASE). Real developer shells do export these
-# (a gateway URL), so derive the siblings instead of listing them one by one.
-_EXTRA_ENV_NAMES |= {
-    f"{key.removesuffix('_API_KEY')}_API_BASE"
-    for key in _EXTRA_ENV_NAMES
-    if key.endswith("_API_KEY")
-}
+# Env vars that steer the config code but are NOT declared as ``Settings``
+# fields, so they cannot be derived from the model and must be named by hand:
+#   * ``BROWSER_BACKENDS`` -- re-read via ``os.getenv`` inside
+#     ``Settings.browser_backend_chain()`` so the env beats a constructed
+#     value; the chain method is the only reader.
+_EXTRA_ENV_NAMES = {"BROWSER_BACKENDS"}
 
 
 def _clean_env_names() -> set[str]:
@@ -70,17 +52,14 @@ def clean_env(monkeypatch):
     """Ensure environment isolation for configuration tests.
 
     Clears every env var ``Settings`` declares (derived from the model, see
-    :func:`_settings_env_names`) plus the provider keys and endpoint overrides
-    that are read directly from ``os.environ`` (see :data:`_EXTRA_ENV_NAMES`).
+    :func:`_settings_env_names`) plus the undeclared overrides that config
+    code reads straight from ``os.environ`` (see :data:`_EXTRA_ENV_NAMES`).
 
     This runs before each test body, so a developer shell exporting e.g.
-    ``EMBEDDING_MODELS`` / ``JINA_AI_API_KEY`` can no longer bake a leaked
-    value into a ``Settings()`` constructed later in the test. Clearing
-    *after* construction -- the old per-test
-    ``with mock.patch.dict(os.environ, {}, clear=True):`` pattern still used
-    below for isolating ``os.environ`` mutations made by ``setup_api_keys()``
-    -- is too late for that purpose, because pydantic-settings resolves env
-    vars once, synchronously, inside ``Settings.__init__``.
+    ``BROWSER_BACKENDS`` / ``DISABLE_LOCAL_EMBED`` can no longer bake a
+    leaked value into a ``Settings()`` constructed later in the test:
+    pydantic-settings resolves env vars once, synchronously, inside
+    ``Settings.__init__``.
     """
     vars_to_clear = _clean_env_names()
     # Thoroughly clear any variant of these keys in os.environ.
@@ -94,44 +73,36 @@ def clean_env(monkeypatch):
 class TestCleanEnvCoverage:
     """Guards against the clear-list drifting behind ``Settings`` again."""
 
-    def test_current_chain_vars_are_derived(self):
-        """The plural chain vars a hand-written list would be prone to miss."""
+    def test_operational_knob_vars_are_derived(self):
+        """The vars a hand-written list would be prone to miss."""
         derived = _settings_env_names()
-        for name in ("EMBEDDING_MODELS", "RERANK_MODELS", "LLM_MODELS"):
+        for name in (
+            "SEARXNG_URL",
+            "BROWSER_BACKENDS",
+            "DISABLE_LOCAL_EMBED",
+            "DISABLE_LOCAL_RERANK",
+            "EMBEDDING_DIMS",
+            "DOCS_DB_PATH",
+        ):
             assert name in derived, name
 
-    def test_deprecated_singular_vars_still_covered(self):
-        """The deprecated shims are still fields, so they stay in the set."""
+    def test_deprecated_host_owned_vars_are_not_settings_fields(self):
+        """Provider/auth knobs moved to ~/.wet/config.toml in the de-host.
+
+        ``Settings`` must NOT re-declare them as env fields: host-owned
+        provider keys and auth material would silently become per-process
+        operational knobs again.
+        """
         derived = _settings_env_names()
-        assert {
-            "EMBEDDING_MODEL",
-            "RERANK_MODEL",
-            "EMBEDDING_BACKEND",
-            "RERANK_BACKEND",
-        } <= derived
-
-    def test_cloud_keys_are_cleared(self):
-        """Provider keys read directly from ``os.environ`` are all cleared."""
-        names = _clean_env_names()
-        assert set(CLOUD_KEYS) <= names
-
-    def test_endpoint_overrides_are_cleared(self):
-        """``*_API_BASE`` is read via os.getenv, never declared on Settings."""
-        names = _clean_env_names()
-        assert {"EMBEDDING_API_BASE", "RERANK_API_BASE", "LLM_API_BASE"} <= names
-        # litellm per-provider endpoint siblings.
-        assert {"JINA_AI_API_BASE", "GEMINI_API_BASE"} <= names
-
-    def test_google_alias_and_kill_switch_are_cleared(self):
-        """GOOGLE_API_KEY alias + the bundled-client kill-switch are covered."""
-        names = _clean_env_names()
-        assert {"GOOGLE_API_KEY", "USE_BUNDLED_GOOGLE_CLIENT"} <= names
-
-    def test_every_settings_field_is_represented(self):
-        """No field may be silently absent from the clear-list."""
-        names = _clean_env_names()
-        missing = [f for f in Settings.model_fields if f.upper() not in names]
-        assert missing == []
+        for name in (
+            "EMBEDDING_MODELS",
+            "RERANK_MODELS",
+            "LLM_MODELS",
+            "DOCS_DB_BACKEND",
+            "PUBLIC_URL",
+            "GOOGLE_DRIVE_CLIENT_ID",
+        ):
+            assert name not in derived, name
 
 
 def test_robots_policy_preserves_legacy_default():
@@ -141,227 +112,54 @@ def test_robots_policy_preserves_legacy_default():
 
 def test_robots_policy_reads_environment(monkeypatch):
     """RESPECT_ROBOTS_TXT is the explicit process-level policy switch."""
-    monkeypatch.setenv("RESPECT_ROBOTS_TXT", "true")
-
+    monkeypatch.setenv("RESPECT_ROBOTS_TXT", "1")
     assert Settings().respect_robots_txt is True
-
-
-def test_setup_api_keys_valid():
-    """Test setup_api_keys with valid input."""
-    settings = Settings(api_keys=SecretStr("GOOGLE_API_KEY:abc,OPENAI_API_KEY:xyz"))
-
-    with mock.patch.dict(os.environ, {}, clear=True):
-        keys = settings.setup_api_keys()
-
-        assert keys == {"GOOGLE_API_KEY": ["abc"], "OPENAI_API_KEY": ["xyz"]}
-
-        assert os.environ["GOOGLE_API_KEY"] == "abc"
-        assert os.environ["OPENAI_API_KEY"] == "xyz"
-
-
-def test_setup_api_keys_empty():
-    """Test setup_api_keys with empty input."""
-    settings_none = Settings(api_keys=None)
-    with mock.patch.dict(os.environ, {}, clear=True):
-        assert settings_none.setup_api_keys() == {}
-        assert len(os.environ) == 0
-
-    settings_empty = Settings(api_keys=SecretStr(""))
-    with mock.patch.dict(os.environ, {}, clear=True):
-        assert settings_empty.setup_api_keys() == {}
-        assert len(os.environ) == 0
-
-
-def test_setup_api_keys_invalid_format():
-    """Test setup_api_keys with invalid format strings."""
-    settings = Settings(api_keys=SecretStr("INVALID_KEY,VALID:key"))
-
-    with mock.patch.dict(os.environ, {}, clear=True):
-        keys = settings.setup_api_keys()
-
-        assert keys == {"VALID": ["key"]}
-        assert os.environ.get("INVALID_KEY") is None
-        assert os.environ["VALID"] == "key"
-
-    settings = Settings(api_keys=SecretStr("ENV:,VALID:key"))
-    with mock.patch.dict(os.environ, {}, clear=True):
-        keys = settings.setup_api_keys()
-        assert keys == {"VALID": ["key"]}
-        assert os.environ.get("ENV") is None
-
-
-def test_setup_api_keys_multiple_keys():
-    """Test setup_api_keys with multiple keys for same env var."""
-    settings = Settings(api_keys=SecretStr("ENV:key1,ENV:key2"))
-
-    with mock.patch.dict(os.environ, {}, clear=True):
-        keys = settings.setup_api_keys()
-
-        assert keys == {"ENV": ["key1", "key2"]}
-
-        assert os.environ["ENV"] == "key1"
-
-
-def test_setup_api_keys_whitespace():
-    """Test setup_api_keys with whitespace around keys."""
-    settings = Settings(api_keys=SecretStr(" ENV : key1 , OTHER : key2 "))
-
-    with mock.patch.dict(os.environ, {}, clear=True):
-        keys = settings.setup_api_keys()
-
-        assert keys == {"ENV": ["key1"], "OTHER": ["key2"]}
-        assert os.environ["ENV"] == "key1"
-        assert os.environ["OTHER"] == "key2"
-
-
-def test_setup_api_keys_aliases():
-    """Test that GOOGLE_API_KEY is aliased to GEMINI_API_KEY."""
-    settings = Settings(api_keys=SecretStr("GOOGLE_API_KEY:google-key"))
-
-    with mock.patch.dict(os.environ, {}, clear=True):
-        keys = settings.setup_api_keys()
-        assert os.environ["GOOGLE_API_KEY"] == "google-key"
-        assert os.environ["GEMINI_API_KEY"] == "google-key"
-        assert keys["GOOGLE_API_KEY"] == ["google-key"]
-
-
-def test_setup_api_keys_alias_no_overwrite():
-    """Test that alias is not overwritten if already in environment."""
-    settings = Settings(api_keys=SecretStr("GOOGLE_API_KEY:new-key"))
-
-    with mock.patch.dict(os.environ, {"GEMINI_API_KEY": "existing-key"}, clear=True):
-        settings.setup_api_keys()
-        assert os.environ["GOOGLE_API_KEY"] == "new-key"
-        assert os.environ["GEMINI_API_KEY"] == "existing-key"
-
-
-def test_setup_api_keys_complex_whitespace():
-    """Test complex whitespace and empty parts."""
-    settings = Settings(api_keys=SecretStr("  KEY1 : val1 , , KEY2:val2  , KEY3:  "))
-
-    with mock.patch.dict(os.environ, {}, clear=True):
-        keys = settings.setup_api_keys()
-        assert keys == {"KEY1": ["val1"], "KEY2": ["val2"]}
-        assert os.environ["KEY1"] == "val1"
-        assert os.environ["KEY2"] == "val2"
-        assert "KEY3" not in os.environ
-
-
-# -----------------------------------------------------------------------
-# Embedding backend resolution
-# -----------------------------------------------------------------------
-
-
-def test_resolve_embedding_backend_explicit():
-    """Deprecated EMBEDDING_BACKEND is still honored (one release)."""
-    settings = Settings(embedding_backend="cloud")
-    assert settings.resolve_embedding_backend() == "cloud"
-
-
-def test_resolve_embedding_backend_local_auto():
-    """Inferred 'local' when chain is empty (no keys)."""
-    settings = Settings(embedding_backend="", embedding_models="")
-    with mock.patch.dict(os.environ, {}, clear=True):
-        assert settings.resolve_embedding_backend() == "local"
-
-
-def test_resolve_embedding_backend_cloud_auto():
-    """Inferred 'cloud' when an explicit chain is set."""
-    settings = Settings(
-        embedding_backend="",
-        embedding_models="gemini/gemini-embedding-001",
-    )
-    assert settings.resolve_embedding_backend() == "cloud"
-
-
-def test_resolve_embedding_backend_none():
-    """Returns 'local' when chain is empty and no keys."""
-    settings = Settings(embedding_backend="", api_keys=None)
-    with mock.patch.dict(os.environ, {}, clear=True):
-        result = settings.resolve_embedding_backend()
-        assert result == "local"
-
-
-# -----------------------------------------------------------------------
-# Reranking backend resolution
-# -----------------------------------------------------------------------
-
-
-def test_resolve_rerank_backend_disabled():
-    """Returns empty string when reranking is disabled."""
-    settings = Settings(rerank_enabled=False)
-    assert settings.resolve_rerank_backend() == ""
-
-
-def test_resolve_rerank_backend_explicit():
-    """Deprecated RERANK_BACKEND is still honored (one release)."""
-    settings = Settings(rerank_backend="cloud", rerank_enabled=True)
-    assert settings.resolve_rerank_backend() == "cloud"
-
-
-def test_resolve_rerank_backend_local_when_empty():
-    """Inferred 'local' when rerank chain is empty (no keys)."""
-    settings = Settings(
-        rerank_backend="",
-        rerank_models="",
-        rerank_enabled=True,
-    )
-    for v in ("JINA_AI_API_KEY", "COHERE_API_KEY"):
-        os.environ.pop(v, None)
-    with mock.patch.dict(os.environ, {}, clear=True):
-        assert settings.resolve_rerank_backend() == "local"
 
 
 # -----------------------------------------------------------------------
 # Disable-local toggle (DISABLE_LOCAL_EMBED / DISABLE_LOCAL_RERANK)
-# 3-way resolution truth table — the conflation fix.
+# Availability truth table — the conflation fix, on the de-host seams.
 # -----------------------------------------------------------------------
 
 
-def test_embedding_unavailable_when_local_disabled_and_no_chain():
-    """DISABLE_LOCAL_EMBED + empty chain -> 'unavailable' (NOT forced to a model)."""
-    settings = Settings(
-        embedding_backend="", embedding_models="", disable_local_embed=True
-    )
-    with mock.patch.dict(os.environ, {}, clear=True):
-        assert settings.resolve_embedding_backend() == "unavailable"
+def _patch_local_onnx(available: bool):
+    """Patch the image-side check used by local_embed/rerank_available."""
+    return patch("wet_mcp.config.local_onnx_installed", return_value=available)
 
 
-def test_embedding_cloud_wins_even_when_local_disabled():
-    """A configured cloud chain still resolves to 'cloud' with local disabled."""
-    settings = Settings(
-        embedding_backend="",
-        embedding_models="gemini/gemini-embedding-001",
-        disable_local_embed=True,
-    )
-    assert settings.resolve_embedding_backend() == "cloud"
+def test_embedding_unavailable_when_local_disabled_even_if_installed():
+    """DISABLE_LOCAL_EMBED -> the local leg is out regardless of the image."""
+    settings = Settings(disable_local_embed=True)
+    with _patch_local_onnx(True):
+        assert settings.local_embed_available() is False
 
 
-def test_embedding_local_when_toggle_off_and_no_chain():
-    """Toggle off (default) + empty chain -> 'local' (unchanged behaviour)."""
-    settings = Settings(
-        embedding_backend="", embedding_models="", disable_local_embed=False
-    )
-    with mock.patch.dict(os.environ, {}, clear=True):
-        assert settings.resolve_embedding_backend() == "local"
+def test_embedding_local_when_toggle_off_and_image_has_extras():
+    """Toggle off + local ONNX extras installed -> local leg available."""
+    settings = Settings(disable_local_embed=False)
+    with _patch_local_onnx(True):
+        assert settings.local_embed_available() is True
 
 
-def test_rerank_unavailable_when_local_disabled_and_no_chain():
-    """DISABLE_LOCAL_RERANK + empty chain (rerank enabled) -> 'unavailable'."""
-    settings = Settings(
-        rerank_enabled=True,
-        rerank_backend="",
-        rerank_models="",
-        disable_local_rerank=True,
-    )
-    with mock.patch.dict(os.environ, {}, clear=True):
-        assert settings.resolve_rerank_backend() == "unavailable"
+def test_embedding_unavailable_when_image_lacks_local_extras():
+    """A build without the ONNX extras is out even with the toggle off."""
+    settings = Settings(disable_local_embed=False)
+    with _patch_local_onnx(False):
+        assert settings.local_embed_available() is False
 
 
-def test_rerank_disabled_overrides_toggle():
-    """rerank_enabled=False still wins -> '' even with the toggle set."""
-    settings = Settings(rerank_enabled=False, disable_local_rerank=True)
-    assert settings.resolve_rerank_backend() == ""
+def test_rerank_unavailable_when_local_disabled_even_if_installed():
+    """DISABLE_LOCAL_RERANK -> the local rerank leg is out."""
+    settings = Settings(rerank_enabled=True, disable_local_rerank=True)
+    with _patch_local_onnx(True):
+        assert settings.local_rerank_available() is False
+
+
+def test_rerank_toggle_leaves_embed_available():
+    """rerank_enabled=False disables reranking but NOT the local embed leg."""
+    settings = Settings(rerank_enabled=False)
+    with _patch_local_onnx(True):
+        assert settings.local_embed_available() is True
 
 
 def test_auto_searxng_enabled_default():
@@ -395,29 +193,57 @@ def test_auto_searxng_disabled_when_wet_auto_off():
 
 def test_embed_and_rerank_toggles_are_independent():
     """A user may disable local embed but keep local rerank (and vice versa)."""
-    settings = Settings(
-        embedding_backend="",
-        embedding_models="",
-        rerank_backend="",
-        rerank_models="",
-        rerank_enabled=True,
-        disable_local_embed=True,
-        disable_local_rerank=False,
-    )
-    with mock.patch.dict(os.environ, {}, clear=True):
-        assert settings.resolve_embedding_backend() == "unavailable"
-        assert settings.resolve_rerank_backend() == "local"
+    with _patch_local_onnx(True):
+        settings = Settings(disable_local_embed=True, disable_local_rerank=False)
+        assert settings.local_embed_available() is False
+        assert settings.local_rerank_available() is True
+
+        settings = Settings(disable_local_embed=False, disable_local_rerank=True)
+        assert settings.local_embed_available() is True
+        assert settings.local_rerank_available() is False
 
 
 # -----------------------------------------------------------------------
-# Embedding model resolution
+# Embedding dims
 # -----------------------------------------------------------------------
 
 
-def test_resolve_embedding_dims():
-    """Returns explicit dims or 0 for auto-detect."""
-    assert Settings(embedding_dims=768).resolve_embedding_dims() == 768
-    assert Settings(embedding_dims=0).resolve_embedding_dims() == 0
+def test_embedding_dims_field():
+    """Explicit dims wins; 0 means auto-detect (server default 768)."""
+    assert Settings(embedding_dims=768).embedding_dims == 768
+    assert Settings(embedding_dims=0).embedding_dims == 0
+
+
+def test_embedding_dims_reads_environment(monkeypatch):
+    monkeypatch.setenv("EMBEDDING_DIMS", "1024")
+    assert Settings().embedding_dims == 1024
+
+
+# -----------------------------------------------------------------------
+# Browser backend chain
+# -----------------------------------------------------------------------
+
+
+def test_browser_chain_defaults_to_native():
+    """Empty BROWSER_BACKENDS -> the in-process chromium leg."""
+    assert Settings().browser_backend_chain() == ["native"]
+
+
+def test_browser_chain_reads_env_over_field(monkeypatch):
+    """The env var beats a constructed value (operator override at runtime)."""
+    monkeypatch.setenv("BROWSER_BACKENDS", "browserless,native")
+    assert Settings(browser_backends="native").browser_backend_chain() == [
+        "browserless",
+        "native",
+    ]
+
+
+def test_browser_chain_disable_local_drops_native(monkeypatch):
+    """DISABLE_LOCAL_BROWSER drops the native leg: slim images render
+    only via the self-host browserless backend."""
+    monkeypatch.setenv("BROWSER_BACKENDS", "browserless,native")
+    settings = Settings(disable_local_browser=True)
+    assert settings.browser_backend_chain() == ["browserless"]
 
 
 # -----------------------------------------------------------------------
@@ -432,11 +258,11 @@ def test_get_data_dir_custom_cache_dir(tmp_path):
 
 
 def test_get_data_dir_default():
-    """get_data_dir returns ~/.wet-mcp when cache_dir is empty."""
+    """get_data_dir returns ~/.wet when cache_dir is empty."""
     from pathlib import Path
 
     settings = Settings(cache_dir="")
-    assert settings.get_data_dir() == Path.home() / ".wet-mcp"
+    assert settings.get_data_dir() == Path.home() / ".wet"
 
 
 def test_get_db_path_custom_docs_db_path(tmp_path):
@@ -453,151 +279,8 @@ def test_get_db_path_default():
 
 
 # -----------------------------------------------------------------------
-# setup_api_keys with @file_path format
+# Local model resolution helpers
 # -----------------------------------------------------------------------
-
-
-def test_setup_api_keys_file_path(tmp_path):
-    """setup_api_keys reads keys from a file when using @path format."""
-    keys_file = tmp_path / "keys.txt"
-    keys_file.write_text("GOOGLE_API_KEY:file_key1\nOPENAI_API_KEY:file_key2")
-
-    settings = Settings(api_keys=SecretStr(f"@{keys_file}"))
-
-    with mock.patch.dict(os.environ, {}, clear=True):
-        keys = settings.setup_api_keys()
-
-        assert keys == {
-            "GOOGLE_API_KEY": ["file_key1"],
-            "OPENAI_API_KEY": ["file_key2"],
-        }
-        assert os.environ["GOOGLE_API_KEY"] == "file_key1"
-        assert os.environ["OPENAI_API_KEY"] == "file_key2"
-
-
-def test_setup_api_keys_file_not_found():
-    """setup_api_keys raises FileNotFoundError for missing file."""
-    settings = Settings(api_keys=SecretStr("@/nonexistent/keys.txt"))
-
-    import pytest
-
-    with pytest.raises(FileNotFoundError, match="API keys file not found"):
-        settings.setup_api_keys()
-
-
-def test_setup_api_keys_file_read_error(tmp_path):
-    """setup_api_keys raises ValueError when file read fails."""
-    import pytest
-
-    keys_file = tmp_path / "keys.txt"
-    keys_file.write_text("dummy")
-
-    settings = Settings(api_keys=SecretStr(f"@{keys_file}"))
-
-    # Mock path.read_text to raise an exception
-    with mock.patch(
-        "wet_mcp.config.Path.read_text", side_effect=PermissionError("denied")
-    ):
-        with pytest.raises(ValueError, match="Failed to read API keys file"):
-            settings.setup_api_keys()
-
-
-# -----------------------------------------------------------------------
-# resolve_rerank_backend: chain-inferred + disabled
-# -----------------------------------------------------------------------
-
-
-def test_resolve_rerank_backend_rerank_model_set():
-    """Deprecated rerank_model folds into the chain -> 'cloud'."""
-    settings = Settings(
-        rerank_enabled=True,
-        rerank_backend="",
-        rerank_model="cohere/rerank-v3",
-    )
-    assert settings.resolve_rerank_backend() == "cloud"
-
-
-def test_resolve_rerank_backend_explicit_chain_cloud():
-    """Explicit RERANK_MODELS chain -> 'cloud'."""
-    settings = Settings(
-        rerank_enabled=True,
-        rerank_backend="",
-        rerank_models="cohere/rerank-v3.5",
-    )
-    assert settings.resolve_rerank_backend() == "cloud"
-
-
-def test_resolve_rerank_backend_local_fallback():
-    """Returns 'local' when no rerank provider key / chain configured."""
-    settings = Settings(
-        rerank_enabled=True,
-        rerank_backend="",
-        rerank_models="",
-        api_keys=None,
-    )
-    with mock.patch.dict(os.environ, {}, clear=True):
-        os.environ.pop("COHERE_API_KEY", None)
-        assert settings.resolve_rerank_backend() == "local"
-
-
-# -----------------------------------------------------------------------
-# resolve_provider_mode and setup_providers
-# -----------------------------------------------------------------------
-
-
-def test_resolve_provider_mode_sdk():
-    """Returns 'sdk' when api_keys is set."""
-    settings = Settings(api_keys=SecretStr("GOOGLE_API_KEY:abc"))
-    assert settings.resolve_provider_mode() == "sdk"
-
-
-def test_resolve_provider_mode_sdk_env():
-    """Returns 'sdk' when provider env var is set."""
-    settings = Settings(api_keys=None)
-    with mock.patch.dict(os.environ, {"GEMINI_API_KEY": "test"}, clear=True):
-        assert settings.resolve_provider_mode() == "sdk"
-
-
-def test_resolve_provider_mode_local():
-    """Returns 'local' when no keys configured."""
-    settings = Settings(api_keys=None)
-    with mock.patch.dict(os.environ, {}, clear=True):
-        assert settings.resolve_provider_mode() == "local"
-
-
-def test_setup_providers_sdk_mode():
-    """setup_providers configures SDK mode and calls setup_api_keys."""
-    settings = Settings(
-        api_keys=SecretStr("GOOGLE_API_KEY:abc"),
-    )
-
-    with mock.patch.dict(os.environ, {}, clear=True):
-        mode = settings.setup_providers()
-
-        assert mode == "sdk"
-        assert os.environ["GOOGLE_API_KEY"] == "abc"
-
-
-def test_setup_providers_local_mode():
-    """setup_providers returns 'local' when no keys configured."""
-    settings = Settings(api_keys=None)
-    with mock.patch.dict(os.environ, {}, clear=True):
-        mode = settings.setup_providers()
-    assert mode == "local"
-
-
-# -----------------------------------------------------------------------
-# Additional coverage: helper functions, cache path, local models
-# -----------------------------------------------------------------------
-
-
-def test_get_cache_db_path():
-    """get_cache_db_path returns get_data_dir()/cache.db."""
-    settings = Settings(cache_dir="/tmp/test-wet")
-    assert (
-        settings.get_cache_db_path()
-        == Settings(cache_dir="/tmp/test-wet").get_data_dir() / "cache.db"
-    )
 
 
 def test_detect_gpu_no_onnxruntime():
@@ -706,190 +389,70 @@ def test_local_rerank_model_override(monkeypatch):
 
 
 # -----------------------------------------------------------------------
-# Per-task model chains (model-chain migration, 2026-06-11)
+# Runtime-settable operational knobs (config tool "set" valid keys)
 # -----------------------------------------------------------------------
 
 
-def test_wet_embedding_chain_explicit(monkeypatch):
-    monkeypatch.setenv(
-        "EMBEDDING_MODELS",
-        "jina_ai/jina-embeddings-v5-text-small,gemini/gemini-embedding-001",
-    )
-    s = Settings()
-    assert s.embedding_chain()[0] == "jina_ai/jina-embeddings-v5-text-small"
-    assert s.resolve_embedding_backend() == "cloud"
+def test_runtime_settable_knobs_exist():
+    """The keys ``config(action='set')`` accepts are real Settings fields."""
+    for key in ("log_level", "tool_timeout", "wet_cache", "wet_search_budget"):
+        assert key in Settings.model_fields, key
 
 
-def test_wet_embedding_empty_local(monkeypatch):
-    for v in (
-        "EMBEDDING_MODELS",
-        "EMBEDDING_MODEL",
-        "JINA_AI_API_KEY",
-        "GEMINI_API_KEY",
-        "GOOGLE_API_KEY",
-        "OPENAI_API_KEY",
-        "COHERE_API_KEY",
-    ):
-        monkeypatch.delenv(v, raising=False)
-    assert Settings().embedding_chain() == []
-    assert Settings().resolve_embedding_backend() == "local"
+def test_tool_timeout_reads_environment(monkeypatch):
+    monkeypatch.setenv("TOOL_TIMEOUT", "30")
+    assert Settings().tool_timeout == 30
 
 
-def test_wet_rerank_openai_only_is_local(monkeypatch):
-    for v in ("RERANK_MODELS", "RERANK_MODEL", "JINA_AI_API_KEY", "COHERE_API_KEY"):
-        monkeypatch.delenv(v, raising=False)
-    monkeypatch.setenv("OPENAI_API_KEY", "sk-x")
-    assert Settings().rerank_chain() == []  # no jina/cohere key -> empty -> local
-    assert Settings().resolve_rerank_backend() == "local"
+def test_search_budget_reads_environment(monkeypatch):
+    monkeypatch.setenv("WET_SEARCH_BUDGET", "5")
+    assert Settings().wet_search_budget == 5
 
 
-def test_wet_llm_chain_default(monkeypatch):
-    # Empty LLM_MODELS -> key-gated curated default: only models whose provider
-    # key is configured. With the Gemini key the chain head is the gemini
-    # default; with no key the chain is empty (LLM off, no keyless cloud model).
-    monkeypatch.delenv("LLM_MODELS", raising=False)
-    monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
-    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
-    monkeypatch.setenv("GEMINI_API_KEY", "test-key")
-    assert Settings().llm_chain()[0] == "gemini/gemini-3-flash-preview"
-    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
-    assert Settings().llm_chain() == []
+def test_reindex_on_model_change_reads_environment(monkeypatch):
+    """B2 identity-guard override: default safe (False), env opts in."""
+    assert Settings().reindex_on_model_change is False
+    monkeypatch.setenv("REINDEX_ON_MODEL_CHANGE", "1")
+    assert Settings().reindex_on_model_change is True
 
 
-def test_wet_embedding_primary(monkeypatch):
-    monkeypatch.setenv("EMBEDDING_MODELS", "cohere/embed-multilingual-v3.0")
-    assert Settings().embedding_primary() == "cohere/embed-multilingual-v3.0"
-
-
-def test_wet_rerank_primary(monkeypatch):
-    monkeypatch.setenv("RERANK_MODELS", "jina_ai/jina-reranker-v3,cohere/rerank-v3.5")
-    assert Settings().rerank_primary() == "jina_ai/jina-reranker-v3"
-
-
-def test_wet_rerank_chain_disabled():
-    s = Settings(rerank_enabled=False, rerank_models="cohere/rerank-v3.5")
-    assert s.rerank_chain() == []
-    assert s.resolve_rerank_backend() == ""
-
-
-def test_wet_default_chain_filters_to_configured_keys(monkeypatch):
-    for v in (
-        "EMBEDDING_MODELS",
-        "EMBEDDING_MODEL",
-        "JINA_AI_API_KEY",
-        "GEMINI_API_KEY",
-        "GOOGLE_API_KEY",
-        "OPENAI_API_KEY",
-        "COHERE_API_KEY",
-    ):
-        monkeypatch.delenv(v, raising=False)
-    monkeypatch.setenv("GEMINI_API_KEY", "x")
-    # Default chain filtered to providers with a configured key.
-    assert Settings().embedding_chain() == ["gemini/gemini-embedding-001"]
-
-
-def test_wet_google_alias_satisfies_gemini(monkeypatch):
-    for v in (
-        "EMBEDDING_MODELS",
-        "EMBEDDING_MODEL",
-        "JINA_AI_API_KEY",
-        "GEMINI_API_KEY",
-        "OPENAI_API_KEY",
-        "COHERE_API_KEY",
-    ):
-        monkeypatch.delenv(v, raising=False)
-    monkeypatch.setenv("GOOGLE_API_KEY", "x")
-    # GOOGLE_API_KEY alias satisfies GEMINI_API_KEY for the gemini default.
-    assert "gemini/gemini-embedding-001" in Settings().embedding_chain()
-
-
-# -----------------------------------------------------------------------
-# Per-sub chain resolution (chain_for_creds)
-# -----------------------------------------------------------------------
-
-
-def test_embedding_chain_for_creds():
-    s = Settings()
-    # Explicit
-    assert s.embedding_chain_for_creds({"EMBEDDING_MODELS": "a,b"}) == ["a", "b"]
-    # Default filtered
-    creds = {"GEMINI_API_KEY": "x"}
-    assert s.embedding_chain_for_creds(creds) == ["gemini/gemini-embedding-001"]
-    # Default filtered - none
-    assert s.embedding_chain_for_creds({}) == []
-
-
-def test_rerank_chain_for_creds():
-    # Disabled
-    assert Settings(rerank_enabled=False).rerank_chain_for_creds({}) == []
-
-    s = Settings(rerank_enabled=True)
-    # Explicit
-    assert s.rerank_chain_for_creds({"RERANK_MODELS": "c,d"}) == ["c", "d"]
-    # Default filtered
-    creds = {"COHERE_API_KEY": "y"}
-    assert s.rerank_chain_for_creds(creds) == ["cohere/rerank-v3.5"]
-    # Default filtered - none
-    assert s.rerank_chain_for_creds({}) == []
-
-
-def test_llm_chain_for_creds():
-    s = Settings()
-    # Explicit
-    assert s.llm_chain_for_creds({"LLM_MODELS": "e,f"}) == ["e", "f"]
-    # Default filtered
-    creds = {"GEMINI_API_KEY": "z"}
-    assert s.llm_chain_for_creds(creds) == ["gemini/gemini-3-flash-preview"]
-    # Default filtered - none
-    assert s.llm_chain_for_creds({}) == []
-
-
-# -----------------------------------------------------------------------
-# Google Drive BYO client resolver (bundled default + env pair + kill-switch)
-# -----------------------------------------------------------------------
-
-_GOOGLE_CLIENT_ENV_VARS = (
-    "GOOGLE_DRIVE_CLIENT_ID",
-    "GOOGLE_DRIVE_CLIENT_SECRET",
-    "USE_BUNDLED_GOOGLE_CLIENT",
+@pytest.mark.parametrize(
+    ("field", "env", "value"),
+    [
+        ("wet_cache", "WET_CACHE", "false"),
+        ("disable_local_search", "DISABLE_LOCAL_SEARCH", "1"),
+        ("disable_local_embed", "DISABLE_LOCAL_EMBED", "1"),
+        ("disable_local_rerank", "DISABLE_LOCAL_RERANK", "1"),
+    ],
 )
+def test_boolean_knobs_read_environment(field, env, value, monkeypatch):
+    monkeypatch.setenv(env, value)
+    assert getattr(Settings(), field) is True if value == "1" else getattr(
+        Settings(), field
+    ) is False
 
 
-def test_google_drive_default_ships_desktop_oauth_client(monkeypatch):
-    """No env, no kill-switch -> resolves to the bundled Desktop OAuth client."""
-    for v in _GOOGLE_CLIENT_ENV_VARS:
-        monkeypatch.delenv(v, raising=False)
-    s = Settings()
-    assert s.google_drive_client_id.endswith(".apps.googleusercontent.com")
-    assert s.google_drive_client_secret.startswith("GOCSPX-")
+def test_no_llm_provider_cells_among_settings_fields():
+    """No LLM provider-key material in Settings: those are host cells now.
 
-
-def test_google_drive_env_pair_beats_bundled(monkeypatch):
-    """A full BYO env pair overrides the bundled default."""
-    for v in _GOOGLE_CLIENT_ENV_VARS:
-        monkeypatch.delenv(v, raising=False)
-    monkeypatch.setenv("GOOGLE_DRIVE_CLIENT_ID", "my-id")
-    monkeypatch.setenv("GOOGLE_DRIVE_CLIENT_SECRET", "my-secret")
-    s = Settings()
-    assert (s.google_drive_client_id, s.google_drive_client_secret) == (
-        "my-id",
-        "my-secret",
-    )
-
-
-def test_google_drive_env_half_pair_fails_loud(monkeypatch):
-    """Setting only one half of the BYO pair raises instead of silently falling back."""
-    for v in _GOOGLE_CLIENT_ENV_VARS:
-        monkeypatch.delenv(v, raising=False)
-    monkeypatch.setenv("GOOGLE_DRIVE_CLIENT_ID", "only-id")
-    with pytest.raises(Exception, match="together"):
-        Settings()
-
-
-def test_google_drive_kill_switch_fails_loud_without_override(monkeypatch):
-    """USE_BUNDLED_GOOGLE_CLIENT=false with no BYO pair raises instead of using bundled."""
-    for v in _GOOGLE_CLIENT_ENV_VARS:
-        monkeypatch.delenv(v, raising=False)
-    monkeypatch.setenv("USE_BUNDLED_GOOGLE_CLIENT", "false")
-    with pytest.raises(Exception, match="disables the bundled client"):
-        Settings()
+    The de-host moved the embedding/rerank/chat/jev_score provider keys into
+    ``~/.wet/config.toml`` ([models.*] cells). A ``*_api_key`` field for a
+    cloud LLM provider that sneaks back into the env-driven model would make
+    host-only secret material a per-process knob again. (Search-backend and
+    browserless service keys are NOT provider cells -- they stay.)"""
+    llm_provider_key_fields = [
+        name
+        for name in Settings.model_fields
+        if name
+        in (
+            "openai_api_key",
+            "gemini_api_key",
+            "google_api_key",
+            "jina_ai_api_key",
+            "anthropic_api_key",
+            "embedding_models",
+            "rerank_models",
+            "llm_models",
+        )
+    ]
+    assert llm_provider_key_fields == []

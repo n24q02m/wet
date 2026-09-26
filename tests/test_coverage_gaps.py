@@ -1,180 +1,15 @@
-"""Tests to cover remaining gaps in sync.py, setup_tool.py, cache.py, and reranker.py."""
+"""Tests to cover remaining gaps in setup_tool.py, cache.py, and reranker.py.
 
-import asyncio
+De-host: the ``sync.py`` gap tests are gone with the module (GDrive sync was
+cut); the kept targets are the setup_tool local-model download edge cases,
+the cache purge/close branches, the CloudReranker result parsing (now over
+the hull OpenAI-spec client), and the SearXNG version patcher.
+"""
+
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-
-
-@pytest.fixture(autouse=True)
-def _gdrive_sync_backend(monkeypatch):
-    """This module exercises GDrive internals, not backend selection."""
-    from wet_mcp import sync as sync_module
-
-    monkeypatch.setattr(sync_module, "resolve_active_backend", lambda: "gdrive")
-
-
-# ---------------------------------------------------------------------------
-# sync.py coverage gaps
-# ---------------------------------------------------------------------------
-
-
-class TestSyncFullEmptyJsonl:
-    """Cover sync_full: empty remote JSONL branch."""
-
-    @pytest.mark.asyncio
-    @patch("wet_mcp.sync._has_token_available", return_value=True)
-    @patch("wet_mcp.sync._get_valid_token")
-    @patch("wet_mcp.sync.settings")
-    @patch("wet_mcp.sync.sync_pull")
-    @patch("wet_mcp.sync.sync_push")
-    @patch("wet_mcp.db.DocsDB")
-    async def test_empty_remote_jsonl(
-        self,
-        mock_DocsDB,
-        mock_push,
-        mock_pull,
-        mock_valid_token,
-        mock_settings,
-        _mock_token,
-    ):
-        from wet_mcp.sync import sync_full
-
-        mock_settings.sync_enabled = True
-        mock_settings.google_drive_client_id = "client123"
-        mock_settings.sync_folder = "folder"
-        mock_settings.get_db_path.return_value = Path("/db/db.sqlite")
-
-        mock_valid_token.return_value = {"access_token": "t"}
-        mock_pull.return_value = Path("/tmp/remote.sqlite")
-        mock_push.return_value = True
-
-        # Remote DB returns empty JSONL
-        mock_remote_db = MagicMock()
-        mock_remote_db.export_jsonl.return_value = "   "  # whitespace only
-        mock_DocsDB.return_value = mock_remote_db
-
-        mock_local_db = MagicMock()
-        result = await sync_full(mock_local_db)
-
-        assert result["status"] == "ok"
-        assert result["pull"]["libraries"] == 0
-        assert result["pull"]["chunks"] == 0
-
-
-class TestAutoSyncLoopError:
-    """Cover auto_sync_loop normal iteration + error handling."""
-
-    @pytest.mark.asyncio
-    @patch("wet_mcp.sync.settings")
-    @patch("wet_mcp.sync.sync_full")
-    async def test_auto_sync_loop_handles_error(self, mock_sync, mock_settings):
-        from wet_mcp.sync import _auto_sync_loop
-
-        mock_settings.sync_interval = 1
-
-        call_count = 0
-
-        async def side_effect(*args, **kwargs):
-            nonlocal call_count
-            call_count += 1
-            if call_count == 1:
-                raise RuntimeError("Sync error")
-            # Second call: cancel the task
-            raise asyncio.CancelledError()
-
-        mock_sync.side_effect = side_effect
-
-        with patch("wet_mcp.sync.asyncio.sleep", new_callable=AsyncMock):
-            await _auto_sync_loop(MagicMock())
-
-        assert call_count == 2
-
-    @pytest.mark.asyncio
-    @patch("wet_mcp.sync.settings")
-    @patch("wet_mcp.sync.sync_full")
-    async def test_auto_sync_loop_runs_sync(self, mock_sync, mock_settings):
-        """Successful sync_full call in loop."""
-        from wet_mcp.sync import _auto_sync_loop
-
-        mock_settings.sync_interval = 1
-
-        call_count = 0
-
-        async def sync_side_effect(db):
-            nonlocal call_count
-            call_count += 1
-            if call_count >= 1:
-                raise asyncio.CancelledError()
-            return {"status": "ok"}
-
-        mock_sync.side_effect = sync_side_effect
-
-        with patch("wet_mcp.sync.asyncio.sleep", new_callable=AsyncMock):
-            await _auto_sync_loop(MagicMock())
-
-        assert mock_sync.call_count == 1
-
-
-class TestStartAutoSyncDisabled:
-    """Cover start_auto_sync returns when interval <= 0."""
-
-    @patch("wet_mcp.sync.settings")
-    @patch("wet_mcp.sync.asyncio.create_task")
-    def test_disabled_by_sync_interval_zero(self, mock_create, mock_settings):
-        import wet_mcp.sync
-        from wet_mcp.sync import start_auto_sync
-
-        mock_settings.sync_enabled = True
-        mock_settings.sync_interval = 0
-        wet_mcp.sync._sync_task = None
-
-        start_auto_sync(MagicMock())
-        mock_create.assert_not_called()
-
-    @patch("wet_mcp.sync.settings")
-    @patch("wet_mcp.sync.asyncio.create_task")
-    def test_disabled_by_sync_enabled_false(self, mock_create, mock_settings):
-        import wet_mcp.sync
-        from wet_mcp.sync import start_auto_sync
-
-        mock_settings.sync_enabled = False
-        mock_settings.sync_interval = 60
-        wet_mcp.sync._sync_task = None
-
-        with patch("wet_mcp.sync.resolve_active_backend", return_value="disabled"):
-            start_auto_sync(MagicMock())
-        mock_create.assert_not_called()
-
-
-class TestSyncFullNoClientId:
-    """Cover sync_full when client ID is not set."""
-
-    @pytest.mark.asyncio
-    @patch("wet_mcp.sync.settings")
-    async def test_sync_full_no_client_id(self, mock_settings):
-        from wet_mcp.sync import sync_full
-
-        mock_settings.sync_enabled = True
-        mock_settings.google_drive_client_id = ""
-
-        result = await sync_full(MagicMock())
-        assert result["status"] == "error"
-        assert "GOOGLE_DRIVE_CLIENT_ID" in result["message"]
-
-
-class TestSetupSyncNoClientId:
-    """Cover setup_sync when no GOOGLE_DRIVE_CLIENT_ID is set."""
-
-    @patch("wet_mcp.sync.settings")
-    def test_setup_sync_no_client_id(self, mock_settings):
-        from wet_mcp.sync import setup_sync
-
-        mock_settings.google_drive_client_id = ""
-
-        with pytest.raises(SystemExit):
-            setup_sync()
 
 
 # ---------------------------------------------------------------------------
@@ -222,12 +57,19 @@ class TestSetupToolCoverageGaps:
     @patch("wet_mcp.reranker.init_reranker")
     @patch("wet_mcp.embedder.init_backend")
     async def test_cloud_reranker_init_exception(self, mock_init, mock_rr_init):
-        """reranker init raises exception, caught by except."""
+        """reranker init raises exception, caught and reported under errors.
+
+        The embed cell validated fine, so ``cloud_ready`` stays True; the
+        failed rerank cell is named in ``errors`` instead of silently vanish
+        -- and ``reranker`` is absent, not a fake-ok entry.
+        """
         from wet_mcp.setup_tool import _validate_cloud_models
 
-        mock_settings = MagicMock()
-        mock_settings.embedding_chain.return_value = ["gemini/embed"]
-        mock_settings.rerank_chain.return_value = ["cohere/rerank"]
+        def _both_cells(task, settings=None):
+            return task in ("embed", "rerank")
+
+        cell = MagicMock()
+        cell.model = "gemini/embed"
 
         mock_backend = MagicMock()
         mock_backend.check_available = AsyncMock(return_value=768)
@@ -235,9 +77,15 @@ class TestSetupToolCoverageGaps:
 
         mock_rr_init.side_effect = Exception("reranker init failed")
 
-        result = await _validate_cloud_models(mock_settings)
+        with (
+            patch("wet_mcp.runtime.cell_configured", _both_cells),
+            patch("wet_mcp.runtime.model_cell", lambda task, settings=None: cell),
+        ):
+            result = await _validate_cloud_models(MagicMock())
+
         assert result["cloud_ready"] is True
-        assert result["reranker"] is None
+        assert "reranker" not in result
+        assert any("rerank cell" in e for e in result["errors"])
 
     @patch("fastretrieval.TextCrossEncoder")
     def test_local_reranker_empty_result(self, mock_tce):
@@ -296,10 +144,10 @@ class TestSetupToolCoverageGaps:
 
 
 class TestCachePurgeAndClose:
-    """Cover cache.py L119-120 (periodic purge) and L190-191 (close exception)."""
+    """Cover cache.py periodic-purge trigger and the close() exception guard."""
 
     def test_periodic_purge_triggered(self, tmp_path):
-        """L119-120: _purge_expired called after _PURGE_INTERVAL ops."""
+        """_purge_expired called after _PURGE_INTERVAL ops."""
         from wet_mcp import cache as cache_mod
         from wet_mcp.cache import WebCache
 
@@ -316,7 +164,7 @@ class TestCachePurgeAndClose:
         c.close()
 
     def test_close_handles_exception(self):
-        """L190-191: close() catches exceptions from conn.close()."""
+        """close() catches exceptions from conn.close()."""
         from wet_mcp.cache import WebCache
 
         cache = WebCache.__new__(WebCache)
@@ -333,23 +181,39 @@ class TestCachePurgeAndClose:
 
 
 class TestCloudRerankerResults:
-    """Cover CloudReranker rerank result parsing."""
+    """Cover CloudReranker rerank result parsing (over the hull client)."""
 
-    def test_rerank_with_dict_results(self):
+    async def test_rerank_with_dict_results(self):
         from wet_mcp.reranker import CloudReranker
 
-        reranker = CloudReranker(api_key="test-key")
+        client = MagicMock()
+        client.cell.model = "cohere/rerank-v3.5"
+        client.rerank = AsyncMock(
+            return_value=[
+                {"index": 0, "relevance_score": 0.8},
+                {"index": 1, "relevance_score": 0.95},
+            ]
+        )
+        reranker = CloudReranker(client)
 
-        mock_response = MagicMock()
-        mock_response.results = [
-            {"index": 0, "relevance_score": 0.8},
-            {"index": 1, "relevance_score": 0.95},
-        ]
-
-        with patch("mcp_core.llm.rerank", return_value=mock_response):
-            results = reranker.rerank("query", ["doc1", "doc2"], top_n=2)
+        results = await reranker.rerank("query", ["doc1", "doc2"], top_n=2)
 
         assert results == [(1, 0.95), (0, 0.8)]
+
+    async def test_rerank_provider_failure_returns_empty(self):
+        """A broken cell degrades to "no reranking", not an exception."""
+        from hull_core.providers.openai_spec import ProviderError
+
+        from wet_mcp.reranker import CloudReranker
+
+        client = MagicMock()
+        client.cell.model = "cohere/rerank-v3.5"
+        client.rerank = AsyncMock(
+            side_effect=ProviderError(status=502, detail="bad gateway")
+        )
+        reranker = CloudReranker(client)
+
+        assert await reranker.rerank("query", ["doc1"], top_n=1) == []
 
 
 class TestSetupPatchSearxngVersion:

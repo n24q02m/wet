@@ -1,9 +1,9 @@
-"""Dual-backend reranking: Cloud (litellm passthrough) + fastretrieval (local ONNX).
+"""Dual-backend reranking: Cloud ([models.rerank] provider cell) + fastretrieval (local ONNX).
 
 Supports two backends:
-- **cloud**: Cloud reranking via mcp_core.llm (litellm passthrough — Jina,
-  Cohere, or any litellm rerank 'provider/model'). Requires the matching
-  provider API key env var (JINA_AI_API_KEY, COHERE_API_KEY / CO_API_KEY).
+- **cloud**: Cloud reranking via the ``[models.rerank]`` cell (``base_url +
+  api_key + model``, OpenAI-spec /rerank, ``~/.wet/config.toml``) served by the
+  shared hull-core provider client (:mod:`wet_mcp.runtime`).
 - **local**: Local ONNX cross-encoder via fastretrieval's configured model.
   No API keys needed, ~0.57GB model download on first use.
 
@@ -13,8 +13,7 @@ for better precision. Pipeline: retrieve top-30 -> rerank -> return top-N.
 
 from __future__ import annotations
 
-from typing import Any, Protocol
-from urllib.parse import urlsplit, urlunsplit
+from typing import Protocol
 
 from loguru import logger
 
@@ -25,7 +24,12 @@ _AUTH_ERROR_PATTERNS = ("401", "403", "invalid", "unauthorized", "api key")
 
 
 class RerankerBackend(Protocol):
-    """Protocol for reranker backends."""
+    """Protocol for reranker backends.
+
+    Note the asymmetry kept from the dual-backend design: the local ONNX leg
+    is sync (CPU-bound; callers run it via ``asyncio.to_thread``), while the
+    cloud leg is async (it awaits the shared OpenAI-spec HTTP client).
+    """
 
     def rerank(
         self,
@@ -51,154 +55,68 @@ class RerankerBackend(Protocol):
 
 
 # ---------------------------------------------------------------------------
-# Cloud Backend (litellm passthrough via mcp_core.llm)
+# Cloud Backend ([models.rerank] provider cell)
 # ---------------------------------------------------------------------------
 
 
 class CloudReranker:
-    """Cloud reranking via mcp_core.llm (litellm passthrough)."""
+    """Cloud reranking via the ``[models.rerank]`` provider cell.
 
-    DEFAULT_MODEL = "rerank-v4.0-pro"
-    _CLOUDFLARE_AI_GATEWAY_HOST = "gateway.ai.cloudflare.com"
+    Wraps exactly one :class:`~hull_core.providers.openai_spec.
+    OpenAICompatClient` built from the cell; the cell owns base_url, api_key,
+    and model. Unlike :class:`LocalReranker`, the methods here are async --
+    the hull-core client is an async HTTP client, so there is nothing to push
+    to a worker thread.
+    """
 
-    def __init__(self, model: str | None = None, api_key: str | None = None):
-        self.model = model or self.DEFAULT_MODEL
-        # Explicit key only. When None, litellm falls back to the provider
-        # env var (JINA_AI_API_KEY, COHERE_API_KEY / CO_API_KEY) at call time.
-        self.api_key = api_key or None
+    def __init__(self, client) -> None:
+        self._client = client
 
-    def _litellm_model(self) -> str:
-        """Map wet's model naming to a litellm ``provider/model`` string."""
-        if "/" in self.model:
-            return self.model
-        if self.model.lower().startswith("jina"):
-            return f"jina_ai/{self.model}"
-        return f"cohere/{self.model}"
+    @property
+    def model(self) -> str:
+        """The cell-owned rerank model id (for logs and diagnostics)."""
+        return self._client.cell.model
 
-    @classmethod
-    def _is_cloudflare_jina_route(cls, model: str, api_base: str | None) -> bool:
-        """Return whether a Jina model targets the Cloudflare AI Gateway."""
-        if not api_base or not model.lower().startswith("jina_ai/"):
-            return False
-        return (
-            urlsplit(api_base).hostname or ""
-        ).lower() == cls._CLOUDFLARE_AI_GATEWAY_HOST
-
-    @staticmethod
-    def _cloudflare_rerank_api_base(api_base: str) -> str:
-        """Append only ``/rerank`` to a Cloudflare Gateway route."""
-        parts = urlsplit(api_base)
-        path = parts.path.rstrip("/")
-        if not path.lower().endswith("/rerank"):
-            path = f"{path}/rerank" if path else "/rerank"
-        return urlunsplit(
-            (parts.scheme, parts.netloc, path, parts.query, parts.fragment)
-        )
-
-    def _resolve_call_parameters(self) -> tuple[str, str | None, str | None]:
-        """Resolve model, endpoint, and key for the current rerank request.
-
-        LiteLLM's Jina transformer normalizes the path to ``/v1/rerank``;
-        Cohere leaves the explicit Cloudflare Gateway ``/rerank`` route intact.
-        """
-        from wet_mcp.credential_state import (
-            api_base_for_task,
-            api_key_for_model,
-            credentials_for_current_request,
-        )
-
-        litellm_model = self._litellm_model()
-        api_base = api_base_for_task("RERANK_API_BASE")
-        if litellm_model.lower().startswith("jina_ai/") and not api_base:
-            api_base = api_base_for_task("JINA_AI_API_BASE")
-
-        if self._is_cloudflare_jina_route(litellm_model, api_base):
-            assert api_base is not None
-            jina_model = litellm_model.split("/", 1)[1]
-            api_key = self.api_key or api_key_for_model(litellm_model)
-            if api_key is None:
-                api_key = (
-                    credentials_for_current_request().get("JINA_AI_API_KEY") or None
-                )
-            return (
-                f"cohere/{jina_model}",
-                self._cloudflare_rerank_api_base(api_base),
-                api_key,
-            )
-
-        return litellm_model, api_base, self.api_key or api_key_for_model(litellm_model)
-
-    def _call_rerank(
-        self, query: str, documents: list[str], top_n: int
-    ) -> list[tuple[int, float]]:
-        """Single cloud path via mcp_core.llm (sync mirror — runs in to_thread)."""
-        # Lazy import: litellm costs ~1-2s on first import.
-        from mcp_core.llm import rerank as core_rerank
-
-        litellm_model, api_base, api_key = self._resolve_call_parameters()
-        # Resolve the provider key AND custom endpoint from the request-scoped
-        # per-sub bucket (HTTP multi-user) or the process env (single-user);
-        # explicit api_key wins. Avoids os.environ cross-user bleed. SSRF-vetted
-        # downstream in mcp_core.llm dispatch.
-        response = core_rerank(
-            model=litellm_model,
-            query=query,
-            documents=documents,
-            top_n=top_n,
-            api_base=api_base,
-            api_key=api_key,
-        )
-
-        # litellm RerankResponse.results defaults to None and rerank items
-        # may be pydantic objects or plain dicts — guard + handle both shapes.
-        def _idx(r: Any) -> int:
-            return r["index"] if isinstance(r, dict) else getattr(r, "index", 0)
-
-        def _score(r: Any) -> float:
-            return (
-                r["relevance_score"]
-                if isinstance(r, dict)
-                else getattr(r, "relevance_score", 0.0)
-            )
-
-        return [(_idx(r), _score(r)) for r in (response.results or [])]
-
-    def rerank(
+    async def rerank(
         self,
         query: str,
         documents: list[str],
         top_n: int = 10,
     ) -> list[tuple[int, float]]:
-        """Rerank using the cloud rerank API."""
+        """Rerank using the cell's ``/rerank`` endpoint."""
         if not documents:
             return []
 
         try:
-            results = self._call_rerank(query, documents, top_n)
+            results = await self._client.rerank(query, documents, top_n=top_n)
+            mapped = [
+                (int(r["index"]), float(r["relevance_score"])) for r in results
+            ]
 
             # Sort by score descending
-            results.sort(key=lambda x: x[1], reverse=True)
-            return results[:top_n]
+            mapped.sort(key=lambda x: x[1], reverse=True)
+            return mapped[:top_n]
 
         except Exception as e:
             logger.warning(f"Cloud reranking failed: {e}")
             return []
 
-    def check_available(self) -> bool:
-        """Check if the cloud reranking model is available.
+    async def check_available(self) -> bool:
+        """Check if the cell's reranking model is available.
 
         Distinguishes between invalid API keys (warning) and other
-        failures (debug) so users know when their keys are wrong.
+        failures (debug) so users know when their key is wrong.
         """
         try:
-            results = self._call_rerank("test", ["test document"], 1)
+            results = await self._client.rerank("ping", ["doc"], top_n=1)
             return bool(results)
         except Exception as e:
             msg = str(e).lower()
             if any(p in msg for p in _AUTH_ERROR_PATTERNS):
                 logger.warning(
                     f"API key invalid for reranker {self.model}: {e}. "
-                    "Check your JINA_AI_API_KEY or COHERE_API_KEY configuration."
+                    "Check the api_key of the [models.rerank] cell in "
+                    "~/.wet/config.toml."
                 )
             else:
                 logger.debug(f"Cloud reranker {self.model} not available: {e}")
@@ -238,7 +156,8 @@ class LocalReranker:
             logger.warning(
                 f"Loading local reranker model: {self._model_name} "
                 "(~570 MB download on first run). "
-                "Set API_KEYS with COHERE_API_KEY to use cloud reranking instead."
+                "Set the [models.rerank] cell in ~/.wet/config.toml "
+                "to use cloud reranking instead."
             )
             self._model = TextCrossEncoder(model_name=self._model_name)
             logger.info("Local reranker model loaded")
@@ -285,9 +204,10 @@ class LocalReranker:
 
 _backend: RerankerBackend | None = None
 
-# Shared local ONNX reranker for the HTTP multi-user path. Local inference is
-# stateless and key-free, so one instance is safely shared across subs. Lazy
-# so single-user / stdio deployments never download the model unnecessarily.
+# Shared local ONNX reranker for all requests without a startup singleton.
+# Local inference is stateless and key-free, so one instance is safely shared.
+# Lazy so deployments that never fall back to the local leg never download the
+# model.
 _shared_local_backend: LocalReranker | None = None
 
 
@@ -313,69 +233,39 @@ def _shared_local_reranker() -> LocalReranker:
 def resolve_rerank_backend_for_request() -> RerankerBackend | None:
     """Resolve the reranker backend for the CURRENT request.
 
-    * **Stdio / single-user HTTP** (``_current_sub`` is ``None``): return the
-      module-level startup singleton (:func:`get_reranker`). Unchanged.
+    The startup singleton wins (cloud via the ``[models.rerank]`` cell, or
+    local). Without one, the process-shared local ONNX reranker serves every
+    request -- unless the local leg is unavailable (``DISABLE_LOCAL_RERANK``,
+    or an image built without the ONNX extras), in which case reranking is
+    ``None``: gracefully unavailable, source order kept.
 
-    * **HTTP multi-user** (``_current_sub`` set): resolve PER REQUEST from the
-      sub's credential bucket. If the sub has a cloud rerank chain whose
-      provider key is present, build a fresh request-scoped
-      :class:`CloudReranker` carrying that sub's key explicitly. With no such
-      chain, fall back to the process-shared local ONNX reranker -- unless that
-      leg is unavailable, in which case reranking is ``None``: gracefully
-      unavailable.
-
-    The unavailable exit mirrors :meth:`Settings.resolve_rerank_backend`, which
-    spells it ``'unavailable'`` at startup, via the shared
-    :meth:`Settings.local_rerank_available` predicate -- so it covers both
-    ``DISABLE_LOCAL_RERANK`` and an image the slim build stripped
-    ``fastretrieval`` out of. It matters more here than the traceback suggests:
+    That ``None`` matters more than the traceback suggests:
     :meth:`LocalReranker.rerank` swallows its own load failure and returns
     ``[]``, so a local reranker on an image built without the ONNX extras
     degrades every search to unranked order behind one log line, quietly,
     forever. Returning ``None`` says the same thing out loud.
 
-    ``None``, not the startup singleton -- that one carries the OPERATOR's key
-    and must not be spent on an arbitrary sub.
-
-    A per-sub request NEVER rebinds the module-level ``_backend`` singleton, so
-    one user's cloud reranker/key can't serve another concurrent user.
+    There is no per-request credential resolution any more: providers are
+    host-configured cells, not per-sub secrets.
     """
+    reranker = get_reranker()
+    if reranker is not None:
+        return reranker
+
     from wet_mcp.config import settings
-    from wet_mcp.credential_state import (
-        api_key_for_model,
-        credentials_for_current_request,
-        get_current_sub,
-    )
 
-    if get_current_sub() is None:
-        return get_reranker()
-
-    if not settings.rerank_enabled:
-        return None
-
-    creds = credentials_for_current_request()
-    chain = settings.rerank_chain_for_creds(creds)
-    if chain:
-        model = chain[0]
-        return CloudReranker(model=model, api_key=api_key_for_model(model))
-    if not settings.local_rerank_available():
+    if not settings.rerank_enabled or not settings.local_rerank_available():
         return None
     return _shared_local_reranker()
 
 
-def init_reranker(
-    backend_type: str,
-    model: str | None = None,
-    api_key: str | None = None,
-    **kwargs,
-) -> RerankerBackend:
+def init_reranker(backend_type: str, model: str | None = None) -> RerankerBackend:
     """Initialize and cache the reranker backend.
 
     Args:
-        backend_type: 'cloud' or 'local'
-        model: Model name (optional for cloud, defaults to rerank-v4.0-pro)
-        api_key: Custom API key (cloud only)
-        **kwargs: Additional keyword arguments (ignored, for backward compatibility)
+        backend_type: 'cloud' or 'local'.
+        model: Local ONNX model override ('local' only). Ignored for 'cloud':
+            the [models.rerank] cell owns the model.
 
     Returns:
         Initialized reranker backend instance.
@@ -383,7 +273,14 @@ def init_reranker(
     global _backend
 
     if backend_type == "cloud":
-        _backend = CloudReranker(model=model, api_key=api_key)
+        from wet_mcp.runtime import cell_configured, provider_client
+
+        if not cell_configured("rerank"):
+            raise RuntimeError(
+                "cloud reranking requested but the [models.rerank] cell is not "
+                "configured: set base_url + api_key + model in ~/.wet/config.toml"
+            )
+        _backend = CloudReranker(provider_client("rerank"))
     elif backend_type == "local":
         _backend = LocalReranker(model)
     else:

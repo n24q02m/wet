@@ -9,6 +9,30 @@ from structured import payload, text
 
 from wet_mcp import server
 
+
+@pytest.fixture(autouse=True)
+def _no_llm_provider_mode():
+    """Force the offline LLM gate in the sources modules.
+
+    The gate is ``has_llm_provider()`` (the [models.chat] cell); pinning it
+    keeps hyde/expand/rewrite/find_similar/structured deterministic and
+    network-free regardless of the host's ~/.wet/config.toml. The settings
+    pin is belt-and-braces for any remaining direct settings reads in
+    those modules (legacy resolve_provider_mode-era).
+    """
+    mock = MagicMock()
+    mock.resolve_provider_mode.return_value = "local"
+    with (
+        patch("wet_mcp.sources.search_strategies.settings", mock),
+        patch("wet_mcp.sources.structured.settings", mock),
+        patch(
+            "wet_mcp.sources.search_strategies.has_llm_provider",
+            return_value=False,
+        ),
+        patch("wet_mcp.sources.structured.has_llm_provider", return_value=False),
+    ):
+        yield mock
+
 # Windows IOCP event loop hangs on fire-and-forget asyncio.create_task
 # teardown in _do_docs_search and _background_index_and_search tests.
 # These tests pass on Linux CI.
@@ -39,19 +63,9 @@ def _close_and_dummy_task(coro, label=None):
 def mock_settings():
     with patch("wet_mcp.server.settings") as mock:
         mock.log_level = "DEBUG"
-        mock.tool_timeout = 10
         mock.wet_cache = True
-        mock.sync_enabled = False
         mock.get_db_path.return_value = MagicMock()
-        mock.get_cache_db_path.return_value = MagicMock()
-        mock.resolve_embedding_dims.return_value = 768
-        mock.resolve_embedding_backend.return_value = "cloud"
-        mock.resolve_rerank_backend.return_value = "cloud"
-        mock.resolve_embedding_model.return_value = "gemini"
-        mock.resolve_rerank_model.return_value = "gemini-rerank"
-        mock.embedding_chain.return_value = ["gemini"]
-        mock.wet_auto_searxng = False
-        mock.setup_providers.return_value = "sdk"
+        mock.embedding_dims = 768
         # For tests, pretend we don't have timeout so tasks run synchronously
         mock.tool_timeout = 0
         yield mock
@@ -105,15 +119,12 @@ async def test_warmup_searxng_exception():
 async def test_lifespan():
     mock_fastmcp = MagicMock()
     with (
-        patch("wet_mcp.server.WebCache"),
-        patch("wet_mcp.server.DocsDB"),
+        patch("wet_mcp.server._PerSubCache"),
+        patch("wet_mcp.server.make_docs_db", return_value=MagicMock()),
         patch(
             "wet_mcp.server.shutdown_crawler", new_callable=AsyncMock
         ) as mock_shutdown,
         patch("wet_mcp.server.stop_searxng") as mock_stop,
-        patch(
-            "wet_mcp.credential_state.resolve_credential_state",
-        ),
     ):
         async with server._lifespan(mock_fastmcp):
             pass
@@ -131,15 +142,12 @@ async def test_lifespan_skips_searxng_warmup_in_uvx_tool_venv():
     """
     mock_fastmcp = MagicMock()
     with (
-        patch("wet_mcp.server.WebCache"),
-        patch("wet_mcp.server.DocsDB"),
+        patch("wet_mcp.server._PerSubCache"),
+        patch("wet_mcp.server.make_docs_db", return_value=MagicMock()),
         patch(
             "wet_mcp.server.shutdown_crawler", new_callable=AsyncMock
         ) as mock_shutdown,
         patch("wet_mcp.server.stop_searxng"),
-        patch(
-            "wet_mcp.credential_state.resolve_credential_state",
-        ),
         patch("wet_mcp.server.is_uvx_tool_venv", return_value=True),
         patch("wet_mcp.server._warmup_searxng", new_callable=AsyncMock) as mock_warmup,
     ):
@@ -155,13 +163,10 @@ async def test_lifespan_runs_searxng_warmup_outside_uvx():
     """Non-uvx transports (Docker / dev .venv) keep the eager warmup."""
     mock_fastmcp = MagicMock()
     with (
-        patch("wet_mcp.server.WebCache"),
-        patch("wet_mcp.server.DocsDB"),
+        patch("wet_mcp.server._PerSubCache"),
+        patch("wet_mcp.server.make_docs_db", return_value=MagicMock()),
         patch("wet_mcp.server.shutdown_crawler", new_callable=AsyncMock),
         patch("wet_mcp.server.stop_searxng"),
-        patch(
-            "wet_mcp.credential_state.resolve_credential_state",
-        ),
         patch("wet_mcp.server.is_uvx_tool_venv", return_value=False),
         patch("wet_mcp.server._warmup_searxng", new_callable=AsyncMock) as mock_warmup,
     ):
@@ -172,29 +177,43 @@ async def test_lifespan_runs_searxng_warmup_outside_uvx():
 
 
 @pytest.mark.asyncio
-async def test_init_embedding_backend():
-    with patch("wet_mcp.embedder.init_backend") as mock_init:
+async def test_init_embedding_backend(monkeypatch):
+    monkeypatch.setattr(server, "_embedding_dims", 0)
+    cell = MagicMock()
+    cell.model = "text-embedding-3-large"
+    with (
+        patch("wet_mcp.runtime.cell_configured", lambda t, settings=None: True),
+        patch("wet_mcp.server.model_cell", lambda t=None, settings=None: cell),
+        patch("wet_mcp.embedder.init_backend") as mock_init,
+    ):
         mock_backend = MagicMock()
         mock_backend.check_available = AsyncMock(return_value=768)
         mock_init.return_value = mock_backend
 
-        await server._init_embedding_backend("sdk")
+        await server._init_embedding_backend()
         assert server._embedding_dims == 768
 
 
 @pytest.mark.asyncio
 async def test_init_reranker_backend():
-    with patch("wet_mcp.reranker.init_reranker") as mock_init:
+    cell = MagicMock()
+    cell.model = "rerank-model"
+    with (
+        patch("wet_mcp.runtime.cell_configured", lambda t, settings=None: True),
+        patch("wet_mcp.server.model_cell", lambda t=None, settings=None: cell),
+        patch("wet_mcp.reranker.init_reranker") as mock_init,
+    ):
         mock_reranker = MagicMock()
-        mock_reranker.check_available.return_value = True
+        # CloudReranker.check_available is async (hull HTTP client).
+        mock_reranker.check_available = AsyncMock(return_value=True)
         mock_init.return_value = mock_reranker
 
-        await server._init_reranker_backend("sdk")
+        await server._init_reranker_backend()
 
 
 @pytest.mark.asyncio
 async def test_embed():
-    with patch("wet_mcp.embedder.get_backend") as mock_get_backend:
+    with patch("wet_mcp.embedder.resolve_embed_backend_for_request") as mock_get_backend:
         mock_backend = MagicMock()
         mock_backend.embed_single = AsyncMock(return_value=[0.1, 0.2])
         mock_get_backend.return_value = mock_backend
@@ -205,7 +224,7 @@ async def test_embed():
 
 @pytest.mark.asyncio
 async def test_embed_batch():
-    with patch("wet_mcp.embedder.get_backend") as mock_get_backend:
+    with patch("wet_mcp.embedder.resolve_embed_backend_for_request") as mock_get_backend:
         mock_backend = MagicMock()
         mock_backend.embed_texts = AsyncMock(return_value=[[0.1, 0.2]])
         mock_get_backend.return_value = mock_backend
@@ -216,7 +235,7 @@ async def test_embed_batch():
 
 @pytest.mark.asyncio
 async def test_rerank_results():
-    with patch("wet_mcp.reranker.get_reranker") as mock_get_reranker:
+    with patch("wet_mcp.reranker.resolve_rerank_backend_for_request") as mock_get_reranker:
         mock_reranker = MagicMock()
         mock_reranker.rerank.return_value = [(0, 0.9)]
         mock_get_reranker.return_value = mock_reranker
@@ -418,8 +437,6 @@ async def test_do_docs_search_new():
 
 
 def _force_local_searxng_startup(monkeypatch):
-    monkeypatch.delenv("PUBLIC_URL", raising=False)
-    monkeypatch.setattr(server.credential_state, "get_current_sub", lambda: None)
     monkeypatch.setattr(
         server.search_backends, "chain_backend_names", lambda: ["searxng"]
     )
@@ -669,13 +686,15 @@ async def test_with_timeout_expired():
 
 
 def test_main():
-    """main() in stdio mode runs FastMCP stdio server directly (no bridge)."""
+    """main() always serves HTTP: run_server_blocking with WET_HOST/WET_PORT."""
     with (
-        patch.object(server.mcp, "run") as mock_run,
-        patch.dict(os.environ, {"MCP_TRANSPORT": "stdio"}),
+        patch.object(server, "run_server_blocking") as mock_serve,
+        patch.dict(os.environ, {"WET_HOST": "127.0.0.9", "WET_PORT": "8777"}),
     ):
         server.main()
-    mock_run.assert_called_once_with(transport="stdio")
+    _, kwargs = mock_serve.call_args
+    assert kwargs["host"] == "127.0.0.9"
+    assert kwargs["port"] == 8777
 
 
 # ---------------------------------------------------------------------------
@@ -787,12 +806,17 @@ async def test_config_set_wet_cache(mock_settings):
 
 
 @pytest.mark.asyncio
-async def test_config_set_sync_enabled(mock_settings):
-    """Test toggling sync_enabled via config set."""
+async def test_config_set_rejects_sync_enabled(mock_settings):
+    """De-host: sync knobs are gone; set rejects them with valid keys."""
     res = await server.config("set", key="sync_enabled", value="true")
     data = payload(res)
-    assert data["status"] == "updated"
-    assert data["key"] == "sync_enabled"
+    assert "error" in data
+    assert data["valid_keys"] == [
+        "log_level",
+        "tool_timeout",
+        "wet_cache",
+        "wet_search_budget",
+    ]
 
 
 # ---------------------------------------------------------------------------
@@ -874,13 +898,10 @@ async def test_lifespan_startup_no_github_token():
     }
     mock_fastmcp = MagicMock()
     with (
-        patch("wet_mcp.server.WebCache"),
-        patch("wet_mcp.server.DocsDB"),
+        patch("wet_mcp.server._PerSubCache"),
+        patch("wet_mcp.server.make_docs_db", return_value=MagicMock()),
         patch("wet_mcp.server.shutdown_crawler", new_callable=AsyncMock),
         patch("wet_mcp.server.stop_searxng"),
-        patch(
-            "wet_mcp.credential_state.resolve_credential_state",
-        ),
         patch.dict("os.environ", _home_vars, clear=True),
     ):
         async with server._lifespan(mock_fastmcp):
@@ -893,13 +914,10 @@ async def test_lifespan_startup_backend_init_error(mock_warmup):
     """Test lifespan handles backend init failure gracefully (lines 134-136)."""
     mock_fastmcp = MagicMock()
     with (
-        patch("wet_mcp.server.WebCache"),
-        patch("wet_mcp.server.DocsDB"),
+        patch("wet_mcp.server._PerSubCache"),
+        patch("wet_mcp.server.make_docs_db", return_value=MagicMock()),
         patch("wet_mcp.server.shutdown_crawler", new_callable=AsyncMock),
         patch("wet_mcp.server.stop_searxng"),
-        patch(
-            "wet_mcp.credential_state.resolve_credential_state",
-        ),
         patch("wet_mcp.server._warmup_searxng", new_callable=AsyncMock),
         patch(
             "wet_mcp.server._init_embedding_backend",
@@ -912,239 +930,71 @@ async def test_lifespan_startup_backend_init_error(mock_warmup):
             await asyncio.sleep(0.1)
 
 
-@pytest.mark.asyncio
-async def test_lifespan_startup_sync_enabled():
-    """Test lifespan starts auto-sync when sync_enabled (lines 147-149)."""
-    mock_fastmcp = MagicMock()
-    # The lifespan function re-imports settings from wet_mcp.config,
-    # so we patch at the config level to affect the local import.
-    with (
-        patch("wet_mcp.server.WebCache"),
-        patch("wet_mcp.server.DocsDB"),
-        patch("wet_mcp.server.shutdown_crawler", new_callable=AsyncMock),
-        patch("wet_mcp.server.stop_searxng"),
-        patch(
-            "wet_mcp.credential_state.resolve_credential_state",
-        ),
-        patch("wet_mcp.config.settings") as ms,
-        patch("wet_mcp.sync.start_auto_sync") as mock_start_sync,
-        patch("wet_mcp.sync.stop_auto_sync") as mock_stop_sync,
-    ):
-        ms.setup_providers.return_value = "sdk"
-        ms.wet_auto_searxng = False
-        ms.auto_searxng_enabled.return_value = False
-        ms.wet_cache = False
-        ms.sync_enabled = True
-        ms.sync_s3_bucket = ""
-        ms.google_drive_client_id = "test-client-id"
-        ms.resolve_embedding_dims.return_value = 768
-        ms.get_db_path.return_value = MagicMock()
-        ms.get_db_path.return_value.parent = MagicMock()
-        ms.log_level = "DEBUG"
-        ms.tool_timeout = 0
-        async with server._lifespan(mock_fastmcp):
-            await asyncio.sleep(0.1)
-        mock_start_sync.assert_called_once()
-        mock_stop_sync.assert_called_once()
-
-
-@pytest.mark.asyncio
-async def test_lifespan_shutdown_sync_enabled():
-    """Test lifespan shutdown stops auto-sync (lines 172-174)."""
-    mock_fastmcp = MagicMock()
-    with (
-        patch("wet_mcp.server.WebCache"),
-        patch("wet_mcp.server.DocsDB"),
-        patch("wet_mcp.server.shutdown_crawler", new_callable=AsyncMock),
-        patch("wet_mcp.server.stop_searxng"),
-        patch(
-            "wet_mcp.credential_state.resolve_credential_state",
-        ),
-        patch("wet_mcp.config.settings") as ms,
-        patch("wet_mcp.sync.start_auto_sync"),
-        patch("wet_mcp.sync.stop_auto_sync") as mock_stop,
-    ):
-        ms.setup_providers.return_value = "sdk"
-        ms.wet_auto_searxng = False
-        ms.auto_searxng_enabled.return_value = False
-        ms.wet_cache = False
-        ms.sync_enabled = True
-        ms.sync_s3_bucket = ""
-        ms.google_drive_client_id = "test-client-id"
-        ms.resolve_embedding_dims.return_value = 768
-        ms.get_db_path.return_value = MagicMock()
-        ms.get_db_path.return_value.parent = MagicMock()
-        ms.log_level = "DEBUG"
-        ms.tool_timeout = 0
-        async with server._lifespan(mock_fastmcp):
-            pass
-        mock_stop.assert_called_once()
-
-
-@pytest.mark.asyncio
-async def test_lifespan_shutdown_crawler_error():
-    """Test lifespan handles crawler shutdown error (lines 187-188)."""
-    mock_fastmcp = MagicMock()
-    with (
-        patch("wet_mcp.server.WebCache"),
-        patch("wet_mcp.server.DocsDB"),
-        patch(
-            "wet_mcp.server.shutdown_crawler",
-            new_callable=AsyncMock,
-            side_effect=Exception("browser crash"),
-        ),
-        patch("wet_mcp.server.stop_searxng"),
-        patch(
-            "wet_mcp.credential_state.resolve_credential_state",
-        ),
-    ):
-        async with server._lifespan(mock_fastmcp):
-            pass
-
-
 # ---------------------------------------------------------------------------
-# _init_embedding_backend edge cases
+# _init_embedding_backend edge cases (cell-based: the [models.embed] cell
+# decides cloud; otherwise local-if-available; no chain, no fallbacks)
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
-async def test_init_embedding_backend_litellm_explicit_model():
-    """Test embedding init with explicit cloud model."""
+async def test_init_embedding_backend_cloud_cell():
+    """A configured cell inits cloud with the cell-owned model id."""
+    cell = MagicMock()
+    cell.model = "text-embedding-3-large"
     with (
-        patch("wet_mcp.server.settings") as ms,
+        patch("wet_mcp.runtime.cell_configured", lambda t, settings=None: True),
+        patch("wet_mcp.server.model_cell", lambda t=None, settings=None: cell),
         patch("wet_mcp.embedder.init_backend") as mock_init,
     ):
-        ms.resolve_embedding_backend.return_value = "cloud"
-        ms.embedding_chain.return_value = ["text-embedding-3-large"]
-        ms.resolve_embedding_dims.return_value = 768
-        ms.resolve_local_embedding_model.return_value = "local-model"
-
         mock_backend = MagicMock()
         mock_backend.check_available = AsyncMock(return_value=1536)
         mock_init.return_value = mock_backend
 
-        await server._init_embedding_backend("sdk")
+        await server._init_embedding_backend()
         mock_init.assert_called_once_with("cloud", "text-embedding-3-large")
 
 
 @pytest.mark.asyncio
-async def test_init_embedding_backend_litellm_explicit_model_fail():
-    """Test embedding init with explicit model failure — no local fallback."""
+async def test_init_embedding_backend_cloud_cell_fail_no_local_fallback():
+    """A broken host key surfaces loudly: init fails once, no local fallback."""
+    cell = MagicMock()
+    cell.model = "bad-model"
     with (
-        patch("wet_mcp.server.settings") as ms,
+        patch("wet_mcp.runtime.cell_configured", lambda t, settings=None: True),
+        patch("wet_mcp.server.model_cell", lambda t=None, settings=None: cell),
         patch("wet_mcp.embedder.init_backend") as mock_init,
     ):
-        ms.resolve_embedding_backend.return_value = "cloud"
-        ms.embedding_chain.return_value = ["bad-model"]
-        ms.resolve_embedding_dims.return_value = 768
-        ms.resolve_local_embedding_model.return_value = "local-model"
+        mock_init.side_effect = Exception("model not available")
 
-        call_count = 0
-
-        def init_side_effect(backend_type, model, **kwargs):
-            nonlocal call_count
-            call_count += 1
-            raise Exception("model not available")
-
-        mock_init.side_effect = init_side_effect
-
-        await server._init_embedding_backend("sdk")
+        await server._init_embedding_backend()
         assert mock_init.call_count == 1
 
 
 @pytest.mark.asyncio
-async def test_init_embedding_backend_autodetect_candidates():
-    """Test embedding auto-detect tries candidates."""
-    with (
-        patch("wet_mcp.server.settings") as ms,
-        patch("wet_mcp.embedder.init_backend") as mock_init,
-    ):
-        ms.resolve_embedding_backend.return_value = "cloud"
-        ms.embedding_chain.return_value = [
-            "jina_ai/jina-embeddings-v5-text-small",
-            "gemini/gemini-embedding-001",
-            "openai/text-embedding-3-large",
-            "cohere/embed-multilingual-v3.0",
-        ]
-        ms.resolve_embedding_dims.return_value = 768
-        ms.resolve_local_embedding_model.return_value = "local-model"
-
-        call_count = 0
-
-        def init_side_effect(backend_type, model, **kwargs):
-            nonlocal call_count
-            call_count += 1
-            if call_count <= 2:
-                raise Exception("not available")
-            mock_backend = MagicMock()
-            mock_backend.check_available = AsyncMock(return_value=768)
-            return mock_backend
-
-        mock_init.side_effect = init_side_effect
-
-        await server._init_embedding_backend("sdk")
-        assert call_count == 3
-
-
-@pytest.mark.asyncio
-async def test_init_embedding_backend_all_candidates_fail():
-    """Test embedding auto-detect logs error when all candidates fail — no local fallback."""
-    with (
-        patch("wet_mcp.server.settings") as ms,
-        patch("wet_mcp.embedder.init_backend") as mock_init,
-    ):
-        ms.resolve_embedding_backend.return_value = "cloud"
-        ms.embedding_chain.return_value = [
-            "jina_ai/jina-embeddings-v5-text-small",
-            "gemini/gemini-embedding-001",
-            "openai/text-embedding-3-large",
-            "cohere/embed-multilingual-v3.0",
-        ]
-        ms.resolve_embedding_dims.return_value = 768
-        ms.resolve_local_embedding_model.return_value = "local-model"
-
-        call_count = 0
-
-        def init_side_effect(backend_type, model, **kwargs):
-            nonlocal call_count
-            call_count += 1
-            raise Exception("not available")
-
-        mock_init.side_effect = init_side_effect
-
-        await server._init_embedding_backend("sdk")
-        # 4 candidates (jina, gemini, openai, cohere) — no local fallback
-        assert call_count == 4
-
-
-@pytest.mark.asyncio
 async def test_init_embedding_backend_local_fail():
-    """Test embedding init when local backend also fails (line 261)."""
+    """No cell + local available: a failing local init is handled (no raise)."""
     with (
+        patch("wet_mcp.runtime.cell_configured", lambda t, settings=None: False),
         patch("wet_mcp.server.settings") as ms,
         patch("wet_mcp.embedder.init_backend") as mock_init,
     ):
-        ms.resolve_embedding_backend.return_value = "local"
-        ms.resolve_embedding_model.return_value = None
-        ms.resolve_embedding_dims.return_value = 768
+        ms.local_embed_available.return_value = True
         ms.resolve_local_embedding_model.return_value = "local-model"
         ms.local_embedding_model = ""
-
         mock_init.side_effect = Exception("local init failed")
 
-        await server._init_embedding_backend("local")
+        await server._init_embedding_backend()
 
 
 @pytest.mark.asyncio
 async def test_init_embedding_backend_local_not_available():
-    """Test embedding init when local backend returns 0 dims (lines 258-259)."""
+    """No cell + local check returns 0 dims: the backend is cleared."""
     with (
+        patch("wet_mcp.runtime.cell_configured", lambda t, settings=None: False),
         patch("wet_mcp.server.settings") as ms,
         patch("wet_mcp.embedder.init_backend") as mock_init,
     ):
-        ms.resolve_embedding_backend.return_value = "local"
-        ms.resolve_embedding_model.return_value = None
-        ms.resolve_embedding_dims.return_value = 768
+        ms.local_embed_available.return_value = True
         ms.resolve_local_embedding_model.return_value = "local-model"
         ms.local_embedding_model = ""
 
@@ -1152,7 +1002,11 @@ async def test_init_embedding_backend_local_not_available():
         mock_backend.check_available = AsyncMock(return_value=0)
         mock_init.return_value = mock_backend
 
-        await server._init_embedding_backend("local")
+        await server._init_embedding_backend()
+
+        from wet_mcp import embedder
+
+        assert embedder.get_backend() is None
 
 
 # ---------------------------------------------------------------------------
@@ -1162,72 +1016,66 @@ async def test_init_embedding_backend_local_not_available():
 
 @pytest.mark.asyncio
 async def test_init_reranker_backend_disabled():
-    """Test reranker init when disabled (lines 273-275)."""
+    """RERANK_ENABLED=false disables reranking entirely."""
     with patch("wet_mcp.server.settings") as ms:
-        ms.resolve_rerank_backend.return_value = None
+        ms.rerank_enabled = False
 
-        await server._init_reranker_backend("sdk")
+        await server._init_reranker_backend()
 
 
 @pytest.mark.asyncio
 async def test_init_reranker_backend_cloud_fail_no_local_fallback():
-    """Test reranker cloud fail logs error — no local fallback."""
+    """A configured rerank cell that fails inits once, no local fallback."""
+    cell = MagicMock()
+    cell.model = "rerank-model"
     with (
-        patch("wet_mcp.server.settings") as ms,
+        patch("wet_mcp.runtime.cell_configured", lambda t, settings=None: True),
+        patch("wet_mcp.server.model_cell", lambda t=None, settings=None: cell),
         patch("wet_mcp.reranker.init_reranker") as mock_init,
     ):
-        ms.resolve_rerank_backend.return_value = "cloud"
-        ms.rerank_chain.return_value = ["rerank-model"]
+        mock_init.side_effect = Exception("cloud not available")
 
-        ms.resolve_local_rerank_model.return_value = "local-rerank"
-
-        call_count = 0
-
-        def init_side_effect(backend_type, model, **kwargs):
-            nonlocal call_count
-            call_count += 1
-            raise Exception("cloud not available")
-
-        mock_init.side_effect = init_side_effect
-
-        await server._init_reranker_backend("sdk")
-        assert call_count == 1
+        await server._init_reranker_backend()
+        assert mock_init.call_count == 1
 
 
 @pytest.mark.asyncio
 async def test_init_reranker_backend_local_fail():
-    """Test reranker init when local fails (lines 306-307)."""
+    """No cell + local available: a failing local init is handled (no raise)."""
     with (
+        patch("wet_mcp.runtime.cell_configured", lambda t, settings=None: False),
         patch("wet_mcp.server.settings") as ms,
         patch("wet_mcp.reranker.init_reranker") as mock_init,
     ):
-        ms.resolve_rerank_backend.return_value = "local"
-        ms.resolve_rerank_model.return_value = None
-
+        ms.local_rerank_available.return_value = True
         ms.resolve_local_rerank_model.return_value = "local-rerank"
-
+        ms.local_rerank_model = ""
         mock_init.side_effect = Exception("local rerank init failed")
 
-        await server._init_reranker_backend("local")
+        await server._init_reranker_backend()
 
 
 @pytest.mark.asyncio
 async def test_init_reranker_backend_local_not_available():
-    """Test reranker init when local returns not available (lines 304-305)."""
+    """No cell + local check false: the backend is cleared."""
     with (
+        patch("wet_mcp.runtime.cell_configured", lambda t, settings=None: False),
         patch("wet_mcp.server.settings") as ms,
         patch("wet_mcp.reranker.init_reranker") as mock_init,
     ):
-        ms.resolve_rerank_backend.return_value = "local"
-        ms.resolve_rerank_model.return_value = None
-
+        ms.local_rerank_available.return_value = True
         ms.resolve_local_rerank_model.return_value = "local-rerank"
+        ms.local_rerank_model = ""
 
         mock_reranker = MagicMock()
-        mock_reranker.check_available.return_value = False
+        mock_reranker.check_available = MagicMock(return_value=False)
         mock_init.return_value = mock_reranker
 
-        await server._init_reranker_backend("local")
+        await server._init_reranker_backend()
+
+        from wet_mcp import reranker as reranker_mod
+
+        assert reranker_mod.get_reranker() is None
 
 
 # ---------------------------------------------------------------------------
@@ -1238,7 +1086,9 @@ async def test_init_reranker_backend_local_not_available():
 @pytest.mark.asyncio
 async def test_embed_no_backend():
     """Test _embed returns None when no backend (line 325)."""
-    with patch("wet_mcp.embedder.get_backend", return_value=None):
+    with patch(
+        "wet_mcp.embedder.resolve_embed_backend_for_request", return_value=None
+    ):
         res = await server._embed("hello")
         assert res is None
 
@@ -1260,12 +1110,12 @@ async def test_embed_query_mode():
 @pytest.mark.asyncio
 async def test_embed_transient_exception_returns_none():
     """A transient embedding error degrades this call to None (keyword-only)."""
-    from litellm.exceptions import RateLimitError
+    from hull_core.providers.openai_spec import ProviderError
 
-    with patch("wet_mcp.embedder.get_backend") as mock_get:
+    with patch("wet_mcp.embedder.resolve_embed_backend_for_request") as mock_get:
         mock_backend = MagicMock()
-        mock_backend.embed_single.side_effect = RateLimitError(
-            message="rate limit exceeded", llm_provider="cohere", model="m"
+        mock_backend.embed_single.side_effect = ProviderError(
+            status=429, detail="rate limit exceeded"
         )
         mock_get.return_value = mock_backend
 
@@ -1288,7 +1138,9 @@ async def test_embed_permanent_exception_raises():
 @pytest.mark.asyncio
 async def test_embed_batch_no_backend():
     """Test _embed_batch returns None when no backend (line 343)."""
-    with patch("wet_mcp.embedder.get_backend", return_value=None):
+    with patch(
+        "wet_mcp.embedder.resolve_embed_backend_for_request", return_value=None
+    ):
         res = await server._embed_batch(["hello"])
         assert res is None
 
@@ -1296,12 +1148,12 @@ async def test_embed_batch_no_backend():
 @pytest.mark.asyncio
 async def test_embed_batch_transient_exception_returns_none():
     """A transient batch embedding error degrades this call to None."""
-    from litellm.exceptions import RateLimitError
+    from hull_core.providers.openai_spec import ProviderError
 
-    with patch("wet_mcp.embedder.get_backend") as mock_get:
+    with patch("wet_mcp.embedder.resolve_embed_backend_for_request") as mock_get:
         mock_backend = MagicMock()
-        mock_backend.embed_texts.side_effect = RateLimitError(
-            message="rate limit exceeded", llm_provider="cohere", model="m"
+        mock_backend.embed_texts.side_effect = ProviderError(
+            status=429, detail="rate limit exceeded"
         )
         mock_get.return_value = mock_backend
 
@@ -1324,7 +1176,7 @@ async def test_embed_batch_permanent_exception_raises():
 @pytest.mark.asyncio
 async def test_rerank_results_exception():
     """Test _rerank_results falls back on exception (lines 377-380)."""
-    with patch("wet_mcp.reranker.get_reranker") as mock_get:
+    with patch("wet_mcp.reranker.resolve_rerank_backend_for_request") as mock_get:
         mock_reranker = MagicMock()
         mock_reranker.rerank.side_effect = Exception("rerank error")
         mock_get.return_value = mock_reranker
@@ -1488,21 +1340,12 @@ async def test_media_tool_invalid_action():
 
 
 @pytest.mark.asyncio
-async def test_config_set_sync_interval(mock_settings):
-    """Test setting sync_interval (lines 885-886)."""
+async def test_config_set_rejects_removed_sync_keys(mock_settings):
+    """De-host: sync knobs are gone; invalid set keys name the valid ones."""
     res = await server.config("set", key="sync_interval", value="30")
     data = payload(res)
-    assert data["status"] == "updated"
-    assert data["key"] == "sync_interval"
-
-
-@pytest.mark.asyncio
-async def test_config_set_generic_key(mock_settings):
-    """Test setting a generic key via setattr (lines 887-888)."""
-    res = await server.config("set", key="sync_folder", value="my-sync-folder")
-    data = payload(res)
-    assert data["status"] == "updated"
-    assert data["key"] == "sync_folder"
+    assert "error" in data
+    assert data["valid_keys"] == ["log_level", "tool_timeout", "wet_cache", "wet_search_budget"]
 
 
 @pytest.mark.asyncio

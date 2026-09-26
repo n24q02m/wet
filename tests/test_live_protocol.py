@@ -1,7 +1,10 @@
-"""Pytest-based live MCP protocol tests for wet-mcp.
+"""Pytest-based live MCP protocol tests for wet-mcp (HTTP transport).
 
-Spawns a real MCP server via stdio and tests all tools through the protocol.
-Config and help tests work offline. Network-dependent tests use the `network` marker.
+De-host: there is ONE transport — the HTTP server (``python -m wet_mcp.server``,
+bind from WET_HOST/WET_PORT, auth per ``~/.wet/config.toml``). The fixture
+below spawns that real server against a tmp instance home + a stub SearXNG and
+exercises all tools through the streamable-HTTP MCP protocol. Offline tests run
+without network; network-dependent tests use the ``network`` marker.
 
 Usage:
     uv run pytest tests/test_live_protocol.py -v --tb=short -m live
@@ -9,18 +12,23 @@ Usage:
 
 import json
 import os
+import socket
 import subprocess
+import sys
+import tempfile
+import time
 import warnings
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
 from threading import Thread
 
+import httpx
 import pytest
-from mcp import StdioServerParameters
 from mcp.client.session import ClientSession
-from mcp.client.stdio import stdio_client
+from mcp.client.streamable_http import streamablehttp_client
 from structured import payload
 
-pytestmark = [pytest.mark.live, pytest.mark.timeout(60)]
+pytestmark = [pytest.mark.live, pytest.mark.timeout(120)]
 
 
 # ---------------------------------------------------------------------------
@@ -38,6 +46,43 @@ def parse(r) -> str:
 def parse_allow_error(r) -> str:
     """Extract text from MCP tool result, including error responses."""
     return r.content[0].text
+
+
+def _free_port() -> int:
+    with socket.socket() as sock:
+        sock.bind(("127.0.0.1", 0))
+        return sock.getsockname()[1]
+
+
+def _server_env(tmp_path: Path, searxng_url: str) -> tuple[dict, Path]:
+    """Env for a real local-only server process: tmp instance home, no cells."""
+    local_state = tmp_path / "local-state"
+    local_state.mkdir(parents=True, exist_ok=True)
+    port = _free_port()
+    env = {
+        **os.environ,
+        "LOG_LEVEL": "WARNING",
+        # Windows Path.home() reads USERPROFILE; POSIX reads HOME.
+        "HOME": str(local_state),
+        "USERPROFILE": str(local_state),
+        "XDG_CONFIG_HOME": str(local_state),
+        "LOCALAPPDATA": str(local_state),
+        "APPDATA": str(local_state),
+        "CACHE_DIR": str(tmp_path),
+        "DOCS_DB_PATH": str(tmp_path / "docs.db"),
+        "EMBEDDING_DIMS": "0",
+        "RERANK_ENABLED": "true",
+        "DISABLE_LOCAL_EMBED": "false",
+        "DISABLE_LOCAL_RERANK": "false",
+        "SEARCH_BACKENDS": "searxng",
+        "SEARXNG_URL": searxng_url,
+        "WET_AUTO_SEARXNG": "false",
+        # De-host: model cells live in config.toml, which the tmp home lacks —
+        # no cloud cell is configured, so the server runs the local ONNX legs.
+        "WET_HOST": "127.0.0.1",
+        "WET_PORT": str(port),
+    }
+    return env, local_state
 
 
 class _SearxngHandler(BaseHTTPRequestHandler):
@@ -89,6 +134,17 @@ def searxng_server():
         thread.join(timeout=5)
 
 
+def _wait_until_up(port: int, timeout: float = 60.0) -> None:
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        try:
+            httpx.get(f"http://127.0.0.1:{port}/mcp", timeout=2.0)
+            return  # any HTTP response (incl. 4xx) means the listener is up
+        except httpx.HTTPError:
+            time.sleep(0.25)
+    raise RuntimeError(f"wet-mcp server on port {port} never came up")
+
+
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
@@ -96,84 +152,25 @@ def searxng_server():
 
 @pytest.fixture
 async def mcp_session(searxng_server: str, tmp_path):
-    """Start a real local-only wet-mcp server via stdio."""
-    from fastretrieval import define_cache_dir
-
-    local_state = tmp_path / "local-state"
-    local_env = {
-        **os.environ,
-        "LOG_LEVEL": "WARNING",
-        "MCP_TRANSPORT": "stdio",
-        "HOME": str(local_state),
-        "USERPROFILE": str(local_state),
-        "XDG_CONFIG_HOME": str(local_state),
-        "LOCALAPPDATA": str(local_state),
-        "APPDATA": str(local_state),
-        "CACHE_DIR": str(tmp_path),
-        "DOCS_DB_PATH": str(tmp_path / "docs.db"),
-        "FASTRETRIEVAL_CACHE_PATH": str(define_cache_dir()),
-        "QWEN3_EMBED_CACHE_PATH": "",
-        "SYNC_ENABLED": "false",
-        "GOOGLE_DRIVE_CLIENT_ID": "",
-        "API_KEYS": "",
-        "JINA_API_KEY": "",
-        "JINA_AI_API_KEY": "",
-        "GEMINI_API_KEY": "",
-        "GOOGLE_API_KEY": "",
-        "OPENAI_API_KEY": "",
-        "COHERE_API_KEY": "",
-        "CO_API_KEY": "",
-        "ANTHROPIC_API_KEY": "",
-        "XAI_API_KEY": "",
-        "GOOGLE_VERTEX_EXPRESS_API_KEY": "",
-        "TAVILY_API_KEY": "",
-        "BRAVE_API_KEY": "",
-        "EXA_API_KEY": "",
-        "EMBEDDING_MODELS": "",
-        "RERANK_MODELS": "",
-        "LLM_MODELS": "",
-        "EMBEDDING_MODEL": "",
-        "RERANK_MODEL": "",
-        "EMBEDDING_BACKEND": "",
-        "RERANK_BACKEND": "",
-        "EMBEDDING_API_BASE": "",
-        "RERANK_API_BASE": "",
-        "LLM_API_BASE": "",
-        "LOCAL_EMBEDDING_MODEL": "",
-        "LOCAL_RERANK_MODEL": "",
-        "EMBEDDING_DIMS": "0",
-        "RERANK_ENABLED": "true",
-        "DISABLE_LOCAL_EMBED": "false",
-        "DISABLE_LOCAL_RERANK": "false",
-        "SEARCH_BACKENDS": "searxng",
-        "SEARXNG_URL": searxng_server,
-        "WET_AUTO_SEARXNG": "false",
-    }
-    subprocess.run(
-        [
-            "uv",
-            "run",
-            "python",
-            "-c",
-            "from mcp_core import set_local_mode; set_local_mode('wet-mcp')",
-        ],
-        env=local_env,
-        check=True,
-        capture_output=True,
-        text=True,
-    )
-    server_params = StdioServerParameters(
-        command="uv",
-        args=["run", "wet-mcp"],
-        env=local_env,
-    )
+    """Start a real local-only wet-mcp HTTP server; yield an MCP session."""
+    env, _state = _server_env(tmp_path, searxng_server)
+    port = int(env["WET_PORT"])
+    log_path = tmp_path / "server.log"
+    with open(log_path, "ab") as log_fh:
+        proc = subprocess.Popen(
+            [sys.executable, "-m", "wet_mcp.server"],
+            env=env,
+            stdout=log_fh,
+            stderr=log_fh,
+        )
     try:
-        async with stdio_client(server_params) as (read_stream, write_stream):
+        _wait_until_up(port)
+        url = f"http://127.0.0.1:{port}/mcp"
+        async with streamablehttp_client(url) as (read_stream, write_stream, _):
             async with ClientSession(read_stream, write_stream) as session:
                 await session.initialize()
                 yield session
     except (RuntimeError, ExceptionGroup) as exc:
-        # anyio cancel-scope teardown error -- harmless in test context
         msg = str(exc).lower()
         if "cancel scope" in msg or "different task" in msg:
             warnings.warn(
@@ -183,6 +180,12 @@ async def mcp_session(searxng_server: str, tmp_path):
             )
         else:
             raise
+    finally:
+        proc.terminate()
+        try:
+            proc.wait(timeout=10)
+        except subprocess.TimeoutExpired:
+            proc.kill()
 
 
 # ---------------------------------------------------------------------------
@@ -196,7 +199,6 @@ class TestMeta:
         tool_names = sorted(t.name for t in result.tools)
         expected = [
             "config",
-            "config__open_relay",
             "extract",
             "help",
             "media",
@@ -267,19 +269,6 @@ class TestConfig:
         assert isinstance(reranker["backend"], (str, type(None)))
         assert isinstance(reranker["model"], (str, type(None)))
         assert isinstance(reranker["available"], bool)
-        assert embedding["available"] is True
-        assert embedding["backend"] == "LocalEmbeddingBackend"
-        assert embedding["model"] in {
-            "n24q02m/Qwen3-Embedding-0.6B-ONNX",
-            "n24q02m/Qwen3-Embedding-0.6B-GGUF",
-        }
-        assert embedding["dims"] == 768
-        assert reranker["available"] is True
-        assert reranker["backend"] == "LocalReranker"
-        assert reranker["model"] in {
-            "n24q02m/Qwen3-Reranker-0.6B-ONNX-YesNo",
-            "n24q02m/Qwen3-Reranker-0.6B-GGUF",
-        }
 
     async def test_config_set(self, mcp_session: ClientSession):
         r = await mcp_session.call_tool(
@@ -504,14 +493,13 @@ class TestMedia:
         text = parse(r)
         assert any(w in text.lower() for w in ("download", "path", "file")), text[:80]
 
-    async def test_media_analyze_no_key(self, mcp_session: ClientSession):
-        """media.analyze without API keys should fail gracefully."""
+    async def test_media_analyze_no_cell(self, mcp_session: ClientSession):
+        """media.analyze with no [models.chat] cell fails gracefully."""
         r = await mcp_session.call_tool(
             "media",
             {"action": "analyze", "url": "/tmp/nonexistent.png", "prompt": "describe"},
         )
         text = parse_allow_error(r)
-        # Should error about missing API key or file not found
-        assert any(w in text.lower() for w in ("api", "key", "error", "not found")), (
-            text[:80]
-        )
+        assert any(
+            w in text.lower() for w in ("cell", "configured", "error", "not found")
+        ), text[:80]

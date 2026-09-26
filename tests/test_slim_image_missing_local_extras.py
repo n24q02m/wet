@@ -2,12 +2,12 @@
 
 The http-slim build uninstalls ``fastretrieval`` and ``onnxruntime`` (see
 ``Dockerfile``), so on that image the local embed/rerank leg does not exist --
-whatever the configuration says. Every resolver in the codebase decided the
-question from ``DISABLE_LOCAL_EMBED`` / ``DISABLE_LOCAL_RERANK`` alone, which
-makes a slim deployment correct only for as long as somebody remembers to set
-those vars. Forget one, or run the slim image outside the Cloudflare worker
-that supplies them, and the first index attempt dies inside the lazy import in
-``LocalEmbeddingBackend._get_model``. Live prod D1 recorded exactly that (#1630)::
+whatever the configuration says. Every resolver deciding the question from
+``DISABLE_LOCAL_EMBED`` / ``DISABLE_LOCAL_RERANK`` alone makes a slim
+deployment correct only for as long as somebody remembers to set those vars.
+Forget one, and the first index attempt dies inside the lazy import in
+``LocalEmbeddingBackend._get_model``. The pre-de-host deployment recorded
+exactly that::
 
     fastapi:python  pending  0 chunks  failed
         ModuleNotFoundError: No module named 'fastretrieval'
@@ -36,12 +36,12 @@ import importlib.util
 from unittest.mock import AsyncMock, Mock
 
 import pytest
+from hull_core.auth.context import AuthContext, reset_current_user, set_current_user
 
 from wet_mcp import server
-from wet_mcp.credential_state import CLOUD_KEYS, set_current_sub, store_for_sub
 from wet_mcp.db import INDEX_STATE_DONE, INDEX_STATE_RUNNING, DocsDB
 
-# Captured at collection time, BEFORE conftest's autouse ``_stub_phase2_lifespan_hooks``
+# Captured at collection time, BEFORE conftest's autouse lifespan stub
 # replaces both factories with MagicMocks that report a healthy backend and never
 # touch the module singleton. Under that stub the startup tests below pass on
 # unfixed code, asserting nothing. Its docstring says as much: "Tests that
@@ -53,36 +53,27 @@ DOCS_URL = "https://example.test/alpha"
 
 
 @pytest.fixture(autouse=True)
-def _isolate(monkeypatch, tmp_path):
-    """No provider keys, no chains, and both disable-local flags OFF.
+def _isolate(monkeypatch):
+    """Both disable-local flags OFF, and a clean identity.
 
     The flags being off is the whole point: this module covers the deployment
     that never set them and is nonetheless running an image without the local
     extras.
     """
-    monkeypatch.setenv("WET_DATA_DIR", str(tmp_path))
-    monkeypatch.setenv("CREDENTIAL_SECRET", "s")
-    set_current_sub(None)
-    for k in (*CLOUD_KEYS, "ANTHROPIC_API_KEY", "GOOGLE_API_KEY"):
-        monkeypatch.delenv(k, raising=False)
-    for k in ("EMBEDDING_MODELS", "RERANK_MODELS", "LLM_MODELS"):
-        monkeypatch.delenv(k, raising=False)
-
     from wet_mcp import embedder, reranker
     from wet_mcp.config import settings
 
     monkeypatch.setattr(settings, "disable_local_embed", False)
     monkeypatch.setattr(settings, "disable_local_rerank", False)
-    monkeypatch.setattr(settings, "embedding_models", "")
-    monkeypatch.setattr(settings, "rerank_models", "")
     # Process-wide singletons; a leftover from another module would make these
     # assertions pass or fail for the wrong reason.
     monkeypatch.setattr(embedder, "_shared_local_backend", None)
     monkeypatch.setattr(reranker, "_shared_local_backend", None)
     monkeypatch.setattr(embedder, "_backend", None)
     monkeypatch.setattr(reranker, "_backend", None)
+    token = set_current_user(AuthContext.local())
     yield
-    set_current_sub(None)
+    reset_current_user(token)
 
 
 @pytest.fixture
@@ -127,28 +118,23 @@ class TestEmbedResolutionOnASlimImage:
         """The flag is unset; the package is gone. That is still 'unavailable'."""
         from wet_mcp.embedder import resolve_embed_backend_for_request
 
-        store_for_sub("user_a", {"GITHUB_TOKEN": "ghp_x"})
-        set_current_sub("user_a")
-
         assert resolve_embed_backend_for_request() is None
         assert slim_image == [], f"local ONNX leg was entered: {slim_image}"
 
     async def test_index_batch_degrades_instead_of_raising(self, slim_image):
         """``_embed_batch`` is what the background indexer calls.
 
-        On main this raises ``ModuleNotFoundError`` straight through
+        On unfixed code this raises ``ModuleNotFoundError`` straight through
         ``_embed_batch``'s permanent-error branch, which is how the failure
-        reached D1 as the version's ``index_error``.
+        reached the index record as the version's ``index_error``.
         """
-        store_for_sub("user_a", {"GITHUB_TOKEN": "ghp_x"})
-        set_current_sub("user_a")
+        from wet_mcp import server
 
         assert await server._embed_batch(["a", "b"]) is None
         assert slim_image == [], f"local ONNX leg was entered: {slim_image}"
 
     async def test_query_embed_degrades_instead_of_raising(self, slim_image):
-        store_for_sub("user_a", {"GITHUB_TOKEN": "ghp_x"})
-        set_current_sub("user_a")
+        from wet_mcp import server
 
         assert await server._embed("hello", is_query=True) is None
         assert slim_image == [], f"local ONNX leg was entered: {slim_image}"
@@ -158,19 +144,16 @@ class TestEmbedResolutionOnASlimImage:
 
         Telling an operator to look at a flag they never touched sends them
         after the wrong thing; the actionable fact is that the image has no
-        local extras, so the deployment needs a cloud chain.
+        local extras, so the deployment needs a cloud cell.
         """
         from wet_mcp.embedder import embedding_unavailable_reason
-
-        store_for_sub("user_a", {"GITHUB_TOKEN": "ghp_x"})
-        set_current_sub("user_a")
 
         reason = embedding_unavailable_reason()
         assert reason is not None
         assert "fastretrieval" in reason
         assert "onnxruntime" in reason
         # Named as a property of the build, so the reader looks for a cloud
-        # chain rather than a flag to unset.
+        # cell rather than a flag to unset.
         assert "slim" in reason
         assert "DISABLE_LOCAL_EMBED" not in reason
 
@@ -182,8 +165,6 @@ class TestEmbedResolutionOnASlimImage:
         from wet_mcp.embedder import embedding_unavailable_reason
 
         monkeypatch.setattr(settings, "disable_local_embed", True)
-        store_for_sub("user_a", {"GITHUB_TOKEN": "ghp_x"})
-        set_current_sub("user_a")
 
         reason = embedding_unavailable_reason()
         assert reason is not None
@@ -195,9 +176,6 @@ class TestEmbedResolutionOnASlimImage:
         from wet_mcp import embedder
         from wet_mcp.embedder import LocalEmbeddingBackend
 
-        store_for_sub("user_a", {"GITHUB_TOKEN": "ghp_x"})
-        set_current_sub("user_a")
-
         backend = embedder.resolve_embed_backend_for_request()
         assert isinstance(backend, LocalEmbeddingBackend)
         assert backend is embedder.resolve_embed_backend_for_request()
@@ -207,9 +185,6 @@ class TestRerankResolutionOnASlimImage:
     def test_absent_local_extras_resolve_to_none_without_any_flag(self, slim_image):
         from wet_mcp.reranker import resolve_rerank_backend_for_request
 
-        store_for_sub("user_a", {"GITHUB_TOKEN": "ghp_x"})
-        set_current_sub("user_a")
-
         assert resolve_rerank_backend_for_request() is None
         assert slim_image == [], f"local ONNX leg was entered: {slim_image}"
 
@@ -217,11 +192,10 @@ class TestRerankResolutionOnASlimImage:
         """``LocalReranker.rerank`` swallows its own load failure and returns
         ``[]``, so the broken leg is invisible in the result. The import list is
         the only thing that can tell "skipped" from "failed quietly"."""
-        store_for_sub("user_a", {"GITHUB_TOKEN": "ghp_x"})
-        set_current_sub("user_a")
+        from wet_mcp import server
 
         results = [{"content": "doc-a"}, {"content": "doc-b"}]
-        assert await server._rerank_results("q", results, top_n=1) == [
+        assert await server._rerank_results("q", results, 1) == [
             {"content": "doc-a"}
         ]
         assert slim_image == [], f"local ONNX leg was entered: {slim_image}"
@@ -230,14 +204,11 @@ class TestRerankResolutionOnASlimImage:
         from wet_mcp import reranker
         from wet_mcp.reranker import LocalReranker
 
-        store_for_sub("user_a", {"GITHUB_TOKEN": "ghp_x"})
-        set_current_sub("user_a")
-
         assert isinstance(reranker.resolve_rerank_backend_for_request(), LocalReranker)
 
 
 # ---------------------------------------------------------------------------
-# The durable record -- the D1 row from the issue
+# The durable record -- the index row from the issue
 # ---------------------------------------------------------------------------
 
 
@@ -290,16 +261,14 @@ class TestBackgroundIndexerOnASlimImage:
         Before: ``state=failed``, ``error='ModuleNotFoundError: No module named
         'fastretrieval''``, ``chunk_count=0`` -- the library unservable forever.
         After: the chunks land keyword-searchable and the version says, where
-        ``config(action="status")`` and D1 both show it, that it holds no
-        vectors and why. Storing them silently would trade a loud failure for a
-        quiet one, which is the outcome this test exists to forbid.
+        ``config(action="status")`` reads it, that it holds no vectors and why.
+        Storing them silently would trade a loud failure for a quiet one, which
+        is the outcome this test exists to forbid.
         """
         lib_id, ver_id = _fresh_version(docs_db)
         monkeypatch.setattr(
             server, "_fetch_and_chunk_docs", AsyncMock(return_value=(_chunks(2), 3))
         )
-        store_for_sub("user_a", {"GITHUB_TOKEN": "ghp_x"})
-        set_current_sub("user_a")
 
         await server._background_index_and_search(
             library="alpha",
@@ -386,51 +355,35 @@ class TestStartupNeverInstallsABackendItCannotLoad:
         monkeypatch.setattr(type(settings), "local_embed_available", lambda self: True)
         monkeypatch.setattr(type(settings), "local_rerank_available", lambda self: True)
 
-    @staticmethod
-    def _set_local_credential_state(monkeypatch):
-        from wet_mcp import credential_state
-        from wet_mcp.credential_state import CredentialState
-
-        monkeypatch.setattr(
-            credential_state, "get_state", lambda: CredentialState.LOCAL
-        )
-
     async def test_local_backend_is_not_installed_when_the_package_is_absent(
-        self, slim_image, real_backend_factories, monkeypatch
+        self, slim_image, real_backend_factories
     ):
-        """``init_backend`` assigns the singleton BEFORE anything validates it.
+        """A slim image with no cell and no local leg resolves to NO backend.
 
-        With the extras gone, ``check_available()`` fails, the failure is
-        logged -- and the unusable backend stays installed as the process
-        singleton, so every later request resolves to an object whose first use
-        raises. It also defeats the ``is None`` guard in the indexer, which is
-        the one place written to produce a loud, informative degrade.
+        The startup init must not install an unusable backend as the process
+        singleton: every later request would resolve to an object whose first
+        use raises, and the indexer's ``is None`` guard -- the one place
+        written to produce a loud, informative degrade -- never fires.
         """
-        from wet_mcp import credential_state, embedder
-        from wet_mcp.credential_state import CredentialState
+        from wet_mcp import embedder
 
-        monkeypatch.setattr(
-            credential_state, "get_state", lambda: CredentialState.LOCAL
-        )
-
-        await server._init_embedding_backend("local")
+        await server._init_embedding_backend()
 
         assert embedder.get_backend() is None
         assert slim_image == [], f"local ONNX leg was entered: {slim_image}"
 
-    async def test_local_backend_is_cleared_when_availability_check_returns_false(
+    async def test_local_backend_is_cleared_when_availability_check_returns_zero(
         self, real_backend_factories, monkeypatch
     ):
         from wet_mcp import embedder
         from wet_mcp.embedder import LocalEmbeddingBackend
 
         self._enable_local_startup(monkeypatch)
-        self._set_local_credential_state(monkeypatch)
         monkeypatch.setattr(
             LocalEmbeddingBackend, "check_available", AsyncMock(return_value=0)
         )
 
-        await server._init_embedding_backend("local")
+        await server._init_embedding_backend()
 
         assert embedder.get_backend() is None
 
@@ -441,28 +394,22 @@ class TestStartupNeverInstallsABackendItCannotLoad:
         from wet_mcp.embedder import LocalEmbeddingBackend
 
         self._enable_local_startup(monkeypatch)
-        self._set_local_credential_state(monkeypatch)
         monkeypatch.setattr(
             LocalEmbeddingBackend,
             "check_available",
             AsyncMock(side_effect=RuntimeError("embedding unavailable")),
         )
 
-        await server._init_embedding_backend("local")
+        await server._init_embedding_backend()
 
         assert embedder.get_backend() is None
 
     async def test_local_reranker_is_not_installed_when_the_package_is_absent(
-        self, slim_image, real_backend_factories, monkeypatch
+        self, slim_image, real_backend_factories
     ):
-        from wet_mcp import credential_state, reranker
-        from wet_mcp.credential_state import CredentialState
+        from wet_mcp import reranker
 
-        monkeypatch.setattr(
-            credential_state, "get_state", lambda: CredentialState.LOCAL
-        )
-
-        await server._init_reranker_backend("local")
+        await server._init_reranker_backend()
 
         assert reranker.get_reranker() is None
         assert slim_image == [], f"local ONNX leg was entered: {slim_image}"
@@ -474,10 +421,9 @@ class TestStartupNeverInstallsABackendItCannotLoad:
         from wet_mcp.reranker import LocalReranker
 
         self._enable_local_startup(monkeypatch)
-        self._set_local_credential_state(monkeypatch)
         monkeypatch.setattr(LocalReranker, "check_available", Mock(return_value=False))
 
-        await server._init_reranker_backend("local")
+        await server._init_reranker_backend()
 
         assert reranker.get_reranker() is None
 
@@ -488,13 +434,12 @@ class TestStartupNeverInstallsABackendItCannotLoad:
         from wet_mcp.reranker import LocalReranker
 
         self._enable_local_startup(monkeypatch)
-        self._set_local_credential_state(monkeypatch)
         monkeypatch.setattr(
             LocalReranker,
             "check_available",
             Mock(side_effect=RuntimeError("reranker unavailable")),
         )
 
-        await server._init_reranker_backend("local")
+        await server._init_reranker_backend()
 
         assert reranker.get_reranker() is None

@@ -16,11 +16,12 @@ async def test_validate_cloud_models_logging(caplog):
     logger.remove()
     logger.add(loguru_caplog_bridge, level="DEBUG")
 
-    mock_settings = MagicMock()
-    mock_settings.embedding_chain.return_value = ["test-embed"]
-    mock_settings.rerank_chain.return_value = ["test-rerank"]
+    mock_cell = MagicMock()
+    mock_cell.model = "test-model"
 
     with (
+        patch("wet_mcp.runtime.cell_configured", return_value=True),
+        patch("wet_mcp.runtime.model_cell", return_value=mock_cell),
         patch(
             "wet_mcp.embedder.init_backend",
             side_effect=Exception("Embedding initialization failed"),
@@ -31,14 +32,14 @@ async def test_validate_cloud_models_logging(caplog):
         ),
         caplog.at_level("DEBUG"),
     ):
-        result = await _validate_cloud_models(mock_settings)
+        result = await _validate_cloud_models(MagicMock())
 
     # Cloud ready should be False because embedding failed
     assert result["cloud_ready"] is False
 
-    # Check for embedding failure log
+    # Check for embedding failure log (cell-based wording)
     assert (
-        "Cloud embedding candidate test-embed failed: Embedding initialization failed"
+        "Cloud embedding test-model failed: Embedding initialization failed"
         in caplog.text
     )
 
@@ -53,14 +54,15 @@ async def test_validate_cloud_models_reranker_logging(caplog):
     logger.remove()
     logger.add(loguru_caplog_bridge, level="DEBUG")
 
-    mock_settings = MagicMock()
-    mock_settings.embedding_chain.return_value = ["test-embed"]
-    mock_settings.rerank_chain.return_value = ["test-rerank"]
+    mock_cell = MagicMock()
+    mock_cell.model = "test-model"
 
     mock_backend = MagicMock()
     mock_backend.check_available = AsyncMock(return_value=768)
 
     with (
+        patch("wet_mcp.runtime.cell_configured", return_value=True),
+        patch("wet_mcp.runtime.model_cell", return_value=mock_cell),
         patch("wet_mcp.embedder.init_backend", return_value=mock_backend),
         patch(
             "wet_mcp.reranker.init_reranker",
@@ -68,14 +70,16 @@ async def test_validate_cloud_models_reranker_logging(caplog):
         ),
         caplog.at_level("DEBUG"),
     ):
-        result = await _validate_cloud_models(mock_settings)
+        result = await _validate_cloud_models(MagicMock())
 
     assert result["cloud_ready"] is True
-    assert result["embedding"] == {"model": "test-embed", "dims": 768}
-    assert result["reranker"] is None
+    assert result["embedding"] == {"model": "test-model", "dims": 768}
+    # Reranker cell failed its check: reported under errors, absent from result
+    assert "reranker" not in result
+    assert result["errors"] == ["rerank cell test-model: Reranker initialization failed"]
 
     # Check for reranker failure log
     assert (
-        "Cloud reranker test-rerank failed: Reranker initialization failed"
+        "Cloud reranker test-model failed: Reranker initialization failed"
         in caplog.text
     )

@@ -1,11 +1,11 @@
-"""Pluggable web-search backends. Default SearXNG (local), Tavily (cloud) for CF
+"""Pluggable web-search backends. Default SearXNG (local), Tavily (cloud)
 where SearXNG cannot run. All return the same JSON string {results, total, query}
 | {error} that server.py's search action already expects from searxng.search().
 
 Each cloud backend takes a LIST of API keys (CSV in the env): a single key keeps
 exactly today's behaviour, while multiple keys rotate automatically on a
-key-specific failure (HTTP 429 rate-limit / 401-403 auth) via the shared
-``mcp_core.llm.key_rotation`` primitive. An empty result from a working key is
+key-specific failure (HTTP 429 rate-limit / 401-403 auth) via the local
+``_rotate_keys`` primitive. An empty result from a working key is
 legitimate and never triggers rotation — only the PROVIDER chain advances on empty.
 """
 
@@ -17,18 +17,98 @@ import json
 import os
 import re
 import time
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Sequence
 from typing import Protocol
 from urllib.parse import unquote, urlparse
 
 import httpx
 from loguru import logger
-from mcp_core.chains import run_with_fallback
-from mcp_core.llm.key_rotation import rotate_keys, split_keys
 
 from wet_mcp import search_metrics
 from wet_mcp.config import settings
 from wet_mcp.sources.rerank import maybe_rerank
+
+
+# --- Local fallback / key-rotation primitives (de-host 2026-09) ------------
+# Inlined from the deleted shared chains / key-rotation modules; semantics
+# preserved exactly.
+
+
+def split_keys(raw: str | None) -> list[str]:
+    """Split a CSV key string into stripped, non-empty keys."""
+    if not raw:
+        return []
+    return [k.strip() for k in raw.split(",") if k.strip()]
+
+
+_ROTATABLE_STATUS = {401, 403, 429}
+_ROTATABLE_NAMES = {"RateLimitError", "AuthenticationError", "PermissionDeniedError"}
+
+
+def _is_rotatable_error(exc: BaseException) -> bool:
+    """Whether ``exc`` is key-specific (rotate to the next key): a 429/401/403
+    status on the exception (as raised by ``_SearchHTTPError``) or a provider
+    SDK exception of a rate-limit/auth/permission class."""
+    status = getattr(exc, "status_code", None)
+    if isinstance(status, int) and status in _ROTATABLE_STATUS:
+        return True
+    return type(exc).__name__ in _ROTATABLE_NAMES
+
+
+async def _rotate_keys(
+    keys: list[str],
+    call: Callable[[str], Awaitable[str]],
+    *,
+    label: str = "provider",
+) -> str:
+    """Run ``call`` with each key in order; return the first success.
+
+    A key-specific failure (see ``_is_rotatable_error``) advances to the next
+    key; any other error propagates immediately. When every key fails
+    key-specifically, the LAST such error is re-raised (the caller formats it
+    — e.g. the ``"<Provider> HTTP <code>"`` envelope naming the provider).
+    """
+    if len(keys) <= 1:
+        return await call(keys[0] if keys else "")
+    last: BaseException | None = None
+    for key in keys:
+        try:
+            return await call(key)
+        except BaseException as exc:  # noqa: BLE001 - re-raised below
+            if not _is_rotatable_error(exc):
+                raise
+            last = exc
+    assert last is not None
+    raise last
+
+
+async def run_with_fallback(
+    providers: Sequence[Callable[[], Awaitable[str]]],
+    *,
+    is_empty: Callable[[str], bool] | None = None,
+    on_error: Callable[[int, Exception], None] | None = None,
+) -> str | None:
+    """Try each provider thunk in order; return the first non-empty result.
+
+    Advances to the next provider when a thunk raises OR returns an "empty"
+    result (per ``is_empty``; default: falsey, which covers ``[]`` / ``""`` /
+    ``None``). Returns ``None`` when every provider is exhausted without a
+    non-empty result. ``on_error(index, exc)`` is invoked for each provider
+    that raises (intended for the caller's logging) and MUST NOT raise itself.
+
+    De-host 2026-09: local copy of the deleted shared chains primitive.
+    """
+    empty = is_empty if is_empty is not None else (lambda r: not r)
+    for idx, provider in enumerate(providers):
+        try:
+            result = await provider()
+        except Exception as exc:  # fallback advances past any provider error
+            if on_error is not None:
+                on_error(idx, exc)
+            continue
+        if not empty(result):
+            return result
+    return None
 
 
 class SearchBackend(Protocol):
@@ -49,7 +129,7 @@ class SearchBackend(Protocol):
 
 class _SearchHTTPError(Exception):
     """A non-2xx response from a search provider, carrying ``status_code`` so
-    ``mcp_core.llm.key_rotation`` classifies 429/401/403 as a rotatable
+    ``_is_rotatable_error`` classifies 429/401/403 as a rotatable
     (key-specific) failure and advances to the next key. The message is the safe
     ``"<Provider> HTTP <code>"`` form — it never carries the request body/key."""
 
@@ -70,7 +150,7 @@ async def _search_with_rotation(
     if not keys:
         return json.dumps({"error": f"{provider} search backend has no API key"})
     try:
-        return await rotate_keys(keys, attempt, label=provider.lower())
+        return await _rotate_keys(keys, attempt, label=provider.lower())
     except _SearchHTTPError as exc:
         return json.dumps(
             {"error": str(exc)}
@@ -1027,18 +1107,15 @@ class OpenRouterBackend:
 
 
 def _request_search_config() -> dict[str, str] | None:
-    from wet_mcp.credential_state import (
-        credentials_for_current_request,
-        get_current_sub,
-    )
-
-    if get_current_sub() is not None or os.getenv("PUBLIC_URL"):
-        return credentials_for_current_request()
+    # De-host 2026-09: per-sub credential buckets are gone — API keys are
+    # host-only (process env / instance settings), so every mode resolves
+    # keys through ``_config_value``'s ``os.getenv`` fallback (``None``).
     return None
 
 
 def _config_value(config: dict[str, str] | None, key: str, default: str = "") -> str:
-    # None means single-user mode; an empty subject bucket must stay empty.
+    # ``config`` is reserved for per-request overrides (always ``None`` since
+    # the per-sub bucket removal); ``None`` reads the host environment.
     return config.get(key, "") if config is not None else os.getenv(key, default)
 
 
@@ -1047,9 +1124,9 @@ def _make_backend(name: str, searxng_url: str | None = None) -> SearchBackend:
 
     ``searxng_url`` overrides ``settings.searxng_url`` for the SearXNG backend
     (the live auto-started URL, which may use a dynamic port) without mutating
-    the global settings. Cloud backends read the current subject's key CSV in
-    hosted mode; only single-user mode consults process env/settings. Multiple
-    keys rotate on rate-limit/auth failure.
+    the global settings. Cloud backends read the host key CSV from process
+    env/settings (per-sub key buckets were removed in the 2026-09 de-host).
+    Multiple keys rotate on rate-limit/auth failure.
     """
     config = _request_search_config()
     if name == "searxng":
@@ -1057,7 +1134,7 @@ def _make_backend(name: str, searxng_url: str | None = None) -> SearchBackend:
         if config is None:
             url = searxng_url or url
         if not url:
-            raise ValueError("SEARXNG_URL required for a hosted searxng search backend")
+            raise ValueError("SEARXNG_URL required for the searxng search backend")
         return SearxngBackend(url, hosted=config is not None)
     if name == "tavily":
         keys = split_keys(
@@ -1182,29 +1259,16 @@ def chain_backend_names() -> list[str]:
     (back-compat). Used to decide whether the embedded SearXNG must be started
     before running the chain.
 
-    Hosted multi-user mode: a subject whose saved config lacks
-    ``SEARCH_BACKENDS`` falls back to the process env var, then to the
-    credential-free default chain ``duckduckgo,startpage`` — without this the
-    per-sub bucket (which never carried the key) produced ``requested=[]`` and
-    every search returned "No search backend configured" (F1, 2026-09-16).
+    Config is host-only since the per-sub bucket removal (de-host 2026-09):
+    every mode reads the ``SEARCH_BACKENDS`` env var, falling back to the
+    single ``SEARCH_BACKEND``, then to the historical ``searxng`` default.
     """
     config = _request_search_config()
     raw = _config_value(config, "SEARCH_BACKENDS", settings.search_backends).strip()
     if not raw:
         raw = _config_value(config, "SEARCH_BACKEND", settings.search_backend).strip()
     if not raw:
-        # Hosted mode with a real subject whose bucket lacks the key: env var
-        # is an ops-level override; absent that, credential-free default so
-        # search works out of the box. A subject-less hosted request keeps
-        # the empty chain (no operator config leak). Single-user keeps the
-        # historical searxng default.
-        if config is not None:
-            from wet_mcp.credential_state import get_current_sub
-
-            if get_current_sub() is not None:
-                raw = os.getenv("SEARCH_BACKENDS", "").strip() or "duckduckgo,startpage"
-        else:
-            raw = "searxng"
+        raw = "searxng"
     return [n.strip().lower() for n in raw.split(",") if n.strip()]
 
 

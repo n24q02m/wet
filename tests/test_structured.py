@@ -45,8 +45,9 @@ async def test_extract_structured_success():
             return_value=json.dumps(SAMPLE_PAGES),
         ),
         patch(
-            "wet_mcp.sources.structured.settings",
-        ) as mock_settings,
+            "wet_mcp.sources.structured.has_llm_provider",
+            return_value=True,
+        ),
         patch(
             "wet_mcp.sources.structured.get_llm_config",
             return_value={"model": "gpt-4", "fallbacks": None, "temperature": 0},
@@ -57,8 +58,6 @@ async def test_extract_structured_success():
             return_value=_mock_llm_response(llm_output),
         ),
     ):
-        mock_settings.resolve_provider_mode.return_value = "proxy"
-
         result_str = await extract_structured(
             urls=["https://example.com/product"],
             schema=SAMPLE_SCHEMA,
@@ -90,7 +89,7 @@ async def test_extract_structured_reads_clean_text_key():
             new_callable=AsyncMock,
             return_value=json.dumps(real_shape_pages),
         ),
-        patch("wet_mcp.sources.structured.settings") as mock_settings,
+        patch("wet_mcp.sources.structured.has_llm_provider", return_value=True),
         patch(
             "wet_mcp.sources.structured.get_llm_config",
             return_value={"model": "gpt-4", "fallbacks": None, "temperature": 0},
@@ -101,8 +100,6 @@ async def test_extract_structured_reads_clean_text_key():
             return_value=_mock_llm_response(llm_output),
         ),
     ):
-        mock_settings.resolve_provider_mode.return_value = "proxy"
-
         result = json.loads(
             await extract_structured(
                 urls=["https://example.com/product"], schema=SAMPLE_SCHEMA
@@ -115,8 +112,7 @@ async def test_extract_structured_reads_clean_text_key():
 
 async def test_extract_structured_local_mode_error():
     """Local mode (no LLM) returns an error."""
-    with patch("wet_mcp.sources.structured.settings") as mock_settings:
-        mock_settings.resolve_provider_mode.return_value = "local"
+    with patch("wet_mcp.sources.structured.has_llm_provider", return_value=False):
 
         result_str = await extract_structured(
             urls=["https://example.com"],
@@ -140,9 +136,8 @@ async def test_extract_structured_no_content():
             new_callable=AsyncMock,
             return_value=json.dumps(empty_pages),
         ),
-        patch("wet_mcp.sources.structured.settings") as mock_settings,
+        patch("wet_mcp.sources.structured.has_llm_provider", return_value=True),
     ):
-        mock_settings.resolve_provider_mode.return_value = "sdk"
 
         result_str = await extract_structured(
             urls=["https://example.com"],
@@ -165,7 +160,7 @@ async def test_extract_structured_validation_warning():
             new_callable=AsyncMock,
             return_value=json.dumps(SAMPLE_PAGES),
         ),
-        patch("wet_mcp.sources.structured.settings") as mock_settings,
+        patch("wet_mcp.sources.structured.has_llm_provider", return_value=True),
         patch(
             "wet_mcp.sources.structured.get_llm_config",
             return_value={"model": "gpt-4", "fallbacks": None, "temperature": 0},
@@ -176,8 +171,6 @@ async def test_extract_structured_validation_warning():
             return_value=_mock_llm_response(llm_output),
         ),
     ):
-        mock_settings.resolve_provider_mode.return_value = "proxy"
-
         result_str = await extract_structured(
             urls=["https://example.com/product"],
             schema=SAMPLE_SCHEMA,
@@ -209,7 +202,7 @@ async def test_extract_structured_fallback_to_json_object():
             new_callable=AsyncMock,
             return_value=json.dumps(SAMPLE_PAGES),
         ),
-        patch("wet_mcp.sources.structured.settings") as mock_settings,
+        patch("wet_mcp.sources.structured.has_llm_provider", return_value=True),
         patch(
             "wet_mcp.sources.structured.get_llm_config",
             return_value={"model": "gpt-4", "fallbacks": None, "temperature": 0},
@@ -219,8 +212,6 @@ async def test_extract_structured_fallback_to_json_object():
             side_effect=mock_acompletion,
         ),
     ):
-        mock_settings.resolve_provider_mode.return_value = "proxy"
-
         result_str = await extract_structured(
             urls=["https://example.com/product"],
             schema=SAMPLE_SCHEMA,
@@ -244,7 +235,7 @@ async def test_extract_structured_llm_failure():
             new_callable=AsyncMock,
             return_value=json.dumps(SAMPLE_PAGES),
         ),
-        patch("wet_mcp.sources.structured.settings") as mock_settings,
+        patch("wet_mcp.sources.structured.has_llm_provider", return_value=True),
         patch(
             "wet_mcp.sources.structured.get_llm_config",
             return_value={"model": "gpt-4", "fallbacks": None, "temperature": 0},
@@ -254,8 +245,6 @@ async def test_extract_structured_llm_failure():
             side_effect=mock_acompletion,
         ),
     ):
-        mock_settings.resolve_provider_mode.return_value = "proxy"
-
         result_str = await extract_structured(
             urls=["https://example.com/product"],
             schema=SAMPLE_SCHEMA,
@@ -277,7 +266,7 @@ async def test_extract_structured_with_fallbacks():
             new_callable=AsyncMock,
             return_value=json.dumps(SAMPLE_PAGES),
         ),
-        patch("wet_mcp.sources.structured.settings") as mock_settings,
+        patch("wet_mcp.sources.structured.has_llm_provider", return_value=True),
         patch(
             "wet_mcp.sources.structured.get_llm_config",
             return_value={
@@ -292,8 +281,6 @@ async def test_extract_structured_with_fallbacks():
             return_value=_mock_llm_response(llm_output),
         ) as mock_llm,
     ):
-        mock_settings.resolve_provider_mode.return_value = "proxy"
-
         result_str = await extract_structured(
             urls=["https://example.com/product"],
             schema=SAMPLE_SCHEMA,
@@ -313,9 +300,8 @@ async def test_extract_structured_content_extraction_error():
             new_callable=AsyncMock,
             side_effect=Exception("Connection refused"),
         ),
-        patch("wet_mcp.sources.structured.settings") as mock_settings,
+        patch("wet_mcp.sources.structured.has_llm_provider", return_value=True),
     ):
-        mock_settings.resolve_provider_mode.return_value = "sdk"
 
         result_str = await extract_structured(
             urls=["https://example.com"],
@@ -342,7 +328,7 @@ async def test_extract_structured_truncates_long_content():
             new_callable=AsyncMock,
             return_value=json.dumps(long_pages),
         ),
-        patch("wet_mcp.sources.structured.settings") as mock_settings,
+        patch("wet_mcp.sources.structured.has_llm_provider", return_value=True),
         patch(
             "wet_mcp.sources.structured.get_llm_config",
             return_value={"model": "gpt-4", "fallbacks": None, "temperature": 0},
@@ -353,8 +339,6 @@ async def test_extract_structured_truncates_long_content():
             return_value=_mock_llm_response(llm_output),
         ) as mock_llm,
     ):
-        mock_settings.resolve_provider_mode.return_value = "proxy"
-
         result_str = await extract_structured(
             urls=["https://example.com"],
             schema=SAMPLE_SCHEMA,
@@ -377,7 +361,7 @@ async def test_extract_structured_with_custom_prompt():
             new_callable=AsyncMock,
             return_value=json.dumps(SAMPLE_PAGES),
         ),
-        patch("wet_mcp.sources.structured.settings") as mock_settings,
+        patch("wet_mcp.sources.structured.has_llm_provider", return_value=True),
         patch(
             "wet_mcp.sources.structured.get_llm_config",
             return_value={"model": "gpt-4", "fallbacks": None, "temperature": 0},
@@ -388,8 +372,6 @@ async def test_extract_structured_with_custom_prompt():
             return_value=_mock_llm_response(llm_output),
         ) as mock_llm,
     ):
-        mock_settings.resolve_provider_mode.return_value = "proxy"
-
         result_str = await extract_structured(
             urls=["https://example.com/product"],
             schema=SAMPLE_SCHEMA,
