@@ -2,6 +2,14 @@
 
 <!-- version list -->
 
+## v3.17.2 (2026-09-27)
+
+### Bug Fixes
+
+- **coverage**: Skip vector-backed reembed tests where sqlite-vec cannot load
+  ([`6d3791b`](https://github.com/n24q02m/wet/commit/6d3791b6c8254c9b4663a50eb4215b06f777a850))
+
+
 ## v3.17.1 (2026-09-27)
 
 ### Bug Fixes
