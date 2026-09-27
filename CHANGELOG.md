@@ -2,6 +2,19 @@
 
 <!-- version list -->
 
+## v3.16.6 (2026-09-27)
+
+### Bug Fixes
+
+- **ci**: Drop worker test steps — CF worker removed in WP3 de-host
+  ([`5a3bae7`](https://github.com/n24q02m/wet/commit/5a3bae73d253bf065b269d6e8f2c778dd33210c9))
+
+### Chores
+
+- **coverage**: Recalibrate gate to measured post-de-host baseline (89 measured, gate 88)
+  ([`f90c804`](https://github.com/n24q02m/wet/commit/f90c80431be5365226a8d5d4b65648eee96afc89))
+
+
 ## v3.16.5 (2026-09-27)
 
 ### Bug Fixes
