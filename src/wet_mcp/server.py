@@ -1237,12 +1237,34 @@ async def search(  # noqa: PLR0913
             rounds: list[tuple[float, dict[str, Any]]] = [
                 (round_quality(data.get("results", [])), data)
             ]
+            jev_block: dict[str, Any] | None = None
             if refine:
                 tried: list[str] = [search_query]
                 current = search_query
                 for _ in range(2):  # hard bound: max 2 review rounds
                     if not refine_needed(rounds[-1][1].get("results", [])):
                         break
+                    # N6 (spec 2026-09-26 §7): jev advisory early-stop
+                    # (DỪNG). A "sufficient" verdict skips the pending
+                    # rewrite round; any jev failure is fail-open and the
+                    # loop continues exactly as before. jev is stateless,
+                    # so each decision point consults afresh (hard-bounded
+                    # by the round cap).
+                    from wet_mcp.jev import SUFFICIENT_SCORE, results_sufficient
+
+                    _jev = await results_sufficient(
+                        query, rounds[-1][1].get("results", [])
+                    )
+                    if _jev is not None:
+                        jev_block = {
+                            "gate": "refine",
+                            "decision": (
+                                "stop" if _jev >= SUFFICIENT_SCORE else "proceed"
+                            ),
+                            "score": round(_jev, 4),
+                        }
+                        if _jev >= SUFFICIENT_SCORE:
+                            break
                     from wet_mcp.sources.search_strategies import rewrite_query
 
                     results_now = rounds[-1][1].get("results", [])
@@ -1270,6 +1292,8 @@ async def search(  # noqa: PLR0913
                     rounds.append((round_quality(r_data.get("results", [])), r_data))
                     current = rewritten
             _, data = max(rounds, key=lambda pair: pair[0])
+            if jev_block is not None:
+                data["jev"] = jev_block
 
             # Optional snippet enrichment
             if enrich:
@@ -2860,30 +2884,45 @@ async def _search_cached_index(
     )
 
     scores = [r.get("score", 0) for r in results]
+    jev_block: dict[str, object] | None = None
     if len(results) < 3 or (scores and max(scores) < _HYDE_SCORE_THRESHOLD):
-        library_name = lib_key.split(":")[0]
-        hyde_text = await generate_hyde_query(query, library_name)
-        if hyde_text:
-            hyde_embedding = await _embed(hyde_text, is_query=False)
-            hyde_results = _docs_db.search(
-                query=query,
-                library_name=lib_key,
-                version=version,
-                limit=retrieve_limit,
-                query_embedding=hyde_embedding,
-            )
-            if hyde_results:
-                hyde_scores = [r.get("score", 0) for r in hyde_results]
-                # Use HyDE results if they have better top score
-                if max(hyde_scores, default=0) > max(scores, default=0):
-                    results = hyde_results
+        # K1 (spec 2026-09-26 §7): jev advisory on this hardcode gate (BỎ).
+        # When the judge says the current results already answer the query,
+        # the HyDE strategy round is skipped; a low score or any jev
+        # failure is fail-open and HyDE runs exactly as before.
+        from wet_mcp.jev import SUFFICIENT_SCORE, results_sufficient
+
+        _jev = await results_sufficient(query, results)
+        if _jev is not None:
+            jev_block = {
+                "gate": "hyde",
+                "decision": "skip" if _jev >= SUFFICIENT_SCORE else "proceed",
+                "score": round(_jev, 4),
+            }
+        if jev_block is None or jev_block["decision"] == "proceed":
+            library_name = lib_key.split(":")[0]
+            hyde_text = await generate_hyde_query(query, library_name)
+            if hyde_text:
+                hyde_embedding = await _embed(hyde_text, is_query=False)
+                hyde_results = _docs_db.search(
+                    query=query,
+                    library_name=lib_key,
+                    version=version,
+                    limit=retrieve_limit,
+                    query_embedding=hyde_embedding,
+                )
+                if hyde_results:
+                    hyde_scores = [r.get("score", 0) for r in hyde_results]
+                    # Use HyDE results if they have better top score
+                    if max(hyde_scores, default=0) > max(scores, default=0):
+                        results = hyde_results
 
     # Extract original library name (strip language suffix for display)
     library = lib_key.split(":")[0]
 
     # Rerank if available, otherwise truncate to limit
     results = await _rerank_results(query, results, limit)
-    return {
+    payload = {
         "library": library,
         "version": ver.get("version", "latest"),
         "results": results,
@@ -2892,6 +2931,9 @@ async def _search_cached_index(
         "retrieval": ("keyword_only" if query_embedding is None else "hybrid"),
         "retrieval_notice": retrieval_notice,
     }
+    if jev_block is not None:
+        payload["jev"] = jev_block
+    return payload
 
 
 async def _discover_docs_url(
