@@ -26,7 +26,7 @@ from mcp.types import CallToolResult, TextContent
 # per-client factory inside ``safe_httpx_client``).
 # Note: web-core uses stdlib ``logging``, not loguru.
 # ---------------------------------------------------------------------------
-from web_core.http.client import (  # noqa: F401
+from hull_web.http.client import (  # noqa: F401
     is_safe_url,
     safe_httpx_client,
 )

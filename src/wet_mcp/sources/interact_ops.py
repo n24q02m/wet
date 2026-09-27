@@ -2,7 +2,7 @@
 
 Phase 3 Task 1 (wet-local) — temporary home for ``InteractOps`` until the
 class is contributed back to ``web-core`` per spec section 5.7. Once
-upstream ships ``web_core.browsers.patchright.InteractOps``, this module
+upstream ships ``hull_web.browsers.patchright.InteractOps``, this module
 becomes a re-export shim and eventually deletes.
 
 Design:
@@ -14,7 +14,7 @@ The selector-inference (LLM-resolved selector when raw selector is missing)
 fallback is a NICE per spec section 4.2 — we expose ``description`` as an
 input but resolve it with a deterministic CSS-like heuristic in this
 in-tree implementation. The web-core contribution will swap in the full
-``web_core.scraper.selector_inference`` LLM resolver.
+``hull_web.scraper.selector_inference`` LLM resolver.
 """
 
 from __future__ import annotations

@@ -20,12 +20,15 @@ classifiers = [
 requires-python = "==3.13.*"
 dependencies = [
     # Shared web infrastructure (SSRF, SearXNG, URL utils, ScrapingAgent + Crawl4AI transitive).
-    # wet consumes web-core's SSRF surface (is_safe_url / safe_httpx_client) AND, since 2.3.0,
-    # the remote render backends (BrowserlessClient / RemoteRenderStrategy) for the browser
+    # wet consumes hull-web's SSRF surface (is_safe_url / safe_httpx_client) AND the
+    # remote render backends (BrowserlessClient / RemoteRenderStrategy) for the browser
     # provider chain + the under-rendered escalation fix. (The Cloudflare Browser Rendering
     # backend was cut in the de-host: browser rendering is native chromium or self-hosted
     # browserless only.)
-    "n24q02m-web-core>=2.5.1,<3",
+    # R6 (2026-09-27): replaces the PyPI `n24q02m-web-core` dep — web-core lives on as
+    # the `hull_web` package inside the hull monorepo (same code, new home); the PyPI
+    # dist stays published untouched for knowledge-core until its own migration lands.
+    "hull-web>=0.1.0",
     # Shared stack core (de-host 2026-09): token auth 3-mode, per-task model cells,
     # limiter, lifecycle lock, OpenAI-spec provider client. Git dep, pinned rev.
     "hull-core",
@@ -76,7 +79,7 @@ dependencies = [
     "urllib3>=2.7.0",
     # langsmith floor patches HIGH CVE GHSA-3644-q5cj-c5c7 (public prompt
     # pull deserializes untrusted manifests without trust boundary
-    # warning). Reachable transitively via web-core -> langgraph ->
+    # warning). Reachable transitively via hull-web -> langgraph ->
     # langchain-core -> langsmith (used for tracing, not prompt pull, so
     # the vulnerable Client.pull_prompt path is not exercised by wet-mcp
     # — pinned as defense-in-depth). First patched in langsmith 0.8.0.
@@ -191,7 +194,7 @@ show_missing = true
 exclude_lines = ["pragma: no cover", "if TYPE_CHECKING:"]
 
 [tool.uv]
-# crawl4ai (transitive via web-core) requires `unclecode-litellm==1.81.13`, a
+# crawl4ai (transitive via hull-web) requires `unclecode-litellm==1.81.13`, a
 # fork that ships the same top-level `litellm` package as upstream litellm.
 # Since the de-host nothing in wet imports litellm (provider calls are plain
 # OpenAI-spec HTTP via hull-core), so the fork is made unreachable rather than
@@ -204,3 +207,4 @@ override-dependencies = ["unclecode-litellm ; sys_platform == 'unreachable'"]
 # Shared stack core (auth 3-mode, per-task model cells, limiter, lifecycle).
 # Pinned to the reviewed revision; bump deliberately, never via lockfile refresh.
 hull-core = { git = "https://github.com/n24q02m/hull.git", rev = "14841d05488c801d303b0f3d3cd97426f94a6e1a", subdirectory = "packages/core-py" }
+hull-web = { git = "https://github.com/n24q02m/hull.git", rev = "14841d05488c801d303b0f3d3cd97426f94a6e1a", subdirectory = "packages/web" }

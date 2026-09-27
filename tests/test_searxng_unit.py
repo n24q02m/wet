@@ -8,8 +8,8 @@ import json
 import unittest.mock
 
 import pytest
-from web_core.search import SearchError
-from web_core.search.models import SearchResult
+from hull_web.search import SearchError
+from hull_web.search.models import SearchResult
 
 from wet_mcp.sources.searxng import search
 

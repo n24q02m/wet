@@ -375,7 +375,7 @@ class TestSearxngRunnerExtras:
 
     def test_is_pid_alive_unix_zombie(self):
         """Zombie process detected on Linux."""
-        from web_core.search.runner import _is_pid_alive
+        from hull_web.search.runner import _is_pid_alive
 
         if sys.platform == "win32":
             pytest.skip("Unix-only test")
@@ -389,7 +389,7 @@ class TestSearxngRunnerExtras:
 
     def test_cleanup_process_owner(self):
         """Cleanup kills process when owner."""
-        import web_core.search.runner as runner
+        import hull_web.search.runner as runner
 
         mock_proc = MagicMock()
         runner._searxng_process = mock_proc
@@ -407,7 +407,7 @@ class TestSearxngRunnerExtras:
 
     def test_cleanup_process_not_owner(self):
         """Cleanup leaves process running when not owner."""
-        import web_core.search.runner as runner
+        import hull_web.search.runner as runner
 
         mock_proc = MagicMock()
         runner._searxng_process = mock_proc
@@ -419,7 +419,7 @@ class TestSearxngRunnerExtras:
 
     def test_cleanup_no_process(self):
         """Cleanup with no process is a no-op."""
-        import web_core.search.runner as runner
+        import hull_web.search.runner as runner
 
         runner._searxng_process = None
         runner._cleanup_process()  # Should not raise
@@ -429,9 +429,9 @@ class TestSearxngRunnerExtras:
     )
     def test_get_process_kwargs_unix(self):
         """Unix kwargs include start_new_session for process group management."""
-        from web_core.search.runner import _get_process_kwargs
+        from hull_web.search.runner import _get_process_kwargs
 
-        with patch("web_core.search.runner.sys") as mock_sys:
+        with patch("hull_web.search.runner.sys") as mock_sys:
             mock_sys.platform = "linux"
             kwargs = _get_process_kwargs()
             # web-core uses start_new_session=True (modern Python) instead of
@@ -443,14 +443,14 @@ class TestSearxngRunnerExtras:
     @pytest.mark.skipif(sys.platform != "win32", reason="Windows-only test")
     def test_get_process_kwargs_windows(self):
         """Windows kwargs include creationflags."""
-        from web_core.search.runner import _get_process_kwargs
+        from hull_web.search.runner import _get_process_kwargs
 
         kwargs = _get_process_kwargs()
         assert "creationflags" in kwargs
 
     def test_get_startup_lock_creates_once(self):
         """Startup lock is created once and reused."""
-        import web_core.search.runner as runner
+        import hull_web.search.runner as runner
 
         runner._startup_lock = None
         lock1 = runner._get_startup_lock()
@@ -460,28 +460,28 @@ class TestSearxngRunnerExtras:
 
     def test_find_available_port(self):
         """Port finder returns a valid port."""
-        from web_core.search.runner import _find_available_port
+        from hull_web.search.runner import _find_available_port
 
         port = _find_available_port(40000, max_tries=10)
         assert 40000 <= port < 40010
 
     def test_is_searxng_installed_true(self):
         """Returns True when searx.webapp is importable."""
-        from web_core.search.runner import _is_searxng_installed
+        from hull_web.search.runner import _is_searxng_installed
 
         with patch("importlib.util.find_spec", return_value=MagicMock()):
             assert _is_searxng_installed() is True
 
     def test_is_searxng_installed_false(self):
         """Returns False when searx.webapp not importable."""
-        from web_core.search.runner import _is_searxng_installed
+        from hull_web.search.runner import _is_searxng_installed
 
         with patch("importlib.util.find_spec", return_value=None):
             assert _is_searxng_installed() is False
 
     def test_is_searxng_installed_error(self):
         """Returns False on import error."""
-        from web_core.search.runner import _is_searxng_installed
+        from hull_web.search.runner import _is_searxng_installed
 
         with patch(
             "importlib.util.find_spec", side_effect=ModuleNotFoundError("no module")
@@ -490,7 +490,7 @@ class TestSearxngRunnerExtras:
 
     def test_read_discovery_valid(self, tmp_path):
         """Read valid discovery file."""
-        import web_core.search.runner as runner
+        import hull_web.search.runner as runner
 
         old = runner._DISCOVERY_FILE
         runner._DISCOVERY_FILE = tmp_path / "instance.json"
@@ -507,7 +507,7 @@ class TestSearxngRunnerExtras:
 
     def test_read_discovery_invalid(self, tmp_path):
         """Read invalid discovery file returns None."""
-        import web_core.search.runner as runner
+        import hull_web.search.runner as runner
 
         old = runner._DISCOVERY_FILE
         runner._DISCOVERY_FILE = tmp_path / "instance.json"
@@ -519,7 +519,7 @@ class TestSearxngRunnerExtras:
 
     def test_read_discovery_missing(self, tmp_path):
         """Missing discovery file returns None."""
-        import web_core.search.runner as runner
+        import hull_web.search.runner as runner
 
         old = runner._DISCOVERY_FILE
         runner._DISCOVERY_FILE = tmp_path / "nonexistent.json"
@@ -530,7 +530,7 @@ class TestSearxngRunnerExtras:
 
     def test_write_and_remove_discovery(self, tmp_path):
         """Write and remove discovery file."""
-        import web_core.search.runner as runner
+        import hull_web.search.runner as runner
 
         old = runner._DISCOVERY_FILE
         runner._DISCOVERY_FILE = tmp_path / "instance.json"
@@ -545,7 +545,7 @@ class TestSearxngRunnerExtras:
 
     def test_get_pip_command_uv(self):
         """Returns uv pip command when uv available."""
-        from web_core.search.runner import _get_pip_command
+        from hull_web.search.runner import _get_pip_command
 
         with patch("shutil.which") as mock_which:
             mock_which.side_effect = lambda x: "/usr/bin/uv" if x == "uv" else None
@@ -554,7 +554,7 @@ class TestSearxngRunnerExtras:
 
     def test_get_pip_command_pip(self):
         """Returns pip command when pip available."""
-        from web_core.search.runner import _get_pip_command
+        from hull_web.search.runner import _get_pip_command
 
         with patch("shutil.which") as mock_which:
             mock_which.side_effect = lambda x: "/usr/bin/pip" if x == "pip" else None
@@ -563,7 +563,7 @@ class TestSearxngRunnerExtras:
 
     def test_get_pip_command_fallback(self):
         """Returns python -m pip as fallback."""
-        from web_core.search.runner import _get_pip_command
+        from hull_web.search.runner import _get_pip_command
 
         with patch("shutil.which", return_value=None):
             cmd = _get_pip_command()
@@ -575,7 +575,7 @@ class TestSearxngRunnerExtras:
     @pytest.mark.asyncio
     async def test_force_kill_already_dead(self):
         """Force kill on already dead process is no-op."""
-        from web_core.search.runner import _force_kill_process
+        from hull_web.search.runner import _force_kill_process
 
         mock_proc = MagicMock()
         mock_proc.poll.return_value = 0  # Already dead
@@ -588,7 +588,7 @@ class TestSearxngInstall:
 
     def test_install_success(self):
         """Successful installation."""
-        from web_core.search.runner import _install_searxng
+        from hull_web.search.runner import _install_searxng
 
         mock_result = MagicMock()
         mock_result.returncode = 0
@@ -596,7 +596,7 @@ class TestSearxngInstall:
         with (
             patch.object(subprocess, "run", return_value=mock_result),
             patch(
-                "web_core.search.runner._get_pip_command",
+                "hull_web.search.runner._get_pip_command",
                 return_value=["pip", "install"],
             ),
             patch("wet_mcp.setup.patch_searxng_version"),
@@ -606,7 +606,7 @@ class TestSearxngInstall:
 
     def test_install_deps_failure(self):
         """Build deps installation failure."""
-        from web_core.search.runner import _install_searxng
+        from hull_web.search.runner import _install_searxng
 
         mock_deps_result = MagicMock()
         mock_deps_result.returncode = 1
@@ -615,7 +615,7 @@ class TestSearxngInstall:
         with (
             patch.object(subprocess, "run", return_value=mock_deps_result),
             patch(
-                "web_core.search.runner._get_pip_command",
+                "hull_web.search.runner._get_pip_command",
                 return_value=["pip", "install"],
             ),
         ):
@@ -623,7 +623,7 @@ class TestSearxngInstall:
 
     def test_install_searxng_failure(self):
         """SearXNG installation failure."""
-        from web_core.search.runner import _install_searxng
+        from hull_web.search.runner import _install_searxng
 
         call_count = 0
 
@@ -641,7 +641,7 @@ class TestSearxngInstall:
         with (
             patch.object(subprocess, "run", side_effect=fake_run),
             patch(
-                "web_core.search.runner._get_pip_command",
+                "hull_web.search.runner._get_pip_command",
                 return_value=["pip", "install"],
             ),
         ):
@@ -649,7 +649,7 @@ class TestSearxngInstall:
 
     def test_install_timeout(self):
         """Installation timeout."""
-        from web_core.search.runner import _install_searxng
+        from hull_web.search.runner import _install_searxng
 
         with (
             patch.object(
@@ -658,7 +658,7 @@ class TestSearxngInstall:
                 side_effect=subprocess.TimeoutExpired("pip", 300),
             ),
             patch(
-                "web_core.search.runner._get_pip_command",
+                "hull_web.search.runner._get_pip_command",
                 return_value=["pip", "install"],
             ),
         ):
@@ -666,7 +666,7 @@ class TestSearxngInstall:
 
     def test_install_exception(self):
         """General exception during installation."""
-        from web_core.search.runner import _install_searxng
+        from hull_web.search.runner import _install_searxng
 
         with (
             patch.object(
@@ -675,7 +675,7 @@ class TestSearxngInstall:
                 side_effect=Exception("unexpected"),
             ),
             patch(
-                "web_core.search.runner._get_pip_command",
+                "hull_web.search.runner._get_pip_command",
                 return_value=["pip", "install"],
             ),
         ):

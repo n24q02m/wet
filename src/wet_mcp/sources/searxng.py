@@ -13,12 +13,12 @@ import httpx
 from loguru import logger
 
 # Re-export URL helpers for backward compat
-from web_core.http.url import _TRACKING_PARAMS  # noqa: F401
-from web_core.http.url import is_valid_domain as _is_valid_domain  # noqa: F401
-from web_core.http.url import normalize_url as _normalize_url  # noqa: F401
-from web_core.search import SearchError
-from web_core.search import search as _wc_search
-from web_core.search.client import (  # noqa: F401
+from hull_web.http.url import _TRACKING_PARAMS  # noqa: F401
+from hull_web.http.url import is_valid_domain as _is_valid_domain  # noqa: F401
+from hull_web.http.url import normalize_url as _normalize_url  # noqa: F401
+from hull_web.search import SearchError
+from hull_web.search import search as _wc_search
+from hull_web.search.client import (  # noqa: F401
     _apply_domain_cap,
     _build_filtered_query,
 )

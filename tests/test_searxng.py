@@ -208,7 +208,7 @@ def mock_wc_search():
 
 def _make_search_results(count=1):
     """Create mock SearchResult objects (from web-core)."""
-    from web_core.search.models import SearchResult
+    from hull_web.search.models import SearchResult
 
     return [
         SearchResult(
@@ -240,7 +240,7 @@ async def test_search_returns_json_string(mock_wc_search):
     assert data["results"][0]["snippet"] == "Content for page 0"
 
 
-async def test_search_passes_params_to_web_core(mock_wc_search):
+async def test_search_passes_params_to_hull_web(mock_wc_search):
     """search() should pass all params through to web-core."""
     mock_wc_search.return_value = _make_search_results(1)
 
@@ -270,7 +270,7 @@ async def test_search_passes_params_to_web_core(mock_wc_search):
 
 async def test_search_error_returns_json_error(mock_wc_search):
     """SearchError should be caught and returned as JSON error string."""
-    from web_core.search import SearchError
+    from hull_web.search import SearchError
 
     mock_wc_search.side_effect = SearchError("test", "HTTP 500")
 

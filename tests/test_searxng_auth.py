@@ -27,7 +27,7 @@ def test_searxng_auth_none_when_partial_or_empty(monkeypatch):
     assert sx._searxng_auth() is None
 
 
-async def test_search_forwards_auth_to_web_core(monkeypatch):
+async def test_search_forwards_auth_to_hull_web(monkeypatch):
     _set_auth(monkeypatch, "u", "p")
     captured = {}
 

@@ -4,13 +4,13 @@ import tempfile
 from pathlib import Path
 from unittest.mock import patch
 
-from web_core.search.runner import _get_settings_path
+from hull_web.search.runner import _get_settings_path
 
 
 def test_secret_key_is_random_and_hex():
     """Verify that _get_settings_path generates a unique random secret key."""
     with tempfile.TemporaryDirectory() as tmp:
-        with patch("web_core.search.runner._CONFIG_DIR", Path(tmp)):
+        with patch("hull_web.search.runner._CONFIG_DIR", Path(tmp)):
             settings_path = _get_settings_path(9090)
             content = settings_path.read_text()
 
@@ -34,7 +34,7 @@ def test_secret_key_unique_per_call():
     """Each call should generate a different secret key."""
     secrets = []
     with tempfile.TemporaryDirectory() as tmp:
-        with patch("web_core.search.runner._CONFIG_DIR", Path(tmp)):
+        with patch("hull_web.search.runner._CONFIG_DIR", Path(tmp)):
             for _ in range(3):
                 settings_path = _get_settings_path(9090)
                 content = settings_path.read_text()

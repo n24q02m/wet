@@ -1,6 +1,6 @@
 """Crawl + extract integration.
 
-The ``extract`` action now delegates to ``web_core.scraper.ScrapingAgent``
+The ``extract`` action now delegates to ``hull_web.scraper.ScrapingAgent``
 (5-strategy chain: ``basic_http`` → ``tls_spoof`` → ``api_direct`` →
 ``headless`` → ``patchright``, plus optional ``captcha``). Phase 1 spec
 §4.2/§5.5: drop direct Crawl4AI usage from the extract path; consume
@@ -10,7 +10,7 @@ shared with sibling consumers.
 The ``crawl``, ``sitemap``, ``list_media`` paths still rely on the legacy
 Crawl4AI singleton browser pool for now (Phase 1 keeps wet-local media;
 crawl + sitemap migration is out of scope for v1.x.y per spec §5.7
-contribute-back roadmap). Crawl4AI is reached via ``web_core``'s
+contribute-back roadmap). Crawl4AI is reached via ``hull_web``'s
 transitive dependency, so we no longer require a direct
 ``crawl4ai`` entry in ``pyproject.toml``.
 """
@@ -28,8 +28,8 @@ from urllib.parse import urljoin, urlparse
 import httpx
 from crawl4ai import AsyncWebCrawler, BrowserConfig, CrawlerRunConfig
 from loguru import logger
-from web_core.scraper import ScrapingAgent
-from web_core.scraper.strategies import (
+from hull_web.scraper import ScrapingAgent
+from hull_web.scraper.strategies import (
     BasicHTTPStrategy,
     HeadlessStrategy,
     TLSSpoofStrategy,
@@ -237,8 +237,8 @@ def _build_headless_strategies(stealth: bool) -> dict[str, Any]:
     disabled with no cloud creds, the headless leg is intentionally absent
     (extract degrades to basic_http/tls_spoof).
     """
-    from web_core.browsers import BrowserlessClient
-    from web_core.scraper.strategies import RemoteRenderStrategy
+    from hull_web.browsers import BrowserlessClient
+    from hull_web.scraper.strategies import RemoteRenderStrategy
 
     out: dict[str, Any] = {}
     for backend in settings.browser_backend_chain():
@@ -288,7 +288,7 @@ def _build_scraping_agent(stealth: bool = True) -> ScrapingAgent:
     # Lazy-imported so the heavier CapSolver/patchright path loads only when a key
     # is set. Solves the captcha layer only, not IP reputation.
     if settings.capsolver_api_key:
-        from web_core.scraper.strategies import CaptchaStrategy
+        from hull_web.scraper.strategies import CaptchaStrategy
 
         strategies["captcha"] = CaptchaStrategy(
             capsolver_api_key=settings.capsolver_api_key

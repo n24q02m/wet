@@ -45,7 +45,7 @@ async def test_ensure_searxng_auto_disabled(mock_settings):
     assert url == "http://external:8080"
 
 
-async def test_ensure_searxng_delegates_to_web_core(mock_settings, mock_wc_ensure):
+async def test_ensure_searxng_delegates_to_hull_web(mock_settings, mock_wc_ensure):
     """When auto-start enabled, delegate to web-core with correct params."""
     mock_settings.wet_searxng_port = 9090
     mock_wc_ensure.return_value = "http://127.0.0.1:9090"

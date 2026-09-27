@@ -1,7 +1,7 @@
 """Verify ``extract`` delegates to web-core ``ScrapingAgent`` and emits smart chunks.
 
 Phase 1 migration (spec §4.2 + §5.5): wet's extract pipeline must consume
-``web_core.scraper.ScrapingAgent`` instead of instantiating Crawl4AI
+``hull_web.scraper.ScrapingAgent`` instead of instantiating Crawl4AI
 directly. Output is the structured smart-chunks dict from
 ``wet_mcp.sources._smart_chunks``.
 """
@@ -12,7 +12,7 @@ import json
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from web_core.scraper import RobotsCache, ScrapingAgent, ScrapingResult, StrategyCache
+from hull_web.scraper import RobotsCache, ScrapingAgent, ScrapingResult, StrategyCache
 
 
 class _FakeRobotsCache(RobotsCache):

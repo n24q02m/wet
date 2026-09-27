@@ -9,9 +9,9 @@ All internal functions are re-exported from web-core for backward
 compatibility with existing tests and consumers.
 """
 
-import web_core.search.runner as _wc_runner
+import hull_web.search.runner as _wc_runner
 from loguru import logger
-from web_core.search.runner import shutdown_searxng
+from hull_web.search.runner import shutdown_searxng
 
 from wet_mcp.config import settings
 
@@ -78,7 +78,7 @@ _wc_runner._find_available_port = _find_available_port  # type: ignore[assignmen
 # Re-export internal functions from web-core for backward compatibility.
 # Tests and other modules import these from wet_mcp.searxng_runner.
 # ---------------------------------------------------------------------------
-from web_core.search.runner import (  # noqa: F401, E402
+from hull_web.search.runner import (  # noqa: F401, E402
     _DISCOVERY_FILE,
     _HEALTH_CHECK_TIMEOUT,
     _RESTART_COOLDOWN,
