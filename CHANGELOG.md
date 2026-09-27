@@ -2,6 +2,19 @@
 
 <!-- version list -->
 
+## v3.16.5 (2026-09-27)
+
+### Bug Fixes
+
+- **sources**: Restore settings import removed by F401 auto-fix
+  ([`49a6d51`](https://github.com/n24q02m/wet/commit/49a6d51f95e4adbb11721b563aad83fde05e4ddb))
+
+### Code Style
+
+- Fix ruff lint debt and apply format repo-wide
+  ([`b4c4b8b`](https://github.com/n24q02m/wet/commit/b4c4b8ba9082e13dec8edf83fec336c9ec739007))
+
+
 ## v3.16.4 (2026-09-27)
 
 ### Bug Fixes
