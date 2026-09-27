@@ -14,9 +14,6 @@ import json
 from pathlib import Path
 from typing import Any
 
-from loguru import logger
-from mcp.types import CallToolResult, TextContent
-
 # ---------------------------------------------------------------------------
 # Re-export web-core's PUBLIC SSRF surface only. wet depends solely on the
 # public API (``is_safe_url`` / ``safe_httpx_client``); web-core's private
@@ -30,6 +27,8 @@ from hull_web.http.client import (  # noqa: F401
     is_safe_url,
     safe_httpx_client,
 )
+from loguru import logger
+from mcp.types import CallToolResult, TextContent
 
 # ---------------------------------------------------------------------------
 # MCP-specific functions (not in web-core)

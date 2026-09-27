@@ -10,8 +10,8 @@ compatibility with existing tests and consumers.
 """
 
 import hull_web.search.runner as _wc_runner
-from loguru import logger
 from hull_web.search.runner import shutdown_searxng
+from loguru import logger
 
 from wet_mcp.config import settings
 

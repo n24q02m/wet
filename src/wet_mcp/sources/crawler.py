@@ -27,13 +27,13 @@ from urllib.parse import urljoin, urlparse
 
 import httpx
 from crawl4ai import AsyncWebCrawler, BrowserConfig, CrawlerRunConfig
-from loguru import logger
 from hull_web.scraper import ScrapingAgent
 from hull_web.scraper.strategies import (
     BasicHTTPStrategy,
     HeadlessStrategy,
     TLSSpoofStrategy,
 )
+from loguru import logger
 
 from wet_mcp.config import settings
 from wet_mcp.security import is_safe_url

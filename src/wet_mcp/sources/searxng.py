@@ -10,7 +10,6 @@ re-exported from web-core for backward compatibility.
 import json
 
 import httpx
-from loguru import logger
 
 # Re-export URL helpers for backward compat
 from hull_web.http.url import _TRACKING_PARAMS  # noqa: F401
@@ -22,6 +21,7 @@ from hull_web.search.client import (  # noqa: F401
     _apply_domain_cap,
     _build_filtered_query,
 )
+from loguru import logger
 
 from wet_mcp.config import settings
 from wet_mcp.security import is_safe_url
