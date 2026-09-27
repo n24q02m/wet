@@ -174,6 +174,11 @@ class CloudEmbeddingBackend:
 
     def __init__(self, client) -> None:
         self._client = client
+        # Capability memo: once a provider rejects the ``dimensions`` param,
+        # never send it again for this backend instance (each rejection burns
+        # a provider request before the in-call fallback). Local truncation
+        # still applies, so the stored/query dims stay consistent.
+        self._dims_rejected = False
 
     @property
     def model(self) -> str:
@@ -192,7 +197,7 @@ class CloudEmbeddingBackend:
         truncates locally. This ensures providers that don't support
         ``dimensions`` still work.
         """
-        use_dimensions = dimensions
+        use_dimensions = None if self._dims_rejected else dimensions
         last_exc: Exception | None = None
 
         for attempt in range(MAX_RETRIES):
@@ -217,6 +222,9 @@ class CloudEmbeddingBackend:
                         f"locally: {e}"
                     )
                     use_dimensions = None
+                    # Remember the rejection so later embed calls skip the
+                    # doomed request entirely (one burn per backend instance).
+                    self._dims_rejected = True
                     continue
 
                 last_exc = e

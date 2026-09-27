@@ -573,3 +573,53 @@ class TestSharedLocalBackend:
             res2 = _shared_local_embed_backend()
             assert res2 is instance
             assert mock_cls.call_count == 1
+
+
+class TestDimsRejectionMemo:
+    """Once a provider rejects `dimensions`, the backend must never send it
+    again (one burned request per backend instance, not per call) while
+    local truncation keeps stored/query dims consistent."""
+
+    @staticmethod
+    def _rejecting_backend() -> tuple[CloudEmbeddingBackend, MagicMock]:
+        client = _cell_client(model="voyage-4-lite")
+        client.embeddings = AsyncMock(
+            side_effect=[
+                Exception("provider returned 422: unsupported parameter dimensions"),
+                [[0.1] * 1024],
+                [[0.1] * 1024],
+            ]
+        )
+        return CloudEmbeddingBackend(client), client
+
+    async def test_rejection_is_remembered_across_calls(self):
+        backend, client = self._rejecting_backend()
+
+        first = await backend._embed_batch_inner(["a"], dimensions=768)
+        assert first == [[0.1] * 768]  # locally truncated from 1024
+        assert client.embeddings.await_count == 2
+        first_call_dims = client.embeddings.await_args_list[0].kwargs["dimensions"]
+        retry_dims = client.embeddings.await_args_list[1].kwargs["dimensions"]
+        assert first_call_dims == 768  # doomed request was sent once
+        assert retry_dims is None  # in-call fallback dropped it
+
+        # Second call: the memo skips the doomed request entirely.
+        second = await backend._embed_batch_inner(["b"], dimensions=768)
+        assert second == [[0.1] * 768]
+        assert client.embeddings.await_count == 3
+        assert client.embeddings.await_args_list[2].kwargs["dimensions"] is None
+
+    async def test_memo_is_per_backend_instance(self):
+        backend_a, client_a = self._rejecting_backend()
+        backend_b, client_b = self._rejecting_backend()
+        assert backend_a._dims_rejected is False
+        assert backend_b._dims_rejected is False
+
+        await backend_a._embed_batch_inner(["a"], dimensions=768)
+        assert backend_a._dims_rejected is True
+        assert backend_b._dims_rejected is False  # untouched instance
+
+        # backend_b still attempts server-side truncation on its first call.
+        await backend_b._embed_batch_inner(["b"], dimensions=768)
+        assert client_b.embeddings.await_args_list[0].kwargs["dimensions"] == 768
+        assert client_a.embeddings.await_count == 2  # burn happened once here
