@@ -99,3 +99,9 @@ closed pull request.
 ## 2025-02-14 - Slice large strings before lstrip
 **Learning:** When validating the prefix of a very large string (e.g., an entire HTTP response) after whitespace removal, avoid calling `.strip()` or `.lstrip()` on the whole string as it allocates a massive copy if leading whitespace is present.
 **Action:** Slice a small prefix first (e.g., `content[:100].lstrip().startswith(...)`) to minimize memory allocation overhead.
+## 2025-02-17 - Optimize netloc extraction with str.find fast path
+**Learning:** Using `urllib.parse.urlparse` to extract domains allocates multiple objects and slows down hot paths (like `standardize_citation`). However, basic string manipulation must carefully preserve URL semantics, especially when dealing with basic auth, fragments, and query parameters.
+**Action:** Use a fast path with `str.find` and string slicing for `http(s)` URLs, falling back to `urlparse` for basic auth or unsupported schemas.
+## 2025-02-17 - Avoid breaking IPv6 URLs when optimizing domain extraction
+**Learning:** When writing string manipulation fast paths for URLs (like skipping `urlparse`), using simple `.find(":")` to extract ports breaks IPv6 addresses completely, as they contain colons and `urlparse` itself correctly parses IPv6 addresses (though it does have a bug on `.netloc.split(":", 1)[0]` dropping everything after the first IPv6 colon).
+**Action:** When manually parsing URLs to optimize out `urlparse`, fallback to `urlparse` if `[` is found in the network location to correctly handle IPv6 parsing.
