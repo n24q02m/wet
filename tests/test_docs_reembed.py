@@ -41,6 +41,14 @@ def store(tmp_path, monkeypatch):
     """A real docs store with two unembedded chunks + the runtime patches
     that pin the CLI repair entry to the local-backend leg at dims=4."""
     db = DocsDB(tmp_path / "docs.db", embedding_dims=DIMS)
+    if not db._vec_enabled:
+        # macOS CI: sqlite3 built without enable_load_extension, so the
+        # vector table never exists here (same guard as test_embed_run_budget).
+        db.close()
+        pytest.skip(
+            "sqlite-vec did not load here, so doc_chunks_vec was never "
+            "created; vector-backed reembed paths run on the other legs"
+        )
     lib_id = db.upsert_library(name="fastapi", docs_url="https://fastapi.tiangolo.com")
     ver_id = db.upsert_version(library_id=lib_id, version="latest")
     db.add_chunks(
