@@ -4,6 +4,9 @@ import json
 
 from loguru import logger
 
+from wet_mcp.config import (
+    settings,  # noqa: F401  (patched by tests via module namespace)
+)
 from wet_mcp.llm import acompletion, get_llm_config, has_llm_provider
 from wet_mcp.sources.crawler import extract as raw_extract
 
