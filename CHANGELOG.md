@@ -2,6 +2,19 @@
 
 <!-- version list -->
 
+## v3.16.4 (2026-09-27)
+
+### Bug Fixes
+
+- **ci**: Keep uv sources for git-pinned hull-core; ty non-blocking
+  ([`baf94dc`](https://github.com/n24q02m/wet/commit/baf94dc00e3b4f42db2d273d2bed1fe965dc8ba5))
+
+### Chores
+
+- Re-pin hull-core for chat null-content fallback
+  ([`2e52dc6`](https://github.com/n24q02m/wet/commit/2e52dc629859fbddd5fb7d3eadac4d4d6aeb26d1))
+
+
 ## v3.16.3 (2026-09-26)
 
 ### Bug Fixes
