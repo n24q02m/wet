@@ -14,7 +14,7 @@ per-task cells in ``~/.wet/config.toml``. What must NOT regress:
 """
 
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -263,7 +263,9 @@ class TestRerankDispatchWiring:
             "https://example.com/0",
         ]
 
-    async def test_semantic_order_applied_when_candidates_equal_top_n(self, monkeypatch):
+    async def test_semantic_order_applied_when_candidates_equal_top_n(
+        self, monkeypatch
+    ):
         """Candidates == top_n is exactly the boundary worth reranking on."""
         reranker = MagicMock(spec=LocalReranker)
         reranker.rerank.return_value = [(1, 0.95), (0, 0.10)]

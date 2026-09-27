@@ -159,7 +159,9 @@ class _PerSubCache:
         return self._for(sub).get_stale_with_age(action, params, sub)
 
     def set(self, action, params, content, ttl_override=None, sub=None):  # noqa: ANN001, ANN201
-        return self._for(sub or "default").set(action, params, content, ttl_override, sub or "default")
+        return self._for(sub or "default").set(
+            action, params, content, ttl_override, sub or "default"
+        )
 
     def record_snapshot(self, url, content, sub):  # noqa: ANN001, ANN201
         return self._for(sub).record_snapshot(url, content, sub)
@@ -523,9 +525,7 @@ async def _init_embedding_backend() -> None:
                 )
                 return
             clear_backend()
-            logger.error(
-                f"Cloud embedding {cell.model} check returned no usable dims"
-            )
+            logger.error(f"Cloud embedding {cell.model} check returned no usable dims")
         except Exception as e:
             clear_backend()
             logger.error(f"Cloud embedding init failed ({cell.model}): {e}")
@@ -1122,7 +1122,10 @@ async def search(  # noqa: PLR0913
                 # Stale-While-Revalidate: serve stale if within 2x TTL window
                 try:
                     stale_hit = await asyncio.to_thread(
-                        _web_cache.get_stale_with_age, "search", cache_params, current_sub()
+                        _web_cache.get_stale_with_age,
+                        "search",
+                        cache_params,
+                        current_sub(),
                     )
                 except Exception:
                     stale_hit = None
@@ -1634,7 +1637,9 @@ async def extract(  # noqa: PLR0913
                 "extract",
             )
             if _web_cache and not result.startswith("Error"):
-                await asyncio.to_thread(_web_cache.set, "extract", cache_params, result, current_sub())
+                await asyncio.to_thread(
+                    _web_cache.set, "extract", cache_params, result, current_sub()
+                )
             return _payload(result)
 
         case "batch":
@@ -1663,7 +1668,9 @@ async def extract(  # noqa: PLR0913
                 "max_pages": max_pages,
             }
             if _web_cache:
-                cached = await asyncio.to_thread(_web_cache.get, "crawl", cache_params, current_sub())
+                cached = await asyncio.to_thread(
+                    _web_cache.get, "crawl", cache_params, current_sub()
+                )
                 if cached:
                     return _payload(cached)
             result = await _with_timeout(
@@ -1677,7 +1684,9 @@ async def extract(  # noqa: PLR0913
                 "crawl",
             )
             if _web_cache and not result.startswith("Error"):
-                await asyncio.to_thread(_web_cache.set, "crawl", cache_params, result, current_sub())
+                await asyncio.to_thread(
+                    _web_cache.set, "crawl", cache_params, result, current_sub()
+                )
             return _payload(result)
 
         case "map":
@@ -1692,7 +1701,9 @@ async def extract(  # noqa: PLR0913
                 "max_pages": max_pages,
             }
             if _web_cache:
-                cached = await asyncio.to_thread(_web_cache.get, "map", cache_params, current_sub())
+                cached = await asyncio.to_thread(
+                    _web_cache.get, "map", cache_params, current_sub()
+                )
                 if cached:
                     return _payload(cached)
             result = await _with_timeout(
@@ -1700,7 +1711,9 @@ async def extract(  # noqa: PLR0913
                 "map",
             )
             if _web_cache and not result.startswith("Error"):
-                await asyncio.to_thread(_web_cache.set, "map", cache_params, result, current_sub())
+                await asyncio.to_thread(
+                    _web_cache.set, "map", cache_params, result, current_sub()
+                )
             return _payload(result)
 
         case "convert":
@@ -1815,7 +1828,10 @@ async def extract(  # noqa: PLR0913
                         diff_items.append({"url": target_url, "error": item["error"]})
                         continue
                     await asyncio.to_thread(
-                        _web_cache.record_snapshot, target_url, item.get("markdown", ""), current_sub()
+                        _web_cache.record_snapshot,
+                        target_url,
+                        item.get("markdown", ""),
+                        current_sub(),
                     )
                 snapshots = await asyncio.to_thread(
                     _web_cache.latest_snapshots, target_url, 2, current_sub()

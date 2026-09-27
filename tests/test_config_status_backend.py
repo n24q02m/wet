@@ -9,7 +9,7 @@ file whose contents are unrelated to what the server is serving.
 """
 
 import json
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 

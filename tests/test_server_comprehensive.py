@@ -33,6 +33,7 @@ def _no_llm_provider_mode():
     ):
         yield mock
 
+
 # Windows IOCP event loop hangs on fire-and-forget asyncio.create_task
 # teardown in _do_docs_search and _background_index_and_search tests.
 # These tests pass on Linux CI.
@@ -213,7 +214,9 @@ async def test_init_reranker_backend():
 
 @pytest.mark.asyncio
 async def test_embed():
-    with patch("wet_mcp.embedder.resolve_embed_backend_for_request") as mock_get_backend:
+    with patch(
+        "wet_mcp.embedder.resolve_embed_backend_for_request"
+    ) as mock_get_backend:
         mock_backend = MagicMock()
         mock_backend.embed_single = AsyncMock(return_value=[0.1, 0.2])
         mock_get_backend.return_value = mock_backend
@@ -224,7 +227,9 @@ async def test_embed():
 
 @pytest.mark.asyncio
 async def test_embed_batch():
-    with patch("wet_mcp.embedder.resolve_embed_backend_for_request") as mock_get_backend:
+    with patch(
+        "wet_mcp.embedder.resolve_embed_backend_for_request"
+    ) as mock_get_backend:
         mock_backend = MagicMock()
         mock_backend.embed_texts = AsyncMock(return_value=[[0.1, 0.2]])
         mock_get_backend.return_value = mock_backend
@@ -235,7 +240,9 @@ async def test_embed_batch():
 
 @pytest.mark.asyncio
 async def test_rerank_results():
-    with patch("wet_mcp.reranker.resolve_rerank_backend_for_request") as mock_get_reranker:
+    with patch(
+        "wet_mcp.reranker.resolve_rerank_backend_for_request"
+    ) as mock_get_reranker:
         mock_reranker = MagicMock()
         mock_reranker.rerank.return_value = [(0, 0.9)]
         mock_get_reranker.return_value = mock_reranker
@@ -1086,9 +1093,7 @@ async def test_init_reranker_backend_local_not_available():
 @pytest.mark.asyncio
 async def test_embed_no_backend():
     """Test _embed returns None when no backend (line 325)."""
-    with patch(
-        "wet_mcp.embedder.resolve_embed_backend_for_request", return_value=None
-    ):
+    with patch("wet_mcp.embedder.resolve_embed_backend_for_request", return_value=None):
         res = await server._embed("hello")
         assert res is None
 
@@ -1138,9 +1143,7 @@ async def test_embed_permanent_exception_raises():
 @pytest.mark.asyncio
 async def test_embed_batch_no_backend():
     """Test _embed_batch returns None when no backend (line 343)."""
-    with patch(
-        "wet_mcp.embedder.resolve_embed_backend_for_request", return_value=None
-    ):
+    with patch("wet_mcp.embedder.resolve_embed_backend_for_request", return_value=None):
         res = await server._embed_batch(["hello"])
         assert res is None
 
@@ -1345,7 +1348,12 @@ async def test_config_set_rejects_removed_sync_keys(mock_settings):
     res = await server.config("set", key="sync_interval", value="30")
     data = payload(res)
     assert "error" in data
-    assert data["valid_keys"] == ["log_level", "tool_timeout", "wet_cache", "wet_search_budget"]
+    assert data["valid_keys"] == [
+        "log_level",
+        "tool_timeout",
+        "wet_cache",
+        "wet_search_budget",
+    ]
 
 
 @pytest.mark.asyncio

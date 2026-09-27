@@ -41,7 +41,9 @@ def _cell(model: str = "gemini-2.5-flash", configured: bool = True):
 @pytest.fixture
 def chat_cell(monkeypatch):
     """A configured [models.chat] cell for the duration of the test."""
-    monkeypatch.setattr("wet_mcp.runtime.model_cell", lambda task, settings=None: _cell())
+    monkeypatch.setattr(
+        "wet_mcp.runtime.model_cell", lambda task, settings=None: _cell()
+    )
     monkeypatch.setattr(
         "wet_mcp.runtime.cell_configured",
         lambda task, settings=None: task == "chat",
@@ -210,7 +212,9 @@ async def test_analyze_media_image(mock_completion, chat_cell, download_dir):
     img_path = download_dir / "test.jpg"
     img_path.write_bytes(b"fake-image-data")
 
-    mock_completion.return_value = MagicMock(choices=[MagicMock(message=MagicMock(content="A nice cat."))])
+    mock_completion.return_value = MagicMock(
+        choices=[MagicMock(message=MagicMock(content="A nice cat."))]
+    )
 
     result = await analyze_media(str(img_path), "Describe")
 
@@ -251,7 +255,9 @@ async def test_analyze_media_text_file(mock_completion, chat_cell, download_dir)
 
     mock_completion.assert_awaited_once()
     call_kwargs = mock_completion.call_args[1]
-    assert "File Content:\n```\nHello\n```" in str(call_kwargs["messages"][0]["content"])
+    assert "File Content:\n```\nHello\n```" in str(
+        call_kwargs["messages"][0]["content"]
+    )
 
 
 async def test_analyze_media_unsupported_type(chat_cell, download_dir):

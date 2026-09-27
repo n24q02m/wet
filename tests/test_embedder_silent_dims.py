@@ -100,9 +100,7 @@ class TestWrappedDimsRejectionRecovery:
 
         client.embeddings = AsyncMock(side_effect=fake_embeddings)
         backend = CloudEmbeddingBackend(client)
-        with patch.object(
-            backend, "_client", client
-        ):
+        with patch.object(backend, "_client", client):
             result = await backend._embed_batch_inner(["hello"], dimensions=768)
 
         # Recovered: valid vector truncated locally to the requested 768.

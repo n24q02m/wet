@@ -54,7 +54,6 @@ class TestRunWarmup:
 
             mock_embed.return_value.embed.return_value = iter([[0.1] * 768])
 
-            from wet_mcp import setup_tool
             from wet_mcp.setup_tool import run_warmup
 
             result = await run_warmup()
@@ -68,7 +67,7 @@ class TestRunWarmup:
         with (
             patch("wet_mcp.setup.run_auto_setup"),
             patch("wet_mcp.runtime.cell_configured", _all_cells()),
-            patch("wet_mcp.setup_tool.settings") as mock_settings,
+            patch("wet_mcp.setup_tool.settings"),
             patch("wet_mcp.embedder.init_backend") as mock_init_backend,
             patch("wet_mcp.reranker.init_reranker") as mock_init_reranker,
         ):

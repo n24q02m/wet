@@ -10,7 +10,6 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import numpy as np
 import pytest
 
-
 # ---------------------------------------------------------------------------
 # python -m wet_mcp dispatch
 # ---------------------------------------------------------------------------
@@ -315,7 +314,9 @@ class TestValidateCloudModels:
 
     @patch("wet_mcp.reranker.init_reranker")
     @patch("wet_mcp.embedder.init_backend")
-    async def test_configured_cells_both_ready(self, mock_init, mock_rr_init, monkeypatch):
+    async def test_configured_cells_both_ready(
+        self, mock_init, mock_rr_init, monkeypatch
+    ):
         from wet_mcp.setup_tool import _validate_cloud_models
 
         monkeypatch.setattr(
@@ -421,7 +422,9 @@ class TestValidateCloudModels:
         assert result["errors"]
 
     @patch("wet_mcp.embedder.init_backend")
-    async def test_embed_init_exception_reported_not_raised(self, mock_init, monkeypatch):
+    async def test_embed_init_exception_reported_not_raised(
+        self, mock_init, monkeypatch
+    ):
         from wet_mcp.setup_tool import _validate_cloud_models
 
         monkeypatch.setattr(

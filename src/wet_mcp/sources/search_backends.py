@@ -28,7 +28,6 @@ from wet_mcp import search_metrics
 from wet_mcp.config import settings
 from wet_mcp.sources.rerank import maybe_rerank
 
-
 # --- Local fallback / key-rotation primitives (de-host 2026-09) ------------
 # Inlined from the deleted shared chains / key-rotation modules; semantics
 # preserved exactly.

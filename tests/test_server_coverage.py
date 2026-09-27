@@ -373,9 +373,7 @@ async def test_init_reranker_local_exception(_mock_settings):
 
     with (
         patch("wet_mcp.runtime.cell_configured", lambda t, settings=None: False),
-        patch(
-            "wet_mcp.reranker.init_reranker", side_effect=Exception("reranker fail")
-        ),
+        patch("wet_mcp.reranker.init_reranker", side_effect=Exception("reranker fail")),
     ):
         await server._init_reranker_backend()
 
@@ -401,9 +399,7 @@ async def test_embed_query_local_backend():
 
 async def test_embed_no_backend():
     """Line 325: backend is None."""
-    with patch(
-        "wet_mcp.embedder.resolve_embed_backend_for_request", return_value=None
-    ):
+    with patch("wet_mcp.embedder.resolve_embed_backend_for_request", return_value=None):
         res = await server._embed("test")
         assert res is None
 
@@ -441,9 +437,7 @@ async def test_embed_permanent_exception_raises():
 
 async def test_embed_batch_no_backend():
     """Line 343: backend is None."""
-    with patch(
-        "wet_mcp.embedder.resolve_embed_backend_for_request", return_value=None
-    ):
+    with patch("wet_mcp.embedder.resolve_embed_backend_for_request", return_value=None):
         res = await server._embed_batch(["test"])
         assert res is None
 
@@ -917,9 +911,7 @@ async def test_background_index_with_embeddings():
             new_callable=AsyncMock,
             side_effect=Exception("no searxng"),
         ),
-        patch(
-            "wet_mcp.embedder.resolve_embed_backend_for_request"
-        ) as mock_get_backend,
+        patch("wet_mcp.embedder.resolve_embed_backend_for_request") as mock_get_backend,
         patch("wet_mcp.server._embed_batch", new_callable=AsyncMock) as mock_embed,
     ):
         mock_get_backend.return_value = MagicMock()  # backend available
@@ -1021,9 +1013,7 @@ async def test_background_index_embed_timeout():
             new_callable=AsyncMock,
             side_effect=Exception("no"),
         ),
-        patch(
-            "wet_mcp.embedder.resolve_embed_backend_for_request"
-        ) as mock_get_backend,
+        patch("wet_mcp.embedder.resolve_embed_backend_for_request") as mock_get_backend,
         patch(
             "wet_mcp.server._embed_batch",
             new_callable=AsyncMock,

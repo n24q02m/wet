@@ -9,7 +9,6 @@ Deleted surface (tests removed with it): relay_setup, sync/gdrive,
 token_store, credential_state, setup_sync, mcp_core.llm facade.
 """
 
-import asyncio
 import json
 import os
 import subprocess
@@ -18,7 +17,7 @@ from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from structured import payload, text
+from structured import text
 
 # =====================================================================
 # llm.py -- acompletion, backends, message conversion
@@ -711,6 +710,7 @@ class TestSetupTool:
         with patch.dict(os.environ, {"FASTRETRIEVAL_CACHE_PATH": str(tmp_path)}):
             result = clear_model_cache("nonexistent/model")
             assert result is None
+
 
 class TestSetup:
     """Cover setup.py functions."""

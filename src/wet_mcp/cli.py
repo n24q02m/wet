@@ -144,9 +144,7 @@ def _find_locks(port: int | None) -> list[Path]:
 def _http_probe(port: int) -> bool:
     """GET /mcp — any HTTP response (including 401/4xx/5xx) means up."""
     try:
-        request = urllib.request.Request(
-            f"http://127.0.0.1:{port}/mcp", method="GET"
-        )
+        request = urllib.request.Request(f"http://127.0.0.1:{port}/mcp", method="GET")
         urllib.request.urlopen(request, timeout=2.0)  # nosec B310 - fixed scheme/host
         return True
     except urllib.error.HTTPError:
@@ -229,7 +227,9 @@ def _cmd_server_start(args: argparse.Namespace) -> int:
             return 0
         # Blocking entry not present: run via the subprocess and wait.
         proc = _spawn_server(
-            host, port, explicit_host=args.host is not None,
+            host,
+            port,
+            explicit_host=args.host is not None,
             explicit_port=args.port is not None,
         )
         try:
@@ -239,7 +239,8 @@ def _cmd_server_start(args: argparse.Namespace) -> int:
             return 130
 
     proc = _spawn_server(
-        host, port,
+        host,
+        port,
         explicit_host=args.host is not None,
         explicit_port=args.port is not None,
     )
@@ -485,9 +486,7 @@ def _cmd_token_hash(args: argparse.Namespace) -> int:
 def _cmd_users_path(args: argparse.Namespace) -> int:
     from wet_mcp.runtime import hull_settings, wet_config_dir
 
-    users_file = hull_settings().server.users_file or (
-        wet_config_dir() / "users.toml"
-    )
+    users_file = hull_settings().server.users_file or (wet_config_dir() / "users.toml")
     print(users_file)
     return 0
 
@@ -645,7 +644,7 @@ def _extract_rpc_response(body: str, content_type: str, request_id: int) -> dict
             line = line.strip()
             if not line.startswith("data:"):
                 continue
-            payload = line[len("data:"):].strip()
+            payload = line[len("data:") :].strip()
             if not payload or payload == "[DONE]":
                 continue
             try:
@@ -708,7 +707,9 @@ def _cmd_search(args: argparse.Namespace) -> int:
         print(f"wet search: unexpected initialize response from {url}", file=sys.stderr)
         return 1
     if "error" in init_response:
-        print(f"wet search: initialize failed: {init_response['error']}", file=sys.stderr)
+        print(
+            f"wet search: initialize failed: {init_response['error']}", file=sys.stderr
+        )
         return 1
 
     _rpc({"jsonrpc": "2.0", "method": "notifications/initialized"}, None)
@@ -776,18 +777,30 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument(
-        "-V", "--version", action="version", version=_version(), help="print version and exit"
+        "-V",
+        "--version",
+        action="version",
+        version=_version(),
+        help="print version and exit",
     )
     sub = parser.add_subparsers(dest="command", metavar="<command>")
 
-    p_server = sub.add_parser("server", help="start/stop/status the wet-mcp HTTP server")
+    p_server = sub.add_parser(
+        "server", help="start/stop/status the wet-mcp HTTP server"
+    )
     server_sub = p_server.add_subparsers(dest="server_action", required=True)
 
     p_start = server_sub.add_parser(
         "start", help="start the server as a detached background process"
     )
-    p_start.add_argument("--host", default=None, help="bind host (default: [server].host in ~/.wet/config.toml)")
-    p_start.add_argument("--port", type=int, default=None, help="bind port (default: [server].port)")
+    p_start.add_argument(
+        "--host",
+        default=None,
+        help="bind host (default: [server].host in ~/.wet/config.toml)",
+    )
+    p_start.add_argument(
+        "--port", type=int, default=None, help="bind port (default: [server].port)"
+    )
     p_start.add_argument(
         "--foreground",
         action="store_true",
@@ -795,34 +808,52 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p_start.set_defaults(func=_cmd_server_start)
 
-    p_stop = server_sub.add_parser("stop", help="stop the running server via its lock file")
-    p_stop.add_argument("--port", type=int, default=None, help="target a specific wet-<port>.lock")
+    p_stop = server_sub.add_parser(
+        "stop", help="stop the running server via its lock file"
+    )
+    p_stop.add_argument(
+        "--port", type=int, default=None, help="target a specific wet-<port>.lock"
+    )
     p_stop.set_defaults(func=_cmd_server_stop)
 
     p_status = server_sub.add_parser("status", help="report pid/lock/HTTP liveness")
-    p_status.add_argument("--port", type=int, default=None, help="probe a specific port")
+    p_status.add_argument(
+        "--port", type=int, default=None, help="probe a specific port"
+    )
     p_status.set_defaults(func=_cmd_server_status)
 
     p_config = sub.add_parser("config", help="manage ~/.wet/config.toml")
     config_sub = p_config.add_subparsers(dest="config_action", required=True)
-    p_config_init = config_sub.add_parser("init", help="write the default config template")
-    p_config_init.add_argument("--force", action="store_true", help="overwrite an existing config")
+    p_config_init = config_sub.add_parser(
+        "init", help="write the default config template"
+    )
+    p_config_init.add_argument(
+        "--force", action="store_true", help="overwrite an existing config"
+    )
     p_config_init.set_defaults(func=_cmd_config)
     p_config_path = config_sub.add_parser("path", help="print the config file path")
     p_config_path.set_defaults(func=_cmd_config)
-    p_config_show = config_sub.add_parser("show", help="print the config file (or the template)")
+    p_config_show = config_sub.add_parser(
+        "show", help="print the config file (or the template)"
+    )
     p_config_show.set_defaults(func=_cmd_config)
-    p_config_get = config_sub.add_parser("get", help="print one value (dotted key, e.g. server.port)")
+    p_config_get = config_sub.add_parser(
+        "get", help="print one value (dotted key, e.g. server.port)"
+    )
     p_config_get.add_argument("key")
     p_config_get.set_defaults(func=_cmd_config)
-    p_config_set = config_sub.add_parser("set", help="set one value (line-based edit of the file)")
+    p_config_set = config_sub.add_parser(
+        "set", help="set one value (line-based edit of the file)"
+    )
     p_config_set.add_argument("key")
     p_config_set.add_argument("value")
     p_config_set.set_defaults(func=_cmd_config)
 
     p_token = sub.add_parser("token", help="token helpers")
     token_sub = p_token.add_subparsers(dest="token_action", required=True)
-    p_token_hash = token_sub.add_parser("hash", help="print the storable scrypt hash of a token")
+    p_token_hash = token_sub.add_parser(
+        "hash", help="print the storable scrypt hash of a token"
+    )
     p_token_hash.add_argument("token")
     p_token_hash.set_defaults(func=_cmd_token_hash)
 
@@ -831,31 +862,53 @@ def build_parser() -> argparse.ArgumentParser:
     p_users_path = users_sub.add_parser("path", help="print the users.toml path")
     p_users_path.set_defaults(func=_cmd_users_path)
 
-    p_docs = sub.add_parser("docs", help="host-side docs-store maintenance (no server needed)")
+    p_docs = sub.add_parser(
+        "docs", help="host-side docs-store maintenance (no server needed)"
+    )
     docs_sub = p_docs.add_subparsers(dest="docs_action", required=True)
-    p_docs_reindex = docs_sub.add_parser("reindex", help="clear a library's chunks so the next search re-indexes")
+    p_docs_reindex = docs_sub.add_parser(
+        "reindex", help="clear a library's chunks so the next search re-indexes"
+    )
     p_docs_reindex.add_argument("library")
     p_docs_reindex.set_defaults(func=_cmd_docs_reindex)
-    p_docs_import = docs_sub.add_parser("import", help="import a CF D1 SQL export into the local docs.db")
+    p_docs_import = docs_sub.add_parser(
+        "import", help="import a CF D1 SQL export into the local docs.db"
+    )
     p_docs_import.add_argument("export", help="path to the exported .sql file")
-    p_docs_import.add_argument("--db", default=None, help="target db (default: ~/.wet/docs.db)")
-    p_docs_import.add_argument("--force", action="store_true", help="replace an existing non-empty db")
+    p_docs_import.add_argument(
+        "--db", default=None, help="target db (default: ~/.wet/docs.db)"
+    )
+    p_docs_import.add_argument(
+        "--force", action="store_true", help="replace an existing non-empty db"
+    )
     p_docs_import.add_argument(
         "--expected-chunks",
         type=int,
         default=49939,
         help="asserted doc_chunks count (default: 49939, the proven receipt number)",
     )
-    p_docs_import.add_argument("--skip-fts", action="store_true", help="skip the FTS5 rebuild")
+    p_docs_import.add_argument(
+        "--skip-fts", action="store_true", help="skip the FTS5 rebuild"
+    )
     p_docs_import.set_defaults(func=_cmd_docs_import)
-    p_docs_reembed = docs_sub.add_parser("reembed", help="backfill vectors for chunks missing them")
-    p_docs_reembed.add_argument("--db", default=None, help="docs db (default: ~/.wet/docs.db)")
+    p_docs_reembed = docs_sub.add_parser(
+        "reembed", help="backfill vectors for chunks missing them"
+    )
+    p_docs_reembed.add_argument(
+        "--db", default=None, help="docs db (default: ~/.wet/docs.db)"
+    )
     p_docs_reembed.add_argument("--batch-size", type=int, default=64)
-    p_docs_reembed.add_argument("--limit", type=int, default=None, help="cap chunks embedded this run")
-    p_docs_reembed.add_argument("--dry-run", action="store_true", help="report counts only, no writes")
+    p_docs_reembed.add_argument(
+        "--limit", type=int, default=None, help="cap chunks embedded this run"
+    )
+    p_docs_reembed.add_argument(
+        "--dry-run", action="store_true", help="report counts only, no writes"
+    )
     p_docs_reembed.set_defaults(func=_cmd_docs_reembed)
 
-    p_search = sub.add_parser("search", help="search via the RUNNING server (streamable HTTP MCP)")
+    p_search = sub.add_parser(
+        "search", help="search via the RUNNING server (streamable HTTP MCP)"
+    )
     p_search.add_argument("query")
     p_search.add_argument(
         "--max-results",
@@ -863,11 +916,21 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help="passed to the tool as `limit` (server default when omitted)",
     )
-    p_search.add_argument("--url", default=None, help="server base URL (default: http://127.0.0.1:<config port>)")
-    p_search.add_argument("--token", default=None, help="bearer token (default: WET_TOKEN env; header omitted when unset)")
+    p_search.add_argument(
+        "--url",
+        default=None,
+        help="server base URL (default: http://127.0.0.1:<config port>)",
+    )
+    p_search.add_argument(
+        "--token",
+        default=None,
+        help="bearer token (default: WET_TOKEN env; header omitted when unset)",
+    )
     p_search.set_defaults(func=_cmd_search)
 
-    p_warmup = sub.add_parser("warmup", help="probe configured providers (unchanged warmup behavior)")
+    p_warmup = sub.add_parser(
+        "warmup", help="probe configured providers (unchanged warmup behavior)"
+    )
     p_warmup.set_defaults(func=_cmd_warmup)
 
     return parser

@@ -125,7 +125,9 @@ async def mcp_session(tmp_path):
     except (RuntimeError, ExceptionGroup) as exc:
         msg = str(exc).lower()
         if "cancel scope" in msg or "different task" in msg:
-            warnings.warn(f"Suppressed teardown error: {exc}", RuntimeWarning, stacklevel=1)
+            warnings.warn(
+                f"Suppressed teardown error: {exc}", RuntimeWarning, stacklevel=1
+            )
         else:
             raise
     finally:
@@ -143,7 +145,9 @@ async def mcp_session_rerank_off(tmp_path):
     except (RuntimeError, ExceptionGroup) as exc:
         msg = str(exc).lower()
         if "cancel scope" in msg or "different task" in msg:
-            warnings.warn(f"Suppressed teardown error: {exc}", RuntimeWarning, stacklevel=1)
+            warnings.warn(
+                f"Suppressed teardown error: {exc}", RuntimeWarning, stacklevel=1
+            )
         else:
             raise
     finally:

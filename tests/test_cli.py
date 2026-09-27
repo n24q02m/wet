@@ -15,7 +15,6 @@ import pytest
 
 from wet_mcp import cli
 
-
 # ---------------------------------------------------------------------------
 # helpers
 # ---------------------------------------------------------------------------
@@ -23,7 +22,9 @@ from wet_mcp import cli
 
 def _hs(port: int = 8802, host: str = "127.0.0.1") -> SimpleNamespace:
     """Minimal stand-in for runtime.hull_settings() ([server] table)."""
-    return SimpleNamespace(server=SimpleNamespace(host=host, port=port, users_file=None))
+    return SimpleNamespace(
+        server=SimpleNamespace(host=host, port=port, users_file=None)
+    )
 
 
 @pytest.fixture
@@ -194,11 +195,11 @@ class TestServerStop:
         lock = _write_lock(locks_dir)
         # Alive until terminated, then gone (the wait loop re-checks).
         state = {"terminated": False}
+        monkeypatch.setattr(cli, "_pid_alive", lambda pid: not state["terminated"])
         monkeypatch.setattr(
-            cli, "_pid_alive", lambda pid: not state["terminated"]
-        )
-        monkeypatch.setattr(
-            cli, "_terminate", MagicMock(side_effect=lambda pid: state.update(terminated=True))
+            cli,
+            "_terminate",
+            MagicMock(side_effect=lambda pid: state.update(terminated=True)),
         )
         rc = cli.main(["server", "stop", "--port", "8802"])
 
@@ -236,7 +237,9 @@ class TestServerStop:
 
 
 class TestServerStatus:
-    def test_status_without_lock_probes_config_port(self, monkeypatch, capsys, locks_dir):
+    def test_status_without_lock_probes_config_port(
+        self, monkeypatch, capsys, locks_dir
+    ):
         with (
             patch("wet_mcp.runtime.hull_settings", return_value=_hs(port=9103)),
             patch("wet_mcp.cli._http_probe", return_value=False),

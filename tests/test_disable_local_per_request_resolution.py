@@ -28,7 +28,7 @@ checked the return value would stay green if the import happened first.
 from __future__ import annotations
 
 import builtins
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from hull_core.auth.context import AuthContext, reset_current_user, set_current_user
@@ -52,9 +52,7 @@ def _isolate(monkeypatch):
 @pytest.fixture
 def as_user_a():
     """Resolve requests under a mode-3 identity (namespace ``user_a``)."""
-    token = set_current_user(
-        AuthContext(uid="a", namespace="user_a", mode="multi")
-    )
+    token = set_current_user(AuthContext(uid="a", namespace="user_a", mode="multi"))
     yield
     reset_current_user(token)
 
@@ -119,9 +117,7 @@ def _cloud_reranker(model: str = "cohere/rerank-v3.5"):
 
 
 class TestEmbedResolverHonoursDisableLocalEmbed:
-    def test_no_backend_and_local_disabled_resolves_to_none(
-        self, local_embed_disabled
-    ):
+    def test_no_backend_and_local_disabled_resolves_to_none(self, local_embed_disabled):
         """The exit the slim image actually takes: gracefully unavailable."""
         from wet_mcp.embedder import resolve_embed_backend_for_request
 
@@ -301,9 +297,7 @@ class TestConfigStatusReflectsPerRequestResolution:
         assert status["reranker"]["backend"] == "CloudReranker"
         assert status["reranker"]["available"] is True
 
-    async def test_status_says_why_embedding_is_unavailable(
-        self, local_embed_disabled
-    ):
+    async def test_status_says_why_embedding_is_unavailable(self, local_embed_disabled):
         """ "available: false" alone reads as a bug report, not a config answer."""
         from wet_mcp.server import _handle_config_status
 

@@ -6,8 +6,7 @@ from urllib.parse import urlparse
 
 from loguru import logger
 
-from wet_mcp.config import settings
-from wet_mcp.llm import has_llm_provider, acompletion, get_llm_config
+from wet_mcp.llm import acompletion, get_llm_config, has_llm_provider
 from wet_mcp.sources.crawler import extract as raw_extract
 
 

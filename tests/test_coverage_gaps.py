@@ -11,7 +11,6 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-
 # ---------------------------------------------------------------------------
 # setup_tool.py coverage gaps (migrated from __main__.py)
 # ---------------------------------------------------------------------------

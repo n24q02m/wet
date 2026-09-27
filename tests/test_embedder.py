@@ -365,7 +365,9 @@ class TestLocalEmbeddingBackend:
     async def test_check_available_failure(self):
         """Returns 0 when model fails to load."""
         backend = LocalEmbeddingBackend()
-        with patch.object(backend, "_get_model", side_effect=Exception("ONNX load error")):
+        with patch.object(
+            backend, "_get_model", side_effect=Exception("ONNX load error")
+        ):
             assert await backend.check_available() == 0
 
     async def test_check_available_embed_exception(self):
@@ -516,7 +518,13 @@ class TestCheckAvailableApiKeyValidation:
     """check_available() distinguishes API key errors from other failures."""
 
     @pytest.mark.parametrize(
-        "error", ["401 Unauthorized", "403 Forbidden", "Invalid API key provided", "Unauthorized access"]
+        "error",
+        [
+            "401 Unauthorized",
+            "403 Forbidden",
+            "Invalid API key provided",
+            "Unauthorized access",
+        ],
     )
     async def test_auth_errors_return_zero(self, error):
         client = _cell_client()

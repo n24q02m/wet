@@ -15,7 +15,6 @@ import os
 import socket
 import subprocess
 import sys
-import tempfile
 import time
 import warnings
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer

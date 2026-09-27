@@ -50,7 +50,9 @@ def test_cloud_backend_never_loads_local_onnx(monkeypatch):
     fake_fastretrieval = unittest.mock.MagicMock()
     monkeypatch.setitem(sys.modules, "fastretrieval", fake_fastretrieval)
 
-    client = SimpleNamespace(cell=SimpleNamespace(model="jina_ai/jina-embeddings-v5-text-small"))
+    client = SimpleNamespace(
+        cell=SimpleNamespace(model="jina_ai/jina-embeddings-v5-text-small")
+    )
     client.embeddings = AsyncMock()
     original_backend = embedder_mod._backend
     embedder_mod._backend = None
@@ -60,7 +62,9 @@ def test_cloud_backend_never_loads_local_onnx(monkeypatch):
                 "wet_mcp.runtime.cell_configured",
                 lambda task, settings=None: task == "embed",
             ),
-            patch("wet_mcp.runtime.provider_client", lambda task, settings=None: client),
+            patch(
+                "wet_mcp.runtime.provider_client", lambda task, settings=None: client
+            ),
         ):
             backend = init_backend("cloud")
 

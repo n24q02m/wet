@@ -81,9 +81,7 @@ def _missing_chunks(
 
 
 def _vec_ids(read_conn: sqlite3.Connection) -> set[str]:
-    return {
-        row[0] for row in read_conn.execute("SELECT id FROM doc_chunks_vec")
-    }
+    return {row[0] for row in read_conn.execute("SELECT id FROM doc_chunks_vec")}
 
 
 def _stamp_identity(db, dims: int, identity: str) -> None:
@@ -122,7 +120,12 @@ async def reembed(
         no_local_embed_clause,
         resolve_embed_backend_for_request,
     )
-    from wet_mcp.runtime import DEFAULT_EMBEDDING_DIMS, cell_configured, model_cell, provider_client
+    from wet_mcp.runtime import (
+        DEFAULT_EMBEDDING_DIMS,
+        cell_configured,
+        model_cell,
+        provider_client,
+    )
 
     # Cell-first: ``resolve_embed_backend_for_request`` serves the startup
     # singleton, which only exists inside a running server process. The CLI
@@ -156,10 +159,13 @@ async def reembed(
 
     db = _open_docs_db(target, dims)
     try:
-        has_vec_table = db._conn.execute(
-            "SELECT 1 FROM sqlite_master WHERE type='table' "
-            "AND name='doc_chunks_vec'"
-        ).fetchone() is not None
+        has_vec_table = (
+            db._conn.execute(
+                "SELECT 1 FROM sqlite_master WHERE type='table' "
+                "AND name='doc_chunks_vec'"
+            ).fetchone()
+            is not None
+        )
         if not has_vec_table:
             return {
                 "status": "error",
@@ -214,7 +220,9 @@ async def reembed(
             batch = missing[start : start + batch_size]
             texts = [content[:_MAX_EMBED_CHARS] for _, content in batch]
             truncated += sum(
-                1 for (_, content), cut in zip(batch, texts) if cut and len(content) > _MAX_EMBED_CHARS
+                1
+                for (_, content), cut in zip(batch, texts, strict=True)
+                if cut and len(content) > _MAX_EMBED_CHARS
             )
             pairs: list[tuple[str, list[float]]] = []
             try:
@@ -222,11 +230,15 @@ async def reembed(
                     texts,
                     dimensions=dims if dims else None,
                 )
-                pairs = list(zip((chunk_id for chunk_id, _ in batch), vectors))
+                pairs = list(
+                    zip((chunk_id for chunk_id, _ in batch), vectors, strict=True)
+                )
             except Exception as e:
                 # One pathological chunk can fail a whole batch (ONNX memory,
                 # provider limit). Split to singles; skip only the bad ones.
-                logger.warning(f"reembed: batch of {len(batch)} failed ({e}); retrying per-chunk")
+                logger.warning(
+                    f"reembed: batch of {len(batch)} failed ({e}); retrying per-chunk"
+                )
                 for chunk_id, content in batch:
                     try:
                         vec = (
@@ -237,7 +249,9 @@ async def reembed(
                         )[0]
                         pairs.append((chunk_id, vec))
                     except Exception as chunk_error:
-                        logger.warning(f"reembed: skipping chunk {chunk_id}: {chunk_error}")
+                        logger.warning(
+                            f"reembed: skipping chunk {chunk_id}: {chunk_error}"
+                        )
                         failed_ids.append(chunk_id)
             # Same internals the indexer uses; rolls back + raises on failure.
             db._add_chunk_vectors([cid for cid, _ in pairs], [v for _, v in pairs])

@@ -45,7 +45,6 @@ async def test_expand_query_success():
             return_value=_mock_llm_response("python web scraping\nweb crawling python"),
         ),
     ):
-
         result = await expand_query("python scraping")
 
         assert len(result) == 3
@@ -56,8 +55,9 @@ async def test_expand_query_success():
 
 async def test_expand_query_local_mode_fallback():
     """Local mode (no LLM) returns only original query."""
-    with patch("wet_mcp.sources.search_strategies.has_llm_provider", return_value=False):
-
+    with patch(
+        "wet_mcp.sources.search_strategies.has_llm_provider", return_value=False
+    ):
         result = await expand_query("python scraping")
 
         assert result == ["python scraping"]
@@ -80,7 +80,6 @@ async def test_expand_query_llm_failure_fallback():
             side_effect=Exception("API error"),
         ),
     ):
-
         result = await expand_query("python scraping")
 
         assert result == ["python scraping"]
@@ -103,7 +102,6 @@ async def test_expand_query_numbered_lines():
             return_value=_mock_llm_response("1. alternative one\n2) alternative two"),
         ),
     ):
-
         result = await expand_query("original")
 
         assert result[0] == "original"
@@ -128,7 +126,6 @@ async def test_expand_query_empty_llm_response():
             return_value=_mock_llm_response(""),
         ),
     ):
-
         result = await expand_query("original")
 
         # Empty response -> no alt queries parsed, just original
@@ -152,7 +149,6 @@ async def test_expand_query_more_than_two_alts():
             return_value=_mock_llm_response("alt1\nalt2\nalt3\nalt4"),
         ),
     ):
-
         result = await expand_query("original")
 
         assert len(result) == 3
@@ -300,8 +296,9 @@ async def test_extract_keywords_local_mode():
     """Local mode returns title as keywords."""
     from wet_mcp.sources.search_strategies import _extract_keywords
 
-    with patch("wet_mcp.sources.search_strategies.has_llm_provider", return_value=False):
-
+    with patch(
+        "wet_mcp.sources.search_strategies.has_llm_provider", return_value=False
+    ):
         result = await _extract_keywords("some content", "My Title")
         assert result == "My Title"
 
@@ -310,8 +307,9 @@ async def test_extract_keywords_local_no_title():
     """Local mode with no title returns content prefix."""
     from wet_mcp.sources.search_strategies import _extract_keywords
 
-    with patch("wet_mcp.sources.search_strategies.has_llm_provider", return_value=False):
-
+    with patch(
+        "wet_mcp.sources.search_strategies.has_llm_provider", return_value=False
+    ):
         result = await _extract_keywords("some content here", "")
         assert result == "some content here"
 
@@ -335,7 +333,6 @@ async def test_extract_keywords_llm_success():
             return_value=_mock_llm_response("python, scraping, web, automation"),
         ),
     ):
-
         result = await _extract_keywords("content about python", "Python Guide")
         assert result == "python, scraping, web, automation"
 
@@ -359,7 +356,6 @@ async def test_extract_keywords_llm_failure():
             side_effect=Exception("API error"),
         ),
     ):
-
         result = await _extract_keywords("content", "Fallback Title")
         assert result == "Fallback Title"
 
@@ -532,7 +528,6 @@ async def test_generate_hyde_query_success():
             ),
         ),
     ):
-
         result = await generate_hyde_query("how to make HTTP requests", "requests")
 
         assert result is not None
@@ -541,8 +536,9 @@ async def test_generate_hyde_query_success():
 
 async def test_generate_hyde_query_local_mode():
     """Local mode (no LLM) returns None."""
-    with patch("wet_mcp.sources.search_strategies.has_llm_provider", return_value=False):
-
+    with patch(
+        "wet_mcp.sources.search_strategies.has_llm_provider", return_value=False
+    ):
         result = await generate_hyde_query("some query", "some-lib")
 
         assert result is None
@@ -565,7 +561,6 @@ async def test_generate_hyde_query_llm_failure():
             side_effect=Exception("API error"),
         ),
     ):
-
         result = await generate_hyde_query("some query", "some-lib")
 
         assert result is None
@@ -588,7 +583,6 @@ async def test_generate_hyde_query_empty_response():
             return_value=_mock_llm_response(""),
         ),
     ):
-
         result = await generate_hyde_query("some query", "some-lib")
 
         assert result is None

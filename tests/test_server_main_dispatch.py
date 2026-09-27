@@ -58,7 +58,7 @@ class TestBuildHttpApp:
         users_file.write_text(
             "[users.alice]\n"
             f'token_hash = "{hash_token("alice-token")}"\n'
-            "enabled = true\nnamespace = \"alice\"\n",
+            'enabled = true\nnamespace = "alice"\n',
             encoding="utf-8",
         )
         multi = HullSettings(
@@ -78,7 +78,9 @@ class TestBuildHttpApp:
 class TestRunServerBlocking:
     def test_no_auth_non_loopback_bind_refused(self, monkeypatch):
         """An unauthenticated listener must never leave localhost."""
-        monkeypatch.setattr("wet_mcp.runtime.hull_settings", lambda: _hs(auth="no-auth"))
+        monkeypatch.setattr(
+            "wet_mcp.runtime.hull_settings", lambda: _hs(auth="no-auth")
+        )
 
         with pytest.raises(srv.ServerConfigError, match="no-auth"):
             srv.run_server_blocking(host="0.0.0.0", port=8802)
@@ -95,7 +97,9 @@ class TestRunServerBlocking:
 
         with (
             patch("hull_core.lifecycle.lock.LifecycleLock", lock_cm),
-            patch("wet_mcp.server.build_http_app", return_value=MagicMock()) as mock_app,
+            patch(
+                "wet_mcp.server.build_http_app", return_value=MagicMock()
+            ) as mock_app,
             patch("uvicorn.run") as mock_uvicorn,
         ):
             srv.run_server_blocking(host="127.0.0.1", port=8803)

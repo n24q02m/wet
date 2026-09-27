@@ -114,7 +114,9 @@ async def test_multiwave_embed_stores_vectors_instead_of_degrading(
         def __init__(self):
             # The backend wraps the [models.embed] cell's OpenAI-spec client;
             # only the cell model id is read on this path.
-            super().__init__(SimpleNamespace(cell=SimpleNamespace(model="slow-embed-stub")))
+            super().__init__(
+                SimpleNamespace(cell=SimpleNamespace(model="slow-embed-stub"))
+            )
 
         async def _embed_batch_inner(self, texts, dimensions=None):
             batch_sizes.append(len(texts))

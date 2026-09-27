@@ -89,9 +89,7 @@ class CloudReranker:
 
         try:
             results = await self._client.rerank(query, documents, top_n=top_n)
-            mapped = [
-                (int(r["index"]), float(r["relevance_score"])) for r in results
-            ]
+            mapped = [(int(r["index"]), float(r["relevance_score"])) for r in results]
 
             # Sort by score descending
             mapped.sort(key=lambda x: x[1], reverse=True)

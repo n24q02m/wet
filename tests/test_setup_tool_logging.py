@@ -76,7 +76,9 @@ async def test_validate_cloud_models_reranker_logging(caplog):
     assert result["embedding"] == {"model": "test-model", "dims": 768}
     # Reranker cell failed its check: reported under errors, absent from result
     assert "reranker" not in result
-    assert result["errors"] == ["rerank cell test-model: Reranker initialization failed"]
+    assert result["errors"] == [
+        "rerank cell test-model: Reranker initialization failed"
+    ]
 
     # Check for reranker failure log
     assert (

@@ -113,7 +113,6 @@ async def test_extract_structured_reads_clean_text_key():
 async def test_extract_structured_local_mode_error():
     """Local mode (no LLM) returns an error."""
     with patch("wet_mcp.sources.structured.has_llm_provider", return_value=False):
-
         result_str = await extract_structured(
             urls=["https://example.com"],
             schema=SAMPLE_SCHEMA,
@@ -138,7 +137,6 @@ async def test_extract_structured_no_content():
         ),
         patch("wet_mcp.sources.structured.has_llm_provider", return_value=True),
     ):
-
         result_str = await extract_structured(
             urls=["https://example.com"],
             schema=SAMPLE_SCHEMA,
@@ -302,7 +300,6 @@ async def test_extract_structured_content_extraction_error():
         ),
         patch("wet_mcp.sources.structured.has_llm_provider", return_value=True),
     ):
-
         result_str = await extract_structured(
             urls=["https://example.com"],
             schema=SAMPLE_SCHEMA,

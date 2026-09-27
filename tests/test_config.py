@@ -427,9 +427,11 @@ def test_reindex_on_model_change_reads_environment(monkeypatch):
 )
 def test_boolean_knobs_read_environment(field, env, value, monkeypatch):
     monkeypatch.setenv(env, value)
-    assert getattr(Settings(), field) is True if value == "1" else getattr(
-        Settings(), field
-    ) is False
+    assert (
+        getattr(Settings(), field) is True
+        if value == "1"
+        else getattr(Settings(), field) is False
+    )
 
 
 def test_no_llm_provider_cells_among_settings_fields():

@@ -1966,8 +1966,7 @@ class DocsDB:
         now = _now_ts()
         payload = json.dumps(locked_libraries, ensure_ascii=False)
         existing = self._conn.execute(
-            "SELECT created_at FROM project_context "
-            "WHERE sub = ? AND project_path = ?",
+            "SELECT created_at FROM project_context WHERE sub = ? AND project_path = ?",
             (sub, project_path),
         ).fetchone()
         if existing:
@@ -2017,9 +2016,7 @@ class DocsDB:
             result["locked_libraries"] = []
         return result
 
-    def touch_project_context(
-        self, project_path: str, *, sub: str = "default"
-    ) -> None:
+    def touch_project_context(self, project_path: str, *, sub: str = "default") -> None:
         """Update last_used_at — call before each docs_query that honors a lock."""
         if not self._ensure_project_context():
             return

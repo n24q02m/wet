@@ -117,7 +117,9 @@ class TestCloudReranker:
 class TestCloudRerankerApiKeyValidation:
     """check_available() distinguishes API key errors from other failures."""
 
-    @pytest.mark.parametrize("error", ["401 Unauthorized", "403 Forbidden", "Invalid API key"])
+    @pytest.mark.parametrize(
+        "error", ["401 Unauthorized", "403 Forbidden", "Invalid API key"]
+    )
     async def test_auth_errors_return_false(self, error):
         client = _cell_client()
         client.rerank.side_effect = Exception(error)

@@ -51,9 +51,7 @@ _IDENTITY_KEYS = ("embedding_model", "embedding_dims")
 
 
 def _delete_identity_rows(conn: sqlite3.Connection) -> None:
-    conn.execute(
-        "DELETE FROM store_meta WHERE key IN (?, ?)", _IDENTITY_KEYS
-    )
+    conn.execute("DELETE FROM store_meta WHERE key IN (?, ?)", _IDENTITY_KEYS)
 
 
 def _counts(conn: sqlite3.Connection) -> tuple[int, int, int]:
@@ -147,10 +145,13 @@ def import_docs(
         conn.commit()
 
         # 5. FTS rebuild from the external-content table.
-        has_fts = conn.execute(
-            "SELECT 1 FROM sqlite_master WHERE type='table' "
-            "AND name='doc_chunks_fts'"
-        ).fetchone() is not None
+        has_fts = (
+            conn.execute(
+                "SELECT 1 FROM sqlite_master WHERE type='table' "
+                "AND name='doc_chunks_fts'"
+            ).fetchone()
+            is not None
+        )
         fts_rebuilt = False
         if has_fts and not skip_fts:
             logger.info("rebuilding doc_chunks_fts from doc_chunks")
@@ -187,9 +188,7 @@ def import_docs(
             )
         fts_rows: int | None = None
         if fts_rebuilt:
-            fts_rows = conn.execute(
-                "SELECT COUNT(*) FROM doc_chunks_fts"
-            ).fetchone()[0]
+            fts_rows = conn.execute("SELECT COUNT(*) FROM doc_chunks_fts").fetchone()[0]
             if fts_rows != rb_chunks:
                 raise RuntimeError(
                     f"FTS rebuild mismatch: doc_chunks_fts has {fts_rows} rows "
