@@ -2,6 +2,24 @@
 
 <!-- version list -->
 
+## v3.18.0 (2026-09-27)
+
+### Code Style
+
+- Fix import ordering after hull_web rename (I001)
+  ([`74cd8a7`](https://github.com/n24q02m/wet/commit/74cd8a77671365ce5e000354682903054e004b37))
+
+### Features
+
+- **deps**: Switch web-core dep to hull-web monorepo package (R6)
+  ([`8011465`](https://github.com/n24q02m/wet/commit/8011465fcf031fe1d44bf4449e8ad30ba8d6c092))
+
+### Performance Improvements
+
+- **embed**: Memoize dimensions rejection per backend instance (R7a)
+  ([`6c6a134`](https://github.com/n24q02m/wet/commit/6c6a13461e753b421855a418cc75fd5c7ab67d36))
+
+
 ## v3.17.2 (2026-09-27)
 
 ### Bug Fixes
