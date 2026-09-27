@@ -2,6 +2,14 @@
 
 <!-- version list -->
 
+## v3.17.0 (2026-09-27)
+
+### Features
+
+- **jev**: Wire advisory jev placements K1 (docs HyDE gate) + N6 (refine early stop)
+  ([`850ac10`](https://github.com/n24q02m/wet/commit/850ac101b8edd5d60cda1fbef555e7079d481de4))
+
+
 ## v3.16.6 (2026-09-27)
 
 ### Bug Fixes
