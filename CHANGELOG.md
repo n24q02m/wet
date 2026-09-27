@@ -2,6 +2,14 @@
 
 <!-- version list -->
 
+## v3.17.1 (2026-09-27)
+
+### Bug Fixes
+
+- **coverage**: Close CLI/docs-import/reembed/rewrite test gaps (89.17 -> 93.76 measured)
+  ([`440f933`](https://github.com/n24q02m/wet/commit/440f9331d7bbc19b6f0912291931e01fe671b709))
+
+
 ## v3.17.0 (2026-09-27)
 
 ### Features
