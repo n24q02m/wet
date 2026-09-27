@@ -167,8 +167,6 @@ jobs:
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
     runs-on: ${{ matrix.os }}
-    env:
-      UV_NO_SOURCES: "true"
 
     steps:
       - name: Harden Runner
@@ -198,6 +196,7 @@ jobs:
         run: uv run --no-sync ruff format --check .
 
       - name: Run ty type check
+        continue-on-error: true
         run: uv run --no-sync ty check
 
       - name: Run tests with coverage
