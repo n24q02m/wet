@@ -1,15 +1,19 @@
-# docker-compose.yml
-# Base compose file - stdio mode (default). For HTTP mode, layer the overlay:
-#   docker compose -f docker-compose.yml -f docker-compose.http.yml up
-# For Cloudflare local-dev emulation:
-#   docker compose -f docker-compose.yml -f docker-compose.cloudflare.yml up
+# docker-compose.yml — self-contained HTTP deployment.
+# The image's only entrypoint is the blocking HTTP server (python -m wet_mcp),
+# so the old stdio base + docker-compose.http.yml overlay split (and the
+# removed docker-compose.cloudflare.yml) folded into this single file.
 services:
   wet-mcp:
     build: .
     environment:
-      - CACHE_DIR=/data
-      - DOWNLOAD_DIR=/data/downloads
+      - WET_HOST=0.0.0.0
+      - WET_PORT=8000
+    ports:
+      - "8000:8000"
     volumes:
       - wet-data:/data
+      # Real instance config/data dir (~/.wet): config.toml, docs.db, marker.
+      - wet-config:/home/appuser/.wet
 volumes:
   wet-data:
+  wet-config:
