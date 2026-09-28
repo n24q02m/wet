@@ -166,10 +166,13 @@ def _spawn_server(host: str, port: int, *, explicit_host: bool, explicit_port: b
     log_fh = open(log_path, "ab")  # nosec SIM115 - child owns the handle
     env = dict(os.environ)
     env.setdefault("MCP_TRANSPORT", "http")
+    # The child (-m wet_mcp.server) reads WET_HOST/WET_PORT (see server.main);
+    # MCP_HOST/MCP_PORT were dead names the child never consumed, which made
+    # `wet server start --host/--port` silently bind the config port instead.
     if explicit_host:
-        env["MCP_HOST"] = host
+        env["WET_HOST"] = host
     if explicit_port:
-        env["MCP_PORT"] = str(port)
+        env["WET_PORT"] = str(port)
     kwargs: dict = {}
     if os.name == "nt":
         kwargs["creationflags"] = getattr(subprocess, "DETACHED_PROCESS", 0) | getattr(
