@@ -94,7 +94,7 @@ def test_run_migrations_offline_fallback_to_default(tmp_path: Path) -> None:
             output = f.getvalue()
             assert "CREATE TABLE IF NOT EXISTS libraries" in output
 
-            default_db = tmp_path / ".wet-mcp" / "docs.db"
+            default_db = tmp_path / ".wet" / "docs.db"
             assert not default_db.exists()
 
 

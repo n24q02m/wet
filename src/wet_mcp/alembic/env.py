@@ -9,7 +9,7 @@ Database URL resolution (highest priority first):
 1. ``-x db_path=/abs/path`` Alembic CLI override (used by tests).
 2. ``WET_DOCS_DB_PATH`` environment variable.
 3. ``alembic.ini`` ``sqlalchemy.url`` value.
-4. Default ``~/.wet-mcp/docs.db``.
+4. Default ``~/.wet/docs.db``.
 """
 
 from __future__ import annotations
@@ -48,7 +48,9 @@ def _resolve_db_url() -> str:
     if ini_url and not ini_url.startswith("driver://"):
         return ini_url
 
-    default_path = (Path.home() / ".wet-mcp" / "docs.db").resolve()
+    # Legacy dir name was ~/.wet-mcp; a bare `alembic upgrade` must target the
+    # real instance tree.
+    default_path = (Path.home() / ".wet" / "docs.db").resolve()
     return f"sqlite:///{default_path.as_posix()}"
 
 
