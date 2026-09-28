@@ -209,6 +209,22 @@ def test_spawn_server_env_and_detach_flags(tmp_path, monkeypatch):
 # ---------------------------------------------------------------------------
 
 
+def test_start_without_port_ignores_live_lock_on_other_port(
+    locks_dir, monkeypatch, capsys
+):
+    """The pre-start scan keys to the RESOLVED port: a live lock on another
+    port must not block a start, so per-port multi-instance works."""
+    _write_lock(locks_dir, port=9165)
+    monkeypatch.setattr(cli, "_pid_alive", lambda pid: True)
+    fake = _FakeProc(pid=4322)
+    monkeypatch.setattr(cli, "_spawn_server", lambda *a, **k: fake)
+    with patch("wet_mcp.runtime.hull_settings", return_value=_hs(port=9166)):
+        rc = cli.main(["server", "start"])
+
+    assert rc == 0
+    assert "started: pid=4322" in capsys.readouterr().out
+
+
 def test_start_with_stale_lock_still_spawns(locks_dir, monkeypatch, capsys):
     """A lock whose pid is dead does not block a fresh start."""
     _write_lock(locks_dir, port=9161)

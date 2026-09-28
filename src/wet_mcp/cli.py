@@ -202,7 +202,9 @@ def _cmd_server_start(args: argparse.Namespace) -> int:
     port = args.port or hs.server.port
 
     if not args.foreground:
-        for lock in _find_locks(args.port):
+        # Key the scan to the resolved port (args.port or config): a live lock
+        # on a DIFFERENT port must not block, so per-port multi-instance works.
+        for lock in _find_locks(port):
             meta = _parse_lock(lock)
             if meta and _pid_alive(meta["pid"]):
                 print(
