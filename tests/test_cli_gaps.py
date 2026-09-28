@@ -271,6 +271,8 @@ def test_terminate_and_force_kill_use_the_platform_mechanism(monkeypatch):
 
     calls.clear()
     monkeypatch.setattr(cli.os, "name", "nt")
+    import os
+
     monkeypatch.setattr(
         cli.subprocess,
         "run",
@@ -278,9 +280,12 @@ def test_terminate_and_force_kill_use_the_platform_mechanism(monkeypatch):
     )
     cli._terminate(22)
     cli._force_kill(22)
+    taskkill = os.path.join(
+        os.environ.get("WINDIR", "C:\\Windows"), "System32", "taskkill.exe"
+    )
     assert calls == [
-        ("taskkill", "/PID", "22"),
-        ("taskkill", "/PID", "22", "/T", "/F"),
+        (taskkill, "/PID", "22"),
+        (taskkill, "/PID", "22", "/T", "/F"),
     ]
 
 
