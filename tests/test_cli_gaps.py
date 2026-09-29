@@ -278,7 +278,9 @@ def test_terminate_and_force_kill_use_the_platform_mechanism(monkeypatch):
     )
     cli._terminate(22)
     cli._force_kill(22)
-    taskkill_path = cli.os.path.join(cli.os.environ.get("WINDIR", "C:\\Windows"), "System32", "taskkill.exe")
+    taskkill_path = cli.os.path.join(
+        cli.os.environ.get("WINDIR", "C:\\Windows"), "System32", "taskkill.exe"
+    )
     assert calls == [
         (taskkill_path, "/PID", "22"),
         (taskkill_path, "/PID", "22", "/T", "/F"),
