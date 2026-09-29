@@ -1,0 +1,47 @@
+# wet-mcp instance config (host-owned, spec §4) — copy to config.toml and edit.
+# Loaded by hull_core.config.settings; per-task provider cells are OpenAI-spec
+# (base_url + api_key + model). Values below are EXAMPLES (OpenRouter default
+# pre-wiring), not recommendations — point each cell at any OpenAI-compatible
+# provider, cloud or local (e.g. http://127.0.0.1:11434/v1 for Ollama).
+
+[server]
+# 0.0.0.0 is REQUIRED here: it is the bind inside the container; exposure to
+# the host is limited by docker-compose publishing on 127.0.0.1 only.
+host = "0.0.0.0"
+port = 8000
+# no-auth -> loopback-only binds (refused on 0.0.0.0)
+# token   -> one shared token; set token_hash below
+# multi   -> users.toml; token -> user -> namespace
+auth = "token"
+# scrypt hash of your token. Canonical mint (hull-core, never echoes the
+# token itself):
+#   openssl rand -hex 32                     # generate the token
+#   wet token hash <token>                   # -> paste output here
+# The plaintext token is what clients put in the Authorization header
+# (Authorization: Bearer <token>); only the hash lives in this file.
+token_hash = "scrypt$REPLACE_ME"
+# rpm = 120
+
+# Per-task provider cells (embed / rerank / chat / jev_score). An empty
+# api_key may instead be injected at start via env (host-only material,
+# wins over this file): HULL_EMBED_API_KEY / HULL_RERANK_API_KEY /
+# HULL_CHAT_API_KEY / HULL_JEV_SCORE_API_KEY.
+[models.embed]
+base_url = "https://openrouter.ai/api/v1"   # EXAMPLE
+api_key = ""                                # EXAMPLE — put your key here
+model = "voyage-4-lite"                     # EXAMPLE
+
+[models.rerank]
+base_url = "https://openrouter.ai/api/v1"   # EXAMPLE
+api_key = ""
+model = "voyage-2.5-lite-rerank"            # EXAMPLE
+
+[models.chat]
+base_url = "https://openrouter.ai/api/v1"   # EXAMPLE
+api_key = ""
+model = "z-ai/glm-5.3-flash"                # EXAMPLE
+
+[models.jev_score]
+base_url = "https://openrouter.ai/api/v1"   # EXAMPLE
+api_key = ""
+model = "z-ai/glm-5.3-flash"                # EXAMPLE

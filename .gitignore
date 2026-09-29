@@ -92,3 +92,6 @@ docs.db-*
 *.db-wal
 *.db-shm
 *_FULL-*.sql
+
+# Real instance config for docker compose (host-only material; use config.example.toml)
+docker-config/config.toml
