@@ -2637,7 +2637,7 @@ def _rst_to_markdown(content: str) -> str:
             if (
                 len(next_stripped) >= len(line_stripped)
                 and next_stripped
-                and len(set(next_stripped)) == 1
+                and next_stripped[0] * len(next_stripped) == next_stripped
                 and next_stripped[0] in _RST_HEADING_CHARS
             ):
                 i = _process_rst_heading(i, line, lines, out)
