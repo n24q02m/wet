@@ -279,8 +279,22 @@ def test_terminate_and_force_kill_use_the_platform_mechanism(monkeypatch):
     cli._terminate(22)
     cli._force_kill(22)
     assert calls == [
-        ("taskkill", "/PID", "22"),
-        ("taskkill", "/PID", "22", "/T", "/F"),
+        (
+            os.path.join(
+                os.environ.get("WINDIR", "C:\\Windows"), "System32", "taskkill.exe"
+            ),
+            "/PID",
+            "22",
+        ),
+        (
+            os.path.join(
+                os.environ.get("WINDIR", "C:\\Windows"), "System32", "taskkill.exe"
+            ),
+            "/PID",
+            "22",
+            "/T",
+            "/F",
+        ),
     ]
 
 
