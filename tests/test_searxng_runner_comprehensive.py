@@ -646,7 +646,12 @@ async def test_ensure_searxng_locked_crash_cleanup():
 
 
 @pytest.mark.asyncio
-async def test_ensure_searxng_locked_install_fails():
+async def test_ensure_searxng_locked_install_fails(monkeypatch):
+    # hull gates runtime pip-install behind HULL_SEARXNG_AUTO_INSTALL (default
+    # off); without the opt-in the call raises the "auto-install disabled" error
+    # before _install_searxng is consulted, so the install-failed branch under
+    # test needs the flag set.
+    monkeypatch.setenv("HULL_SEARXNG_AUTO_INSTALL", "1")
     with (
         patch("hull_web.search.runner._try_reuse_existing", return_value=None),
         patch("hull_web.search.runner._is_searxng_installed", return_value=False),
