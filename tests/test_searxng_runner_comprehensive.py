@@ -201,14 +201,20 @@ async def test_try_reuse_existing():
 
 
 def test_find_available_port():
-    with patch("socket.socket") as mock_socket:
+    # hull shuffles the requested range together with the dynamic range to avoid
+    # a TOCTOU race, so pin the candidate order to keep "first candidate wins"
+    # deterministic instead of a coin flip.
+    with (
+        patch("socket.socket") as mock_socket,
+        patch("random.shuffle", side_effect=lambda seq: None),
+    ):
         mock_sock_instance = MagicMock()
         mock_socket.return_value.__enter__.return_value = mock_sock_instance
 
         # Success on first try
         mock_sock_instance.bind.return_value = None
         port = _find_available_port(8080)
-        assert 8080 <= port < 8080 + 100
+        assert port == 8080
 
         # Bind fails — web-core raises RuntimeError
         mock_sock_instance.bind.side_effect = OSError()
@@ -310,11 +316,15 @@ async def test_force_kill_process():
     sys.platform == "win32", reason="Unix lsof/fuser unavailable on Windows"
 )
 async def test_kill_stale_port_process():
+    # hull only signals a listener it can prove is one of its own SearXNG
+    # processes (_owned_port_pids); a foreign pid is left alone. Record pid
+    # 1234 as ours so the kill path is reached.
     with (
         patch("sys.platform", "linux"),
         patch("subprocess.run") as mock_run,
         patch("os.kill") as mock_kill,
         patch("asyncio.sleep"),
+        patch("hull_web.search.runner._owned_port_pids", return_value={1234}),
     ):
         mock_run_result = MagicMock()
         mock_run_result.returncode = 0
@@ -329,7 +339,7 @@ async def test_kill_stale_port_process():
 
         mock_kill.side_effect = kill_side_effect
 
-        await _kill_stale_port_process(8080)
+        assert await _kill_stale_port_process(8080) is True
         mock_kill.assert_any_call(1234, signal.SIGTERM)
 
     # Windows
@@ -338,6 +348,7 @@ async def test_kill_stale_port_process():
         patch("subprocess.run") as mock_run,
         patch("os.kill") as mock_kill,
         patch("asyncio.sleep"),
+        patch("hull_web.search.runner._owned_port_pids", return_value={1234}),
     ):
         mock_run_result = MagicMock()
         mock_run_result.stdout = "  TCP    127.0.0.1:8080         0.0.0.0:0              LISTENING       1234\n"
@@ -349,7 +360,7 @@ async def test_kill_stale_port_process():
 
         mock_kill.side_effect = kill_side_effect_win
 
-        await _kill_stale_port_process(8080)
+        assert await _kill_stale_port_process(8080) is True
         mock_kill.assert_any_call(1234, signal.SIGTERM)
 
 
