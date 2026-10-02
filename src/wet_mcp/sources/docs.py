@@ -2526,7 +2526,7 @@ def _process_rst_heading(i: int, line: str, lines: list[str], out: list[str]) ->
         # single-element set is how "one character repeated" is tested here.
         if (
             prev_stripped
-            and len(set(prev_stripped)) == 1
+            and prev_stripped[0] * len(prev_stripped) == prev_stripped
             and prev_stripped[0] in _RST_HEADING_CHARS
         ):
             out[-1] = ""
@@ -2637,7 +2637,7 @@ def _rst_to_markdown(content: str) -> str:
             if (
                 len(next_stripped) >= len(line_stripped)
                 and next_stripped
-                and len(set(next_stripped)) == 1
+                and next_stripped[0] * len(next_stripped) == next_stripped
                 and next_stripped[0] in _RST_HEADING_CHARS
             ):
                 i = _process_rst_heading(i, line, lines, out)
