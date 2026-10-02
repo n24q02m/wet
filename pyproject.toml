@@ -89,6 +89,13 @@ dependencies = [
     "langsmith>=0.10.10",
 ]
 
+[project.optional-dependencies]
+# Seeded-identity + invisible browser tier (E1-e/E1-f): opt-in at install time,
+# enabled at runtime via BROWSER_BACKENDS=invisible / WET_IDENTITY_SEED. Without
+# these extras strategies keep legacy behavior (warn-once). See AGENTS.md.
+identity = ["hull-core[identity]"]
+invisible = ["hull-core[invisible]"]
+
 [dependency-groups]
 dev = [
     "pytest",
