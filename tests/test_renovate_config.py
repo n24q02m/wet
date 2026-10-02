@@ -34,10 +34,12 @@ def test_config_does_not_require_known_renovate_migrations() -> None:
     package_rules = config["packageRules"]
 
     assert "golang" not in config
-    assert {
-        "matchCategories": ["golang"],
-        "postUpdateOptions": ["gomodTidy"],
-    } in package_rules
+    # looked up by matcher instead of pinned as an exact dict, so adding a policy key
+    # (e.g. minimumReleaseAge) to the rule does not force a test edit
+    golang_rule = next(
+        rule for rule in package_rules if rule.get("matchCategories") == ["golang"]
+    )
+    assert golang_rule["postUpdateOptions"] == ["gomodTidy"]
     assert all("matchPackagePatterns" not in rule for rule in package_rules)
 
     psr_rule = next(
