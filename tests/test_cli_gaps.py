@@ -181,16 +181,18 @@ def test_spawn_server_env_and_detach_flags(tmp_path, monkeypatch):
 
     monkeypatch.setattr(cli.subprocess, "Popen", fake_popen)
     monkeypatch.delenv("MCP_TRANSPORT", raising=False)
-    monkeypatch.delenv("MCP_HOST", raising=False)
-    monkeypatch.delenv("MCP_PORT", raising=False)
+    monkeypatch.delenv("WET_HOST", raising=False)
+    monkeypatch.delenv("WET_PORT", raising=False)
 
     proc = cli._spawn_server("0.0.0.0", 9155, explicit_host=True, explicit_port=True)
     assert proc.pid == 4321
     assert seen["argv"] == [cli.sys.executable, "-m", "wet_mcp.server"]
     env = seen["env"]
     assert env["MCP_TRANSPORT"] == "http"
-    assert env["MCP_HOST"] == "0.0.0.0"
-    assert env["MCP_PORT"] == "9155"
+    # The child (-m wet_mcp.server) reads WET_HOST/WET_PORT; MCP_HOST/MCP_PORT
+    # are dead names nothing consumes.
+    assert env["WET_HOST"] == "0.0.0.0"
+    assert env["WET_PORT"] == "9155"
     if cli.os.name == "nt":
         assert seen["kwargs"]["creationflags"] != 0
     else:
@@ -198,13 +200,29 @@ def test_spawn_server_env_and_detach_flags(tmp_path, monkeypatch):
 
     # Implicit binds must NOT pin the child to this probe's values.
     cli._spawn_server("0.0.0.0", 9155, explicit_host=False, explicit_port=False)
-    assert "MCP_HOST" not in seen["env"]
-    assert "MCP_PORT" not in seen["env"]
+    assert "WET_HOST" not in seen["env"]
+    assert "WET_PORT" not in seen["env"]
 
 
 # ---------------------------------------------------------------------------
 # wet server start: detached + foreground fallback paths
 # ---------------------------------------------------------------------------
+
+
+def test_start_without_port_ignores_live_lock_on_other_port(
+    locks_dir, monkeypatch, capsys
+):
+    """The pre-start scan keys to the RESOLVED port: a live lock on another
+    port must not block a start, so per-port multi-instance works."""
+    _write_lock(locks_dir, port=9165)
+    monkeypatch.setattr(cli, "_pid_alive", lambda pid: True)
+    fake = _FakeProc(pid=4322)
+    monkeypatch.setattr(cli, "_spawn_server", lambda *a, **k: fake)
+    with patch("wet_mcp.runtime.hull_settings", return_value=_hs(port=9166)):
+        rc = cli.main(["server", "start"])
+
+    assert rc == 0
+    assert "started: pid=4322" in capsys.readouterr().out
 
 
 def test_start_with_stale_lock_still_spawns(locks_dir, monkeypatch, capsys):

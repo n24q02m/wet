@@ -19,19 +19,22 @@ classifiers = [
 ]
 requires-python = "==3.13.*"
 dependencies = [
-    # Shared web infrastructure (SSRF, SearXNG, URL utils, ScrapingAgent + Crawl4AI transitive).
-    # wet consumes hull-web's SSRF surface (is_safe_url / safe_httpx_client) AND the
-    # remote render backends (BrowserlessClient / RemoteRenderStrategy) for the browser
-    # provider chain + the under-rendered escalation fix. (The Cloudflare Browser Rendering
-    # backend was cut in the de-host: browser rendering is native chromium or self-hosted
-    # browserless only.)
-    # R6 (2026-09-27): replaces the PyPI `n24q02m-web-core` dep — web-core lives on as
-    # the `hull_web` package inside the hull monorepo (same code, new home); the PyPI
-    # dist stays published untouched for knowledge-core until its own migration lands.
-    "hull-web>=0.1.0",
-    # Shared stack core (de-host 2026-09): token auth 3-mode, per-task model cells,
-    # limiter, lifecycle lock, OpenAI-spec provider client. Git dep, pinned rev.
-    "hull-core",
+    # Shared hull stack, consumed as ONE root-level git dist. The hull monorepo
+    # merged into a single `hull-core` distribution on 2026-10-01 (PRs #2/#4/#5,
+    # head abc27ed4): one wheel carries `hull_core` + `hull_web` +
+    # `hull_embedding_daemon`, so there is no separate `hull-web` dist and no
+    # subdirectory pin. The `[web]` extra pulls the hull_web surface wet uses:
+    # SSRF (is_safe_url / safe_httpx_client), SearXNG runner + URL utils, and
+    # ScrapingAgent (+ Crawl4AI transitively) with the remote render backends
+    # (BrowserlessClient / RemoteRenderStrategy) for the browser provider chain
+    # + the under-rendered escalation fix. (The Cloudflare Browser Rendering
+    # backend was cut in the de-host: browser rendering is native chromium or
+    # self-hosted browserless only.)
+    # History: R6 (2026-09-27) replaced the PyPI `n24q02m-web-core` dep with
+    # git pins on the hull monorepo subpackages; the 2026-10-01 merge collapsed
+    # those into this single entry. Neither `hull-web` nor `hull-core` exists
+    # on PyPI — resolution goes through [tool.uv.sources] only.
+    "hull-core[web]",
     # MCP Server
     "mcp[cli]>=1.29.1,<2",
     # HTTP Client
@@ -204,7 +207,9 @@ exclude_lines = ["pragma: no cover", "if TYPE_CHECKING:"]
 override-dependencies = ["unclecode-litellm ; sys_platform == 'unreachable'"]
 
 [tool.uv.sources]
-# Shared stack core (auth 3-mode, per-task model cells, limiter, lifecycle).
-# Pinned to the reviewed revision; bump deliberately, never via lockfile refresh.
-hull-core = { git = "https://github.com/n24q02m/hull.git", rev = "14841d05488c801d303b0f3d3cd97426f94a6e1a", subdirectory = "packages/core-py" }
-hull-web = { git = "https://github.com/n24q02m/hull.git", rev = "14841d05488c801d303b0f3d3cd97426f94a6e1a", subdirectory = "packages/web" }
+# Shared hull stack (auth 3-mode, per-task model cells, limiter, lifecycle;
+# [web] extra: SSRF/SearXNG/ScrapingAgent). Single root-level dist since the
+# 2026-10-01 monorepo merge — one pin covers both hull_core and hull_web,
+# no subdirectory.
+# Pinned to the merged revision; bump deliberately, never via lockfile refresh.
+hull-core = { git = "https://github.com/n24q02m/hull.git", rev = "abc27ed4acc5f6033795342a1c0d9a3d28adcfe7" }

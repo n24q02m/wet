@@ -15,8 +15,8 @@ from pathlib import Path
 
 from loguru import logger
 
-# Marker file to track if setup has been run
-SETUP_MARKER = Path.home() / ".wet-mcp" / ".setup-complete"
+# Marker file to track if setup has been run (legacy dir name was ~/.wet-mcp)
+SETUP_MARKER = Path.home() / ".wet" / ".setup-complete"
 
 # SearXNG install URL (zip avoids git clone filename issues)
 _SEARXNG_INSTALL_URL = (
@@ -271,8 +271,8 @@ def run_auto_setup() -> bool:
 
     success = True
 
-    # Step 1: Create config directory
-    config_dir = Path.home() / ".wet-mcp"
+    # Step 1: Create config directory (legacy dir name was ~/.wet-mcp)
+    config_dir = Path.home() / ".wet"
     config_dir.mkdir(parents=True, exist_ok=True)
     logger.debug(f"Created config directory: {config_dir}")
 

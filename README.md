@@ -68,6 +68,7 @@ mcp-name: io.github.n24q02m/wet-mcp
 - [Features](#features)
 - [Status](#status)
 - [Quick install](#quick-install)
+- [Self-host usage](#self-host-usage)
 - [Configuration](#configuration)
 - [Documentation](#documentation)
 - [Tools](#tools)
@@ -143,6 +144,82 @@ Full setup matrices live at the canonical docs site
 and the paste-to-agent snippets at
 [claude-plugins/plugins/wet-mcp/setup-with-agent.md](https://github.com/n24q02m/claude-plugins/blob/main/plugins/wet-mcp/setup-with-agent.md)
 (per Spec F single source of truth).
+
+## Self-host usage
+
+Two supported ways to run the always-listening HTTP server. In both, the MCP
+endpoint is `http://127.0.0.1:8000/mcp` (Streamable HTTP) and the config root
+is `~/.wet/` (`config.toml`, `docs.db`, `subs/`). Never run the server as a
+spawned subprocess of a client — register the endpoint in your client instead.
+
+### Dev (uv, no-auth loopback)
+
+```bash
+git clone https://github.com/n24q02m/wet && cd wet
+uv run wet config init            # writes ~/.wet/config.toml (default: auth = "no-auth")
+uv run wet                        # serves http://127.0.0.1:8000/mcp
+```
+
+`no-auth` refuses non-loopback binds — the server is localhost-only until you
+switch to token auth.
+
+### Always-on (docker)
+
+```bash
+# 1. Mint a token and its scrypt hash (hull-core canonical; the hash command
+#    never echoes the token itself)
+openssl rand -hex 32                 # the token — give it to clients, keep it secret
+uv run wet token hash <token>        # paste the output as token_hash
+
+# 2. Instance config from the example
+cp docker-config/config.example.toml docker-config/config.toml
+#    edit [server] token_hash and the [models.*] cells (see below)
+
+# 3. Data continuity (optional): carry an existing instance over by copying
+#    docs.db and subs/ into the wet-home named volume BEFORE first start:
+docker volume create wet-wet-home && \
+  docker cp ~/.wet/docs.db wet-wet-home:/docs.db && \
+  docker cp ~/.wet/subs wet-wet-home:/subs  # adjust: files land as root, chown 999:999
+
+docker compose up -d --build
+```
+
+Compose publishes `127.0.0.1:${WET_PORT:-8000}` → container `8000` (loopback
+only) and mounts `docker-config/config.toml` read-only at
+`/home/appuser/.wet/config.toml`. Persistent data (`docs.db`, `subs/`) lives in
+the `wet-home` named volume; the download/cache dir in `wet-data`. Editing the
+config takes effect on `docker compose restart`.
+
+### Consumers
+
+```bash
+# CLI (same token, JSON-RPC over HTTP not needed — use the installed CLI):
+uvx wet-mcp --help                  # or `wet <tool>` for direct tool calls
+
+# MCP client (Claude Code):
+claude mcp add --transport http wet http://127.0.0.1:8000/mcp \
+  --header "Authorization: Bearer <token>"
+
+# Raw probe:
+curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:8000/mcp \
+  -X POST -H 'Content-Type: application/json' \
+  -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}'            # 401
+curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:8000/mcp \
+  -X POST -H 'Authorization: Bearer <token>' -H 'Content-Type: application/json' \
+  -H 'Accept: application/json, text/event-stream' \
+  -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"curl","version":"0"}}}'  # 200
+```
+
+### Config: local vs cloud models
+
+The `[models.embed|rerank|chat|jev_score]` cells in `~/.wet/config.toml` are
+per-task (each its own `base_url` + `api_key` + `model`, OpenAI-spec). The
+example ships OpenRouter examples; any OpenAI-compatible endpoint works —
+cloud, or a local server such as Ollama (`base_url =
+"http://host.docker.internal:11434/v1"` from the container). Keys in the file
+are host-only material; alternatively leave `api_key = ""` and inject at start
+via `HULL_EMBED_API_KEY` / `HULL_RERANK_API_KEY` / `HULL_CHAT_API_KEY` /
+`HULL_JEV_SCORE_API_KEY`.
 
 ## Configuration
 
