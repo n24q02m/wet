@@ -25,12 +25,18 @@
   },
   "packageRules": [
     {
+      "description": "Hold every update for 7 days so a malicious or yanked release is caught before it lands",
+      "matchPackageNames": ["*"],
+      "minimumReleaseAge": "7 days"
+    },
+    {
       "matchCategories": [
         "golang"
       ],
       "postUpdateOptions": [
         "gomodTidy"
-      ]
+      ],
+      "minimumReleaseAge": "7 days"
     },
     {
       "description": "Group minor updates for review (prod scope by default)",
@@ -38,7 +44,8 @@
         "minor"
       ],
       "groupName": "minor dependencies",
-      "groupSlug": "all-minor"
+      "groupSlug": "all-minor",
+      "minimumReleaseAge": "7 days"
     },
     {
       "description": "Auto-merge dev-scope minor updates after cooldown",
@@ -88,7 +95,8 @@
       "matchManagers": [
         "github-actions"
       ],
-      "pinDigests": true
+      "pinDigests": true,
+      "minimumReleaseAge": "7 days"
     },
     {
       "description": "Pin PSR to v10 — block Renovate downgrades",
@@ -98,28 +106,32 @@
       "matchManagers": [
         "github-actions"
       ],
-      "allowedVersions": ">=10.0.0"
+      "allowedVersions": ">=10.0.0",
+      "minimumReleaseAge": "7 days"
     },
     {
       "description": "Pin Python runtime to 3.13.x",
       "matchPackageNames": [
         "python"
       ],
-      "allowedVersions": ">=3.13.0 <3.14.0"
+      "allowedVersions": ">=3.13.0 <3.14.0",
+      "minimumReleaseAge": "7 days"
     },
     {
       "description": "Pin Node.js runtime to 24.x",
       "matchPackageNames": [
         "node"
       ],
-      "allowedVersions": ">=24.0.0 <25.0.0"
+      "allowedVersions": ">=24.0.0 <25.0.0",
+      "minimumReleaseAge": "7 days"
     },
     {
       "description": "Pin Java runtime to 21.x LTS",
       "matchPackageNames": [
         "java"
       ],
-      "allowedVersions": ">=21.0.0 <22.0.0"
+      "allowedVersions": ">=21.0.0 <22.0.0",
+      "minimumReleaseAge": "7 days"
     },
     {
       "description": "Disable runtime version updates from mise (pinned in CLAUDE.md)",
@@ -131,7 +143,8 @@
         "node",
         "java"
       ],
-      "enabled": false
+      "enabled": false,
+      "minimumReleaseAge": "7 days"
     }
   ],
   "semanticCommits": "enabled",
