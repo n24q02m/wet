@@ -1032,7 +1032,7 @@ wheels = [
 [[package]]
 name = "hull-core"
 version = "0.1.0"
-source = { git = "https://github.com/n24q02m/hull.git?rev=240959d75645bfb49273608c08eb2db34809b812#240959d75645bfb49273608c08eb2db34809b812" }
+source = { git = "https://github.com/n24q02m/hull.git?rev=5e29415b64e4686fedacf745ba9fc1a7bf185dee#5e29415b64e4686fedacf745ba9fc1a7bf185dee" }
 dependencies = [
     { name = "fastmcp" },
     { name = "httpcore" },
@@ -3212,9 +3212,9 @@ requires-dist = [
     { name = "fastretrieval", specifier = ">=1.1.0,<2" },
     { name = "greenlet", specifier = "<3.5.6" },
     { name = "httpx" },
-    { name = "hull-core", extras = ["identity"], marker = "extra == 'identity'", git = "https://github.com/n24q02m/hull.git?rev=240959d75645bfb49273608c08eb2db34809b812" },
-    { name = "hull-core", extras = ["invisible"], marker = "extra == 'invisible'", git = "https://github.com/n24q02m/hull.git?rev=240959d75645bfb49273608c08eb2db34809b812" },
-    { name = "hull-core", extras = ["web"], git = "https://github.com/n24q02m/hull.git?rev=240959d75645bfb49273608c08eb2db34809b812" },
+    { name = "hull-core", extras = ["identity"], marker = "extra == 'identity'", git = "https://github.com/n24q02m/hull.git?rev=5e29415b64e4686fedacf745ba9fc1a7bf185dee" },
+    { name = "hull-core", extras = ["invisible"], marker = "extra == 'invisible'", git = "https://github.com/n24q02m/hull.git?rev=5e29415b64e4686fedacf745ba9fc1a7bf185dee" },
+    { name = "hull-core", extras = ["web"], git = "https://github.com/n24q02m/hull.git?rev=5e29415b64e4686fedacf745ba9fc1a7bf185dee" },
     { name = "jsonschema", specifier = ">=4.26.0" },
     { name = "langsmith", specifier = ">=0.10.10" },
     { name = "loguru" },

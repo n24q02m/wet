@@ -219,4 +219,4 @@ override-dependencies = ["unclecode-litellm ; sys_platform == 'unreachable'"]
 # 2026-10-01 monorepo merge — one pin covers both hull_core and hull_web,
 # no subdirectory.
 # Pinned to the merged revision; bump deliberately, never via lockfile refresh.
-hull-core = { git = "https://github.com/n24q02m/hull.git", rev = "240959d75645bfb49273608c08eb2db34809b812" }
+hull-core = { git = "https://github.com/n24q02m/hull.git", rev = "5e29415b64e4686fedacf745ba9fc1a7bf185dee" }
