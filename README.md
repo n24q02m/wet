@@ -298,6 +298,16 @@ across both the `extract` strategy chain and the Crawl4AI-backed `crawl`,
 deployment behaviour; configure this process-level policy explicitly when the
 operator requires robots enforcement.
 
+**Invisible tier + seeded identity** (opt-in) -- append `invisible` to
+`BROWSER_BACKENDS` to add a stealth-Firefox engine tier as the last escalation
+step (`hull-core[invisible]` extra: `pip install "wet-mcp[invisible]"`). One
+coherent browser identity spans the whole chain: seed it with `WET_IDENTITY_SEED`
+(or let wet derive once and persist it under `~/.wet/subs/<sub>/identity.json`)
+and install the `wet-mcp[identity]` extra. Without the extras the chain keeps
+legacy behaviour (warn-once). `STEALTHFOX_BINARY` points at a patched Firefox
+build to skip the engine download; `IDENTITY_PROFILE_DIR` (default
+`~/.wet/subs/<sub>/profiles`) keeps persistent browser profiles per namespace.
+
 **Disable local fallbacks** -- opt out of the heavy in-process local fallbacks
 per capability (e.g. on a slim container that renders/searches/embeds via cloud
 backends only): `DISABLE_LOCAL_BROWSER`, `DISABLE_LOCAL_SEARCH`,
