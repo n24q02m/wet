@@ -237,6 +237,28 @@ async def run_warmup() -> dict:
             }
         )
 
+    # 1b. Pre-download the GeoIP mmdb used by the identity layer so the first
+    # identity build (egress) does not pay the download inside a request path.
+    # Best-effort: the [identity] extra may be absent (legacy behaviour) or the
+    # host may be offline — both are warnings, never warmup failures.
+    try:
+        from invisible_core._geoip_db import (
+            ensure_geoip_mmdb,  # ty: ignore[unresolved-import]  # optional [identity] extra
+        )
+
+        mmdb_path = await asyncio.to_thread(ensure_geoip_mmdb)
+        steps.append({"step": "geoip_mmdb", "status": "ok", "path": str(mmdb_path)})
+    except ImportError:
+        steps.append(
+            {
+                "step": "geoip_mmdb",
+                "status": "skipped",
+                "reason": "hull-core[identity] extra not installed",
+            }
+        )
+    except Exception as exc:
+        steps.append({"step": "geoip_mmdb", "status": "warning", "error": str(exc)})
+
     # 2. Check cloud models if API keys are configured
     cloud_ready_result = await _warmup_cloud_models(steps)
     if cloud_ready_result:
