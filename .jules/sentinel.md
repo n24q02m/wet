@@ -39,3 +39,7 @@ looks like, so the next scan starts from the answer rather than the question.
 **Vulnerability:** Raw `PRAGMA table_info({table})` using f-strings allows for SQL injection if the table identifier is unsanitized user input in `tests/test_d1_schema_0002.py`.
 **Learning:** SQLite introduced table-valued functions for introspection (`pragma_table_info(?)`) which do support safe parameterization using bound variables.
 **Prevention:** Always use parameterized `SELECT name FROM pragma_table_info(?)` instead of using raw dynamic `PRAGMA` queries using string concatenation or f-strings. Note that when migrating from raw `PRAGMA` to `SELECT name FROM pragma_...`, the target column is returned at index 0 rather than index 1.
+## 2026-09-30 - Path Hijacking in subprocess.run for taskkill
+**Vulnerability:** The `subprocess.run` calls in `src/wet_mcp/cli.py` used a partial executable name (`"taskkill"`) instead of an absolute path. This is susceptible to path hijacking where an attacker could control the `PATH` environment variable to execute a malicious binary, which is flagged by Bandit as B607.
+**Learning:** Hardcoded commands in `subprocess` can still be vulnerable to path hijacking if absolute paths are not used. Using `os.environ.get("WINDIR")` is a safe way to resolve built-in Windows executables.
+**Prevention:** Always use the absolute path for system binaries when calling `subprocess.run`.
