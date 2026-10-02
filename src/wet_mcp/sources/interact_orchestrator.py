@@ -24,13 +24,15 @@ from __future__ import annotations
 import hashlib
 import re
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from loguru import logger
 
 from wet_mcp.config import settings
 from wet_mcp.sources._browser_sessions import get_pool
-from wet_mcp.sources.interact_ops import InteractOps, open_interact_session
+
+if TYPE_CHECKING:
+    from hull_web.browsers.interact import InteractOps
 
 _VALID_ACTION_TYPES = {"click", "fill", "submit", "wait"}
 _DEFAULT_TIMEOUT_MS = 10000
@@ -164,6 +166,8 @@ async def run_interact(
             page = ops._page  # type: ignore[attr-defined]
             persistent = True
         else:
+            from hull_web.browsers.interact import open_interact_session
+
             pw, browser, page, ops = await open_interact_session(url)
 
         # Apply each action in order; first failure short-circuits.

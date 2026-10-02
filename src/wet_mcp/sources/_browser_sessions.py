@@ -83,7 +83,7 @@ class SessionPool:
                 lru = self._sessions.pop(lru_id)
                 await lru.close()
 
-            from wet_mcp.sources.interact_ops import open_interact_session
+            from hull_web.browsers.interact import open_interact_session
 
             pw, browser, page, ops = await open_interact_session(url)
             entry = _SessionEntry(playwright=pw, browser=browser, page=page, ops=ops)
