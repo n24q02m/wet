@@ -74,8 +74,10 @@ _REGION_RE = re.compile(r"^[A-Za-z]{2}$")
 _RERANK_CANDIDATE_MULTIPLIER = 3
 
 # Module-level state (set during lifespan). ``_web_cache`` routes to the
-# calling namespace's own cache file -- see :class:`_PerSubCache`.
-_web_cache: "_PerSubCache | None" = None
+# calling namespace's own cache file -- see :class:`_PerSubCache`. A bare
+# :class:`~wet_mcp.cache.WebCache` is also valid there (tests swap one in, and
+# single-namespace deployments can point straight at one file).
+_web_cache: "WebCache | _PerSubCache | None" = None
 _docs_db: DocsDB | None = None
 _embedding_dims: int = 0
 _backend_init_task: asyncio.Task | None = None
@@ -149,30 +151,43 @@ class _PerSubCache:
                 self._caches[sub] = cache
         return cache
 
-    def get(self, action, params, sub):  # noqa: ANN001, ANN201
+    def get(self, action: str, params: dict, sub: str = "default") -> str | None:
         return self._for(sub).get(action, params, sub)
 
-    def get_with_age(self, action, params, sub):  # noqa: ANN001, ANN201
+    def get_with_age(
+        self, action: str, params: dict, sub: str = "default"
+    ) -> tuple[str, int] | None:
         return self._for(sub).get_with_age(action, params, sub)
 
-    def get_stale_with_age(self, action, params, sub):  # noqa: ANN001, ANN201
+    def get_stale_with_age(
+        self, action: str, params: dict, sub: str = "default"
+    ) -> tuple[str, int] | None:
         return self._for(sub).get_stale_with_age(action, params, sub)
 
-    def set(self, action, params, content, ttl_override=None, sub=None):  # noqa: ANN001, ANN201
+    def set(
+        self,
+        action: str,
+        params: dict,
+        content: str,
+        ttl_override: int | None = None,
+        sub: str = "default",
+    ) -> None:
         return self._for(sub or "default").set(
             action, params, content, ttl_override, sub or "default"
         )
 
-    def record_snapshot(self, url, content, sub):  # noqa: ANN001, ANN201
+    def record_snapshot(self, url: str, content: str, sub: str = "default") -> None:
         return self._for(sub).record_snapshot(url, content, sub)
 
-    def latest_snapshots(self, url, n, sub):  # noqa: ANN001, ANN201
+    def latest_snapshots(
+        self, url: str, n: int = 2, sub: str = "default"
+    ) -> list[dict]:
         return self._for(sub).latest_snapshots(url, n, sub)
 
-    def clear(self, action, sub):  # noqa: ANN001, ANN201
+    def clear(self, action: str | None = None, sub: str = "default") -> int:
         return self._for(sub).clear(action, sub)
 
-    def stats(self, sub=None):  # noqa: ANN001, ANN201
+    def stats(self, sub: str | None = None) -> dict:
         if sub:
             return self._for(sub).stats(sub)
         merged: dict[str, int] = {}
@@ -566,7 +581,7 @@ async def _init_reranker_backend() -> None:
     branch: ``RERANK_ENABLED=false`` disables reranking entirely (empty
     backend; searches keep source order).
     """
-    from wet_mcp.reranker import clear_reranker, init_reranker
+    from wet_mcp.reranker import CloudReranker, clear_reranker, init_reranker
     from wet_mcp.runtime import cell_configured
 
     if not settings.rerank_enabled:
@@ -579,7 +594,10 @@ async def _init_reranker_backend() -> None:
             reranker = await asyncio.to_thread(init_reranker, "cloud", cell.model)
             # CloudReranker is async (hull-core httpx client); LocalReranker
             # is sync ONNX and needs a worker thread.
-            available = await reranker.check_available()
+            if isinstance(reranker, CloudReranker):
+                available = await reranker.check_available()
+            else:
+                available = await asyncio.to_thread(reranker.check_available)
             if available:
                 logger.info(f"Reranker: {cell.model} via {cell.base_url}")
                 return
@@ -1375,7 +1393,12 @@ async def search(  # noqa: PLR0913
             )
             if _web_cache and not result.startswith("Error"):
                 await asyncio.to_thread(
-                    _web_cache.set, "research", cache_params, result, current_sub()
+                    _web_cache.set,
+                    "research",
+                    cache_params,
+                    result,
+                    None,
+                    current_sub(),
                 )
             return _payload(result)
 
@@ -1662,7 +1685,7 @@ async def extract(  # noqa: PLR0913
             )
             if _web_cache and not result.startswith("Error"):
                 await asyncio.to_thread(
-                    _web_cache.set, "extract", cache_params, result, current_sub()
+                    _web_cache.set, "extract", cache_params, result, None, current_sub()
                 )
             return _payload(result)
 
@@ -1709,7 +1732,7 @@ async def extract(  # noqa: PLR0913
             )
             if _web_cache and not result.startswith("Error"):
                 await asyncio.to_thread(
-                    _web_cache.set, "crawl", cache_params, result, current_sub()
+                    _web_cache.set, "crawl", cache_params, result, None, current_sub()
                 )
             return _payload(result)
 
@@ -1736,7 +1759,7 @@ async def extract(  # noqa: PLR0913
             )
             if _web_cache and not result.startswith("Error"):
                 await asyncio.to_thread(
-                    _web_cache.set, "map", cache_params, result, current_sub()
+                    _web_cache.set, "map", cache_params, result, None, current_sub()
                 )
             return _payload(result)
 

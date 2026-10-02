@@ -13,45 +13,12 @@ for better precision. Pipeline: retrieve top-30 -> rerank -> return top-N.
 
 from __future__ import annotations
 
-from typing import Protocol
-
 from loguru import logger
 
 # ---------------------------------------------------------------------------
-# Backend Protocol
+# Backends
 # ---------------------------------------------------------------------------
 _AUTH_ERROR_PATTERNS = ("401", "403", "invalid", "unauthorized", "api key")
-
-
-class RerankerBackend(Protocol):
-    """Protocol for reranker backends.
-
-    Note the asymmetry kept from the dual-backend design: the local ONNX leg
-    is sync (CPU-bound; callers run it via ``asyncio.to_thread``), while the
-    cloud leg is async (it awaits the shared OpenAI-spec HTTP client).
-    """
-
-    def rerank(
-        self,
-        query: str,
-        documents: list[str],
-        top_n: int = 10,
-    ) -> list[tuple[int, float]]:
-        """Rerank documents against a query.
-
-        Args:
-            query: Search query text.
-            documents: List of document texts to rerank.
-            top_n: Return top N results.
-
-        Returns:
-            List of (original_index, score) tuples, sorted by score descending.
-        """
-        ...
-
-    def check_available(self) -> bool:
-        """Check if the reranker backend is available."""
-        ...
 
 
 # ---------------------------------------------------------------------------
@@ -196,6 +163,16 @@ class LocalReranker:
             return False
 
 
+# Backend contract, kept from the dual-backend design: the local ONNX leg is
+# sync (CPU-bound; callers run it via ``asyncio.to_thread``), while the cloud
+# leg is async (it awaits the shared OpenAI-spec HTTP client). Every call site
+# dispatches on the concrete class (``isinstance(reranker, CloudReranker)``),
+# so the shared type is the union of the two real implementations rather than
+# a Protocol -- no single sync/async member shape is honestly satisfiable by
+# both legs.
+RerankerBackend = CloudReranker | LocalReranker
+
+
 # ---------------------------------------------------------------------------
 # Factory
 # ---------------------------------------------------------------------------
@@ -278,10 +255,11 @@ def init_reranker(backend_type: str, model: str | None = None) -> RerankerBacken
                 "cloud reranking requested but the [models.rerank] cell is not "
                 "configured: set base_url + api_key + model in ~/.wet/config.toml"
             )
-        _backend = CloudReranker(provider_client("rerank"))
+        backend = CloudReranker(provider_client("rerank"))
     elif backend_type == "local":
-        _backend = LocalReranker(model)
+        backend = LocalReranker(model)
     else:
         raise ValueError(f"Unknown reranker backend type: {backend_type}")
 
-    return _backend
+    _backend = backend
+    return backend

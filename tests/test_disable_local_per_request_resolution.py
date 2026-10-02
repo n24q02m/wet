@@ -363,8 +363,23 @@ class TestSearchSignalsKeywordOnlyRetrieval:
         from wet_mcp import server
 
         class _FakeBackend:
-            async def embed_single(self, text, dimensions=None):
+            async def embed_texts(
+                self, texts: list[str], dimensions: int | None = None
+            ) -> list[list[float]]:
+                return [[0.5] * 4 for _ in texts]
+
+            async def embed_single(
+                self, text: str, dimensions: int | None = None
+            ) -> list[float]:
                 return [0.5] * 4
+
+            async def embed_single_query(
+                self, text: str, dimensions: int | None = None
+            ) -> list[float]:
+                return [0.5] * 4
+
+            async def check_available(self) -> int:
+                return 4
 
         embedder_mod._backend = _FakeBackend()
 

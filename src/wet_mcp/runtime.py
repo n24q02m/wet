@@ -26,6 +26,7 @@ from hull_core.auth.middleware import Authenticator
 from hull_core.auth.users import User, load_users
 from hull_core.config.models import ModelCell, resolve_model_cells
 from hull_core.config.settings import CONFIG_TEMPLATE, HullSettings, load_settings
+from hull_core.limits.limiter import SlidingWindowLimiter
 from hull_core.providers.openai_spec import OpenAICompatClient
 
 # Default embedding dimensions for sqlite-vec when EMBEDDING_DIMS is unset.
@@ -78,11 +79,9 @@ def load_users_for(settings: HullSettings) -> dict[str, User] | None:
 def build_authenticator(
     settings: HullSettings | None = None,
     *,
-    limiter: object | None = None,
+    limiter: SlidingWindowLimiter | None = None,
 ) -> Authenticator:
     """Assemble the hull Authenticator from wet's instance config."""
-    from hull_core.limits.limiter import SlidingWindowLimiter
-
     settings = settings if settings is not None else hull_settings()
     users = load_users_for(settings)
     return Authenticator(
