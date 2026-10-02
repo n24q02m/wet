@@ -99,3 +99,7 @@ closed pull request.
 ## 2025-02-14 - Slice large strings before lstrip
 **Learning:** When validating the prefix of a very large string (e.g., an entire HTTP response) after whitespace removal, avoid calling `.strip()` or `.lstrip()` on the whole string as it allocates a massive copy if leading whitespace is present.
 **Action:** Slice a small prefix first (e.g., `content[:100].lstrip().startswith(...)`) to minimize memory allocation overhead.
+
+## 2025-03-01 - Avoid set allocation for repeated character check
+**Learning:** Checking if a string consists entirely of a single repeated character using `len(set(s)) == 1` allocates a set and incurs significant overhead in hot paths.
+**Action:** Use string multiplication and equality comparison (e.g., `s[0] * len(s) == s`) instead to avoid set allocation and achieve measurable speedups.
