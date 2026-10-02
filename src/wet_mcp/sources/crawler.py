@@ -224,10 +224,35 @@ _scraping_agent: ScrapingAgent | None = None
 _agent_lock = asyncio.Lock()
 
 
-def _build_headless_strategies(stealth: bool) -> dict[str, Any]:
+def _resolve_identity() -> Any:
+    """One seeded IdentityProfile for the chain; None when the extra is absent.
+
+    ImportError is expected on slim installs (``hull-core[identity]`` not
+    installed): warn once and keep legacy behavior instead of failing
+    extraction. Any other error propagates - a broken identity layer is a bug.
+    """
+    try:
+        from hull_web.fingerprint import build_identity
+
+        from wet_mcp.identity import get_or_create_identity_seed
+    except ImportError:
+        return None
+    try:
+        return build_identity(seed=get_or_create_identity_seed())
+    except ImportError:
+        # The [identity] extra itself is absent at runtime (no invisible_core):
+        # same designed fallback as above - legacy behavior, warn once per build.
+        logger.warning(
+            "hull-core[identity] not installed; strategies run without seeded identity"
+        )
+        return None
+
+
+def _build_headless_strategies(stealth: bool, identity: Any = None) -> dict[str, Any]:
     """Resolve the BROWSER_BACKENDS chain into named headless strategies.
 
-    Each headless backend (native chromium / self-host browserless) enters the
+    Each headless backend (native chromium / self-host browserless / stealth
+    invisible engine) enters the
     agent chain as its own strategy, so the agent's existing
     escalate-on-validation-failure machinery provides runtime fallback between
     them (e.g. a 5xx/timeout on native advances to browserless).
@@ -245,7 +270,7 @@ def _build_headless_strategies(stealth: bool) -> dict[str, Any]:
         try:
             if backend == "native":
                 out["headless"] = HeadlessStrategy(
-                    timeout=settings.crawler_timeout, stealth=stealth
+                    timeout=settings.crawler_timeout, stealth=stealth, identity=identity
                 )
             elif backend == "browserless":
                 client = BrowserlessClient(
@@ -254,13 +279,30 @@ def _build_headless_strategies(stealth: bool) -> dict[str, Any]:
                     timeout=settings.crawler_timeout,
                 )
                 out["browserless"] = RemoteRenderStrategy(client)
+            elif backend == "invisible":
+                from hull_web.browsers.invisible import InvisibleProvider
+                from hull_web.scraper.strategies import InvisibleStrategy
+
+                from wet_mcp.identity import (
+                    get_or_create_identity_seed,
+                    identity_profile_dir,
+                )
+
+                out["invisible"] = InvisibleStrategy(
+                    timeout=settings.crawler_timeout,
+                    provider=InvisibleProvider(
+                        seed=get_or_create_identity_seed(),
+                        profile_dir=identity_profile_dir(),
+                        binary_path=os.environ.get("STEALTHFOX_BINARY"),
+                    ),
+                )
             else:
                 logger.warning(f"Unknown browser backend {backend!r}; skipping")
         except ValueError as exc:
             logger.warning(f"Skipping browser backend {backend!r}: {exc}")
     if not out and not settings.disable_local_browser:
         out["headless"] = HeadlessStrategy(
-            timeout=settings.crawler_timeout, stealth=stealth
+            timeout=settings.crawler_timeout, stealth=stealth, identity=identity
         )
     return out
 
@@ -269,20 +311,30 @@ def _build_scraping_agent(stealth: bool = True) -> ScrapingAgent:
     """Build a ScrapingAgent with the canonical wet strategy chain.
 
     Order matches spec §4.2 escalation: ``basic_http`` → ``tls_spoof`` → the
-    headless provider chain (``native`` / ``browserless``, resolved from
-    BROWSER_BACKENDS). ``api_direct``/
-    ``patchright`` are intentionally omitted (api_direct rarely beats basic_http
-    on arbitrary URLs; patchright pulls in heavier optional deps); ``captcha`` is
-    appended separately as a key-gated tier (see _build_scraping_agent callers).
+    headless provider chain (``native`` / ``browserless`` / ``invisible``,
+    resolved from BROWSER_BACKENDS). ``api_direct``/``patchright`` are
+    intentionally omitted (api_direct rarely beats basic_http on arbitrary
+    URLs; patchright pulls in heavier optional deps); ``captcha`` is appended
+    separately as a key-gated tier (see _build_scraping_agent callers).
+
+    When ``hull-core[identity]`` is installed, one seeded IdentityProfile is
+    built (env/settings/persisted seed) and passed to every HTTP/TLS/headless
+    strategy so the whole chain presents one coherent person. Without the
+    extra, strategies run with legacy per-strategy behavior (warn once).
 
     ``respect_robots`` follows ``RESPECT_ROBOTS_TXT``. The setting defaults to
     False to preserve wet's historical behaviour for existing deployments.
     """
+    identity = _resolve_identity()
     strategies: dict[str, Any] = {
-        "basic_http": BasicHTTPStrategy(timeout=settings.crawler_timeout),
-        "tls_spoof": TLSSpoofStrategy(timeout=settings.crawler_timeout),
+        "basic_http": BasicHTTPStrategy(
+            timeout=settings.crawler_timeout, identity=identity
+        ),
+        "tls_spoof": TLSSpoofStrategy(
+            timeout=settings.crawler_timeout, identity=identity
+        ),
     }
-    strategies.update(_build_headless_strategies(stealth))
+    strategies.update(_build_headless_strategies(stealth, identity=identity))
     # Optional, key-gated CAPTCHA tier: appended LAST so it is only reached after
     # the lighter strategies fail validation (e.g. on a Cloudflare Turnstile).
     # Lazy-imported so the heavier CapSolver/patchright path loads only when a key

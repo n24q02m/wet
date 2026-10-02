@@ -49,7 +49,11 @@ class _SessionEntry:
 
 
 class SessionPool:
-    """TTL + LRU bounded pool of patchright sessions keyed by session id."""
+    """TTL + LRU bounded pool of patchright sessions keyed by subject + session id.
+
+    Keys are ``f"{current_sub()}:{session_id}"`` (E1-f): two namespaces on one
+    process never share a browser context, mirroring the per-sub cache layout.
+    """
 
     def __init__(
         self,
@@ -62,6 +66,13 @@ class SessionPool:
         self._lock = asyncio.Lock()
         self._gc_task: asyncio.Task | None = None
 
+    @staticmethod
+    def _key(session_id: str) -> str:
+        """Fold the caller's namespace into the key (isolation by default)."""
+        from wet_mcp.runtime import current_sub
+
+        return f"{current_sub()}:{session_id}"
+
     async def get(self, session_id: str, url: str) -> Any:
         """Return cached ops for ``session_id`` or open + cache a new one.
 
@@ -69,8 +80,9 @@ class SessionPool:
         navigates there). Reusing an existing session does NOT re-navigate
         unless the caller explicitly does so via ``ops``.
         """
+        key = self._key(session_id)
         async with self._lock:
-            entry = self._sessions.get(session_id)
+            entry = self._sessions.get(key)
             if entry is not None:
                 entry.last_used = time.monotonic()
                 self._maybe_start_gc()
@@ -83,18 +95,18 @@ class SessionPool:
                 lru = self._sessions.pop(lru_id)
                 await lru.close()
 
-            from wet_mcp.sources.interact_ops import open_interact_session
+            from hull_web.browsers.interact import open_interact_session
 
             pw, browser, page, ops = await open_interact_session(url)
             entry = _SessionEntry(playwright=pw, browser=browser, page=page, ops=ops)
-            self._sessions[session_id] = entry
+            self._sessions[key] = entry
             self._maybe_start_gc()
             return ops
 
     async def close(self, session_id: str) -> None:
         """Explicitly close + drop one session."""
         async with self._lock:
-            entry = self._sessions.pop(session_id, None)
+            entry = self._sessions.pop(self._key(session_id), None)
         if entry is not None:
             await entry.close()
 

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import sys
+import types
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -43,11 +45,11 @@ def _fake_browser(monkeypatch):
         )
         return pw, browser, page, ops
 
-    monkeypatch.setattr(
-        "wet_mcp.sources.interact_orchestrator.open_interact_session", fake
-    )
-    # Also patch the import inside _browser_sessions for session reuse path.
-    monkeypatch.setattr("wet_mcp.sources.interact_ops.open_interact_session", fake)
+    # The orchestrator + pool lazy-import open_interact_session from hull_web
+    # (post-E1-a cutover); stub that module so no real browser is launched.
+    stub = types.ModuleType("hull_web.browsers.interact")
+    stub.open_interact_session = fake
+    monkeypatch.setitem(sys.modules, "hull_web.browsers.interact", stub)
     return counter
 
 

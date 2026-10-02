@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import sys
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -32,7 +33,13 @@ def _fake_open_session(monkeypatch):
         ops._n = counter["n"]
         return pw, browser, page, ops
 
-    monkeypatch.setattr("wet_mcp.sources.interact_ops.open_interact_session", fake)
+    # The pool lazy-imports open_interact_session from hull_web (post-E1-a
+    # cutover); stub that module so no real browser is launched.
+    import types
+
+    stub = types.ModuleType("hull_web.browsers.interact")
+    stub.open_interact_session = fake
+    monkeypatch.setitem(sys.modules, "hull_web.browsers.interact", stub)
     return counter
 
 
@@ -74,9 +81,9 @@ async def test_max_concurrent_evicts_lru(_fake_open_session, monkeypatch):
         # Third session should evict 'a' (oldest last_used).
         await pool.get("c", "https://c")
         async with pool._lock:
-            assert "a" not in pool._sessions
-            assert "b" in pool._sessions
-            assert "c" in pool._sessions
+            assert pool._key("a") not in pool._sessions
+            assert pool._key("b") in pool._sessions
+            assert pool._key("c") in pool._sessions
         # 'a' was closed (browser.close + playwright.stop)
         # We can't reach into the closed entry directly, but counter
         # reflects 3 distinct opens.
@@ -92,10 +99,10 @@ async def test_gc_evicts_after_ttl(_fake_open_session, monkeypatch):
         await pool.get("stale", "https://x")
         # Force last_used into the past so gc() considers it stale.
         async with pool._lock:
-            pool._sessions["stale"].last_used -= 10
+            pool._sessions[pool._key("stale")].last_used -= 10
         await pool.gc()
         async with pool._lock:
-            assert "stale" not in pool._sessions
+            assert pool._key("stale") not in pool._sessions
     finally:
         await pool.close_all()
 
@@ -107,8 +114,8 @@ async def test_close_specific_session(_fake_open_session, _fresh_pool):
     await pool.get("b", "https://b")
     await pool.close("a")
     async with pool._lock:
-        assert "a" not in pool._sessions
-        assert "b" in pool._sessions
+        assert pool._key("a") not in pool._sessions
+        assert pool._key("b") in pool._sessions
     await pool.close_all()
 
 
