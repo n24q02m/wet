@@ -1,0 +1,156 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "config:recommended",
+    ":semanticCommits"
+  ],
+  "schedule": [
+    "before 5am"
+  ],
+  "timezone": "Asia/Ho_Chi_Minh",
+  "prConcurrentLimit": 5,
+  "prHourlyLimit": 3,
+  "labels": [
+    "dependencies"
+  ],
+  "rangeStrategy": "widen",
+  "lockFileMaintenance": {
+    "enabled": true,
+    "schedule": [
+      "before 5am"
+    ],
+    "automerge": true,
+    "automergeType": "pr",
+    "commitMessageAction": "lock file maintenance"
+  },
+  "packageRules": [
+    {
+      "description": "Hold every update for 7 days so a malicious or yanked release is caught before it lands",
+      "matchPackageNames": ["*"],
+      "minimumReleaseAge": "7 days"
+    },
+    {
+      "matchCategories": [
+        "golang"
+      ],
+      "postUpdateOptions": [
+        "gomodTidy"
+      ],
+      "minimumReleaseAge": "7 days"
+    },
+    {
+      "description": "Group minor updates for review (prod scope by default)",
+      "matchUpdateTypes": [
+        "minor"
+      ],
+      "groupName": "minor dependencies",
+      "groupSlug": "all-minor",
+      "minimumReleaseAge": "7 days"
+    },
+    {
+      "description": "Auto-merge dev-scope minor updates after cooldown",
+      "matchUpdateTypes": [
+        "minor"
+      ],
+      "matchDepTypes": [
+        "devDependencies",
+        "dependency-groups",
+        "tool.uv.dev-dependencies",
+        "tool.pdm.dev-dependencies"
+      ],
+      "groupName": "non-major dev dependencies",
+      "groupSlug": "non-major-dev",
+      "automerge": true,
+      "automergeType": "pr",
+      "minimumReleaseAge": "7 days"
+    },
+    {
+      "description": "Auto-merge patch updates after cooldown",
+      "matchUpdateTypes": [
+        "patch"
+      ],
+      "groupName": "patch dependencies",
+      "groupSlug": "all-patch",
+      "automerge": true,
+      "automergeType": "pr",
+      "minimumReleaseAge": "7 days"
+    },
+    {
+      "description": "Auto-merge GitHub Actions digest updates after cooldown",
+      "matchManagers": [
+        "github-actions"
+      ],
+      "matchUpdateTypes": [
+        "digest",
+        "pinDigest"
+      ],
+      "groupName": "github-actions digests",
+      "groupSlug": "gha-digests",
+      "automerge": true,
+      "automergeType": "pr",
+      "minimumReleaseAge": "7 days"
+    },
+    {
+      "description": "Pin GitHub Actions to SHA for security",
+      "matchManagers": [
+        "github-actions"
+      ],
+      "pinDigests": true,
+      "minimumReleaseAge": "7 days"
+    },
+    {
+      "description": "Pin PSR to v10 — block Renovate downgrades",
+      "matchPackageNames": [
+        "/^python-semantic-release//"
+      ],
+      "matchManagers": [
+        "github-actions"
+      ],
+      "allowedVersions": ">=10.0.0",
+      "minimumReleaseAge": "7 days"
+    },
+    {
+      "description": "Pin Python runtime to 3.13.x",
+      "matchPackageNames": [
+        "python"
+      ],
+      "allowedVersions": ">=3.13.0 <3.14.0",
+      "minimumReleaseAge": "7 days"
+    },
+    {
+      "description": "Pin Node.js runtime to 24.x",
+      "matchPackageNames": [
+        "node"
+      ],
+      "allowedVersions": ">=24.0.0 <25.0.0",
+      "minimumReleaseAge": "7 days"
+    },
+    {
+      "description": "Pin Java runtime to 21.x LTS",
+      "matchPackageNames": [
+        "java"
+      ],
+      "allowedVersions": ">=21.0.0 <22.0.0",
+      "minimumReleaseAge": "7 days"
+    },
+    {
+      "description": "Disable runtime version updates from mise (pinned in CLAUDE.md)",
+      "matchManagers": [
+        "mise"
+      ],
+      "matchDepNames": [
+        "python",
+        "node",
+        "java"
+      ],
+      "enabled": false,
+      "minimumReleaseAge": "7 days"
+    }
+  ],
+  "semanticCommits": "enabled",
+  "commitMessagePrefix": "fix(deps):",
+  "commitMessageAction": "update",
+  "commitMessageTopic": "{{depName}}",
+  "semanticCommitType": "fix",
+  "semanticCommitScope": "deps"
+}

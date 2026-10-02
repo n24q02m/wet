@@ -1,0 +1,46 @@
+# Git
+.git
+.github
+
+# IDE
+.vscode
+
+# Cache
+.ruff_cache
+.pytest_cache
+__pycache__
+
+# Development
+tests/
+temp/
+docs/
+*.md
+!README.md
+
+# Docker
+Dockerfile
+docker-compose.yml
+
+# Build artifacts + local state — NOT needed in the container image and they
+# bloat the build context (node_modules ~243MB, .venv, wrangler local state),
+# making the context transfer crawl (every build was effectively re-shipping
+# 243MB+). The CF worker bundle uses node_modules locally via `wrangler deploy`,
+# never inside the container image.
+node_modules/
+.venv/
+.wrangler/
+.wrangler-dryrun/
+wrangler.deploy.jsonc
+
+# Config
+.pre-commit-config.yaml
+.editorconfig
+.mise.toml
+.python-version
+.release-please-manifest*.json
+release-please-config*.json
+CODE_OF_CONDUCT.md
+CONTRIBUTING.md
+SECURITY.md
+LICENSE
+CHANGELOG.md

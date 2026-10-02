@@ -1,0 +1,126 @@
+# Pre-commit Hooks Configuration
+# Installation: https://pre-commit.com/
+#
+# Quick start:
+#   1. Install hooks: uv run pre-commit install
+#   2. Run manually: uv run pre-commit run --all-files
+#
+# Bypass checks: git commit --no-verify (use only in emergency)
+
+default_language_version:
+  python: python3.13
+
+repos:
+  # ============================================================================
+  # Security: Secret Detection (MUST be first — blocks commit if secrets found)
+  # ============================================================================
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: 83d9cd684c87d95d656c1458ef04895a7f1cbd8e # v8.30.1
+    hooks:
+      - id: gitleaks
+        name: gitleaks (detect secrets)
+
+  # ============================================================================
+  # Python (Ruff + ty)
+  # ============================================================================
+
+  # Ruff: Fast Python linter and formatter
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: e05c5c0818279e5ac248ac9e954431ba58865e61 # v0.15.7
+    hooks:
+      - id: ruff
+        name: ruff lint
+        args: [--fix, --target-version=py313]
+      - id: ruff-format
+        name: ruff format
+
+  # ty: Static type checker for Python
+  - repo: local
+    hooks:
+      - id: ty
+        name: ty type check
+        entry: uv run --no-sync ty check
+        language: system
+        types: [python]
+        pass_filenames: false
+
+  # Pytest: Run tests
+  - repo: local
+    hooks:
+      - id: pytest
+        name: pytest (Python)
+        # Shared Windows workspaces can pause the async/DNS fixture over 30s
+        # while other harnesses run; 120s still fails a genuinely stuck test.
+        entry: uv run --no-sync pytest --tb=short -q --timeout=120
+        language: system
+        types: [python]
+        pass_filenames: false
+
+  # ============================================================================
+  # Common Checks
+  # ============================================================================
+
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: cef0300fd0fc4d2a87a85fa2093c6b283ea36f4b # v5.0.0
+    hooks:
+      - id: trailing-whitespace
+        name: trim trailing whitespace
+        exclude_types: [image]
+
+      - id: check-merge-conflict
+        name: check for merge conflicts
+
+      - id: check-json
+        name: check JSON files
+        types: [json]
+
+      - id: check-yaml
+        name: check YAML files
+        types: [yaml]
+
+      - id: check-toml
+        name: check TOML files
+        types: [toml]
+
+      - id: end-of-file-fixer
+        name: fix end of files
+        exclude_types: [image]
+
+  # ============================================================================
+  # Commit Message Enforcement
+  # ============================================================================
+  - repo: local
+    hooks:
+      - id: enforce-commit
+        name: Enforce feat and fix commit prefixes
+        entry: bash scripts/enforce-commit.sh
+        language: system
+        stages: [commit-msg]
+
+  # ============================================================================
+  # Content integrity: block ASCII rewriting of Vietnamese diacritics
+  # + Unicode punctuation (em-dash, ellipsis, arrows, smart quotes, emoji).
+  # See scripts/preserve-diacritics.py and feedback_vietnamese_diacritics rule.
+  # ============================================================================
+  - repo: local
+    hooks:
+      - id: preserve-diacritics
+        name: Preserve Vietnamese diacritics + Unicode punctuation
+        entry: python scripts/preserve-diacritics.py
+        language: system
+        pass_filenames: false
+        stages: [pre-commit]
+
+  # ============================================================================
+  # Docs sync: CLAUDE.md and AGENTS.md MUST stay body-identical
+  # (only line 1 may differ, per .pre-commit-hooks/sync-claude-agents.sh).
+  # ============================================================================
+  - repo: local
+    hooks:
+      - id: sync-claude-agents
+        name: Sync CLAUDE.md <-> AGENTS.md (body-identical guard)
+        entry: bash .pre-commit-hooks/sync-claude-agents.sh
+        language: system
+        pass_filenames: false
+        files: ^(CLAUDE|AGENTS)\.md$
+        stages: [pre-commit]

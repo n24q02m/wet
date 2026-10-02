@@ -1,0 +1,7 @@
+{
+  "name": "demo-multi",
+  "version": "0.1.0",
+  "dependencies": {
+    "react": "^19"
+  }
+}

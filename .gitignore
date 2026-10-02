@@ -1,0 +1,97 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+
+# IDE
+.idea/
+*.swp
+*.swo
+.cursor/
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.nox/
+
+# Misc
+.DS_Store
+*.log
+.env
+.env.local
+*.bak
+
+# Ruff
+.ruff_cache/
+
+# Build artifacts
+*.whl
+node_modules/
+temp/
+tests/benchmark_results.jsonl
+
+# Cloudflare Worker
+.wrangler/
+.wrangler-dryrun/
+# Deploy-time config carrying real CF resource IDs (account/KV/D1/Vectorize) and
+# the substituted account-id image ref. Never commit (used by scripts/cf-deploy.mjs).
+wrangler.deploy.jsonc
+.wrangler-deploy-*.jsonc
+
+# Code review knowledge graph
+.code-review-graph/
+
+# Generated files
+*_e2e_result.json
+docs/superpowers/
+
+# Test coverage artifacts
+coverage.xml
+htmlcov/
+.coverage
+
+# Bot/merge junk artifacts (prevent accidental commits) — 2026-06-07
+*.orig
+*.rej
+*.cover
+*.bak
+/*.patch
+/*.diff
+
+# WP3 de-host: local instance data + import artifacts (never commit)
+.wet/
+docs.db
+docs.db-*
+*.sqlite
+*.sqlite3
+*.sqlite-*
+*.db-wal
+*.db-shm
+*_FULL-*.sql
+
+# Real instance config for docker compose (host-only material; use config.example.toml)
+docker-config/config.toml

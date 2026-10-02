@@ -1,0 +1,390 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened, ready_for_review]
+  pull_request_target:
+    branches: [main]
+    types: [opened, synchronize, reopened, ready_for_review]
+  push:
+    branches: [main]
+  issues:
+    types:
+      - opened
+      - reopened
+  schedule:
+    # Phase 2: weekly Tier 1 docs refresh — Sunday 06:00 UTC.
+    - cron: '0 6 * * 0'
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  # ============================================================================
+  # Bot PR Governance (merged from bot-governance.yml)
+  # ============================================================================
+  governance:
+    name: Bot PR Rate Limit & Duplicate Check
+    # Only govern pull requests whose branch lives in this repository.
+    #
+    # Technically: a pull_request run from a fork gets a read-only GITHUB_TOKEN
+    # whatever the permissions block above asks for, and `gh pr close` and
+    # `gh pr comment` are both unguarded under `set -e`, so the job would fail.
+    #
+    # More importantly: what it would be trying to do there is close an
+    # outsider's pull request because somebody else's bot spent the day's rate
+    # limit. Every bot this governs pushes its branch into this repository, so
+    # nothing is lost by not running.
+    #
+    # Comparing head.repo.full_name against the repository asks whether the
+    # branch lives here. head.repo.fork answers a different question — whether
+    # the source repository is itself a fork — which would silently disable
+    # governance for internal branches if this repository ever became one.
+    if: github.event_name == 'pull_request' && github.event.action == 'opened' && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    steps:
+      - name: Detect and govern bot PRs
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BRANCH: ${{ github.head_ref }}
+          ACTOR: ${{ github.actor }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -e
+
+          # Detect if this is a bot-created PR by branch name pattern.
+          # Two signals:
+          #   1. Explicit bot-tool prefixes (Bolt, Palette, Jules, fix/web-scraper)
+          #   2. Any branch ending with a long numeric task/trace ID (-[0-9]{14,})
+          IS_BOT_PR=false
+          if echo "$BRANCH" | grep -qE \
+              '^(bolt[-/]|palette-ux-|fix/web-scraper-|jules[-/])'; then
+            IS_BOT_PR=true
+          elif echo "$BRANCH" | grep -qE -- \
+              '-[0-9]{14,}$'; then
+            IS_BOT_PR=true
+          fi
+
+          if [ "$IS_BOT_PR" = "false" ]; then
+            echo "Not a bot PR ($BRANCH), skipping governance checks."
+            exit 0
+          fi
+
+          echo "Bot PR detected on branch: $BRANCH"
+          gh pr edit "$PR_NUMBER" --add-label "bot-generated" --repo "$REPO" || true
+
+          # --- Rate limit: max 5 bot PRs/actor/day ---
+          SINCE=$(date -u -d '24 hours ago' +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || \
+                  date -u -v-24H +%Y-%m-%dT%H:%M:%SZ)
+          COUNT=$(gh pr list --repo "$REPO" --state open \
+                   --json createdAt,headRefName,author \
+                   --jq "[.[] |
+                          select(.author.login == \"$ACTOR\") |
+                          select(.createdAt > \"$SINCE\") |
+                          select(.headRefName | test(
+                            \"^(bolt[-/]|palette-ux-|fix/web-scraper-|jules[-/])\" +
+                            \"|-[0-9]{14,}$\"
+                          ))] | length" 2>/dev/null || echo 0)
+
+          echo "Bot PRs by $ACTOR in last 24h: $COUNT"
+
+          if [ "${COUNT:-0}" -gt 5 ]; then
+            gh pr close "$PR_NUMBER" --repo "$REPO" \
+              --comment "**Bot rate limit exceeded**: $COUNT PRs created in the last 24 hours (limit: 5/day). This PR has been automatically closed to reduce PR backlog and CI resource waste. Please consolidate related fixes."
+            echo "PR #$PR_NUMBER closed: rate limit exceeded ($COUNT/5 today)"
+            exit 0
+          fi
+
+          # --- Duplicate detection by title keyword ---
+          KEYWORD=$(echo "$PR_TITLE" | sed 's/[^a-zA-Z0-9 _-]//g' | \
+                    tr '[:upper:]' '[:lower:]' | cut -c1-50 | xargs)
+          if [ -z "$KEYWORD" ]; then
+            echo "No keyword extracted, skipping duplicate check."
+            exit 0
+          fi
+
+          DUPES=$(gh pr list --repo "$REPO" --state open --search "$KEYWORD" \
+                   --json number \
+                   --jq "[.[] | select(.number != $PR_NUMBER)] | length" \
+                   2>/dev/null || echo 0)
+
+          echo "Similar open PRs for '$KEYWORD': $DUPES"
+          if [ "${DUPES:-0}" -ge 1 ]; then
+            gh pr edit "$PR_NUMBER" --repo "$REPO" \
+              --add-label "possible-duplicate" || true
+            gh pr comment "$PR_NUMBER" --repo "$REPO" \
+              --body "**Possible duplicate**: found ${DUPES} open PR(s) with similar title ('${KEYWORD}'). Check before merging: \`gh pr list --search '${KEYWORD}' --state open\`"
+          fi
+
+  # ============================================================================
+  # PR Title Lint (Conventional Commits subset)
+  # ============================================================================
+  # Squash-merge uses the PR title as the commit subject and bypasses the
+  # local enforce-commit pre-commit commit-msg hook (bot PRs never run local
+  # git hooks). Without a server-side check, a bot title like
+  # "Sentinel: [HIGH] Fix ..." squash-merges with a non-conventional subject
+  # -> PSR's commit parser silently ignores it -> no version bump, even for a
+  # security fix. This job only surfaces a red check; it does not block
+  # merge (no required-status-check rule), so the person merging still must
+  # retype the squash-commit subject to start with fix:/feat: when this is red.
+  pr-title:
+    name: Validate PR title (Conventional Commits subset)
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: read
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        with:
+          egress-policy: audit
+
+      - uses: amannn/action-semantic-pull-request@48f256284bd46cdaab1048c3721360e808335d50 # v6.1.1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          # Repo rule: only feat: and fix: (feedback_commit_prefix.md). This is
+          # narrower than PSR's own default allowed_tags (which also treats
+          # perf: as patch-worthy) -- we enforce the project convention here,
+          # not just what PSR itself would accept.
+          types: |
+            fix
+            feat
+          requireScope: false
+          subjectPattern: ^(?![A-Z]).+$
+          subjectPatternError: |
+            The subject must not start with an uppercase character.
+
+  lint-and-test:
+    name: Lint & Test (${{ matrix.os }})
+    if: github.event_name == 'pull_request' || github.event_name == 'push'
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Harden Runner
+        if: matrix.os == 'ubuntu-latest'
+        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        with:
+          egress-policy: audit
+
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
+
+      - name: Setup Python 3.13
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.13"
+
+      - name: Install dependencies
+        run: uv sync --group dev
+
+      - name: Run Ruff check
+        run: uv run --no-sync ruff check .
+
+      - name: Run Ruff format check
+        run: uv run --no-sync ruff format --check .
+
+      - name: Run ty type check
+        run: uv run --no-sync ty check
+
+      - name: Run tests with coverage
+        run: uv run --no-sync pytest --tb=short --cov=wet_mcp --cov-report=xml
+
+      - name: Upload coverage to Codecov
+        if: github.event_name == 'push' && matrix.os == 'ubuntu-latest'
+        uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
+        with:
+          files: coverage.xml
+
+  codeql:
+    name: CodeQL Analysis
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request' || github.event_name == 'push'
+    permissions:
+      security-events: write
+      contents: read
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        with:
+          egress-policy: audit
+
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@b96794f015dfd88f77b49b1c93e0fa7110f94c63 # v4.38.0
+        with:
+          languages: python
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@b96794f015dfd88f77b49b1c93e0fa7110f94c63 # v4.38.0
+
+  docs-sync-check:
+    name: Docs Sync Check (CLAUDE.md <-> AGENTS.md)
+    if: github.event_name == 'pull_request' || github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        with:
+          egress-policy: audit
+
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Verify CLAUDE.md and AGENTS.md are body-identical
+        run: bash .pre-commit-hooks/sync-claude-agents.sh
+
+  dependency-review:
+    name: Dependency Review
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        with:
+          egress-policy: audit
+
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Dependency Review
+        uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5.0.0
+        with:
+          fail-on-severity: moderate
+          comment-summary-in-pr: always
+
+  email-notify:
+    name: Email Notification
+    if: >-
+      (github.event_name == 'issues' || github.event_name == 'pull_request_target')
+      && github.actor != 'n24q02m'
+      && github.event.sender.type != 'Bot'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        with:
+          egress-policy: audit
+
+      - name: Parse SMTP credential
+        run: |
+          echo "SMTP_USER=${SMTP_CREDENTIAL%%:*}" >> $GITHUB_ENV
+          echo "SMTP_PASS=${SMTP_CREDENTIAL#*:}" >> $GITHUB_ENV
+        env:
+          SMTP_CREDENTIAL: ${{ secrets.SMTP_CREDENTIAL }}
+
+      - name: Send email notification
+        uses: dawidd6/action-send-mail@67ce3558d613188179559c61d3565140cf389968 # v22
+        with:
+          server_address: smtp.gmail.com
+          server_port: 587
+          username: ${{ env.SMTP_USER }}
+          password: ${{ env.SMTP_PASS }}
+          subject: >-
+            [${{ github.event.repository.name }}]
+            ${{ github.event_name == 'issues' && 'Issue' || 'PR' }}
+            #${{ github.event.issue.number || github.event.pull_request.number }}:
+            ${{ github.event.issue.title || github.event.pull_request.title }}
+          to: ${{ env.SMTP_USER }}
+          from: GitHub Notify <${{ env.SMTP_USER }}>
+          body: |
+            ${{ github.event_name == 'issues' && 'New issue' || 'New pull request' }} in ${{ github.repository }}
+
+            Title: ${{ github.event.issue.title || github.event.pull_request.title }}
+            Author: ${{ github.actor }}
+            URL: ${{ github.event.issue.html_url || github.event.pull_request.html_url }}
+            Action: ${{ github.event.action }}
+
+            ---
+            ${{ github.event.issue.body || github.event.pull_request.body || 'No description provided.' }}
+
+  refresh-tier1:
+    name: Refresh Tier 1 docs index (weekly)
+    if: github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    # Sized from measurement, not from the 6-hour default. The twelve green
+    # runs before #1590 finished in 2-7 minutes, but they were green because
+    # the ingest pipeline discarded every page, so they measure setup and
+    # discovery only. The first run that actually ingested (30736692116) got
+    # through 28 of the 50 libraries in 7m33s with the headless leg erroring
+    # out instantly, which extrapolates to ~14 minutes for the full list. The
+    # browser install below turns those instant errors back into real renders:
+    # 190 URLs escalated to headless in that run, and at the 60s crawler_timeout
+    # ceiling with _MAX_CONCURRENT_OPS=6 that is ~32 minutes of worst-case
+    # rendering on top. 45 covers measured base plus that arithmetic ceiling
+    # while still cutting a genuine hang eight times shorter than the default.
+    timeout-minutes: 45
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        with:
+          egress-policy: audit
+
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
+
+      - name: Setup Python 3.13
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.13"
+
+      - name: Install dependencies
+        run: uv sync --group dev
+
+      - name: Install chromium headless shell
+        # The canary crawls through the production strategy chain
+        # basic_http -> tls_spoof -> headless (crawler.py
+        # _build_scraping_agent), and the docs freshness target it guards is
+        # ">= 90% of Tier 1 within 7 days" (docs/BENCHMARKS.md), measured over
+        # that whole chain. Every other environment that runs this chain has a
+        # browser: the image installs one (Dockerfile, unless SLIM=1 drops the
+        # local legs on purpose) and so does the contributor setup
+        # (CONTRIBUTING.md). CI never did, which stayed invisible while the
+        # ingest pipeline was discarding pages anyway, and surfaced the week
+        # after #1590 unblocked it as 190 "All strategies failed ... last
+        # error: headless: BrowserType.launch: Executable doesn't exist"
+        # lines in run 30736692116.
+        #
+        # Only the headless shell is installed, not full chromium: the shell
+        # is the binary that run named (chromium_headless_shell-1228) because
+        # nothing here ever launches a headed browser, and it is the smaller
+        # download. --with-deps pulls the matching system libraries so this
+        # does not become a second silent missing-binary failure the first
+        # time the runner image drops one.
+        run: uv run playwright install --with-deps chromium-headless-shell
+
+      - name: Build Tier 1 index
+        run: uv run python scripts/build_tier1_index.py
+
+      - name: Upload metrics artifact
+        # Covers the build step exiting non-zero, and -- now that the job has
+        # a timeout-minutes -- a hang that the runner cancels. It does NOT
+        # cover the runner being killed: `if: always()` is still evaluated by
+        # the runner, so in run 30736692116 this step was reported as skipped
+        # after "The runner has received a shutdown signal". For that case the
+        # only mitigation is upstream: build_tier1_index.py rewrites the
+        # metrics file after every library, so whatever the job manages to
+        # upload is a real partial record rather than nothing.
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: tier1-index-metrics
+          path: ~/.wet-mcp/tier1_index_metrics.json
+          if-no-files-found: warn

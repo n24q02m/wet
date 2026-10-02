@@ -1,0 +1,39 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.n24q02m/wet-mcp",
+  "description": "Open-source MCP server for AI agents: web search, content extraction, and library docs.",
+  "repository": {
+    "url": "https://github.com/n24q02m/wet.git",
+    "source": "github"
+  },
+  "version": "3.18.0",
+  "packages": [
+    {
+      "registryType": "pypi",
+      "identifier": "wet-mcp",
+      "version": "3.18.0",
+      "runtimeHint": "uvx",
+      "runtimeArgs": [
+        "--python",
+        "3.13"
+      ],
+      "transport": {
+        "type": "stdio"
+      },
+      "environmentVariables": [
+        {
+          "description": "Provider API keys (format: PROVIDER_API_KEY:key,...). Select models per task with EMBEDDING_MODELS / RERANK_MODELS / LLM_MODELS (CSV provider/model, order = litellm fallback); provider is inferred from the model prefix. Empty embedding/rerank chain falls back to fastretrieval's built-in local reference model.",
+          "isRequired": false,
+          "isSecret": true,
+          "name": "API_KEYS"
+        },
+        {
+          "description": "GitHub personal access token for higher rate limits on library discovery",
+          "isRequired": false,
+          "isSecret": true,
+          "name": "GITHUB_TOKEN"
+        }
+      ]
+    }
+  ]
+}

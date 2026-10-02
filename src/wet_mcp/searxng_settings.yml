@@ -1,0 +1,77 @@
+# SearXNG settings for WET MCP Server
+# Used by embedded SearXNG subprocess
+
+use_default_settings: true
+
+server:
+  secret_key: "REPLACE_WITH_REAL_SECRET"
+  bind_address: "127.0.0.1"
+  port: 41592
+  limiter: false
+  method: "GET"
+
+search:
+  default_lang: "auto"
+  formats:
+    - html
+    - json
+
+# Optimize for reliability: retry on transient failures,
+# increase pool size for concurrent engine requests.
+outgoing:
+  request_timeout: 10.0
+  max_request_timeout: 30.0
+  retries: 1
+  pool_maxsize: 20
+  keepalive_expiry: 10.0
+  enable_http2: true
+
+# Engines to enable
+# More general engines = higher reliability when some get rate-limited.
+engines:
+  # General search engines (primary) — weighted by result quality
+  - name: google
+    disabled: false
+    weight: 1.5
+  - name: bing
+    disabled: false
+    weight: 1.2
+  - name: duckduckgo
+    disabled: false
+    weight: 1.0
+  - name: brave
+    disabled: false
+    weight: 1.3
+
+  # General search engines (fallback — increase resilience)
+  - name: qwant
+    disabled: false
+    weight: 0.6
+  - name: mojeek
+    disabled: true
+  - name: yahoo
+    disabled: false
+    weight: 0.5
+  - name: startpage
+    disabled: false
+    weight: 0.8
+
+  # Academic / Science engines (category: science)
+  - name: google scholar
+    disabled: false
+    shortcut: gsc
+  - name: semantic scholar
+    disabled: false
+    shortcut: ssc
+  - name: arxiv
+    disabled: false
+    shortcut: arx
+  - name: pubmed
+    disabled: false
+    shortcut: pub
+  - name: crossref
+    disabled: false
+    shortcut: cr
+  - name: base
+    disabled: false
+    shortcut: bas

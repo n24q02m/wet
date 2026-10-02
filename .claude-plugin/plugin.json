@@ -1,0 +1,124 @@
+{
+  "name": "wet-mcp",
+  "description": "Open-source MCP server for AI agents: web search, content extraction, and library docs.",
+  "version": "3.18.0",
+  "userConfig": {
+    "EMBEDDING_MODELS": {
+      "type": "string",
+      "title": "Embedding model chain (optional)",
+      "description": "CSV 'provider/model,provider/model' (order = litellm fallback); provider inferred from prefix. Empty = local ONNX through fastretrieval. Managed route: cohere/embed-v4.0 via EMBEDDING_API_BASE; paid provider use needs an approved cap.",
+      "required": false
+    },
+    "RERANK_MODELS": {
+      "type": "string",
+      "title": "Rerank model chain (optional)",
+      "description": "CSV 'provider/model,...'; provider inferred from prefix. Empty = local ONNX cross-encoder. Managed route: cohere/rerank-v4.0-fast via RERANK_API_BASE; paid provider use needs an approved cap.",
+      "required": false
+    },
+    "LLM_MODELS": {
+      "type": "string",
+      "title": "LLM model chain (optional)",
+      "description": "CSV 'provider/model,...'; provider inferred from prefix. Empty = LLM features off. Managed completion: openrouter/minimax/minimax-m3:free only, with no paid fallback.",
+      "required": false
+    },
+    "EMBEDDING_API_BASE": {
+      "type": "string",
+      "title": "Embedding endpoint (optional)",
+      "description": "Custom endpoint or CF AI Gateway. Cohere: <gateway>/cohere/v2/embed.",
+      "required": false
+    },
+    "RERANK_API_BASE": {
+      "type": "string",
+      "title": "Rerank endpoint (optional)",
+      "description": "Custom endpoint or CF AI Gateway. Cohere: <gateway>/cohere; the client appends /v1/rerank.",
+      "required": false
+    },
+    "LLM_API_BASE": {
+      "type": "string",
+      "title": "Completion endpoint (optional)",
+      "description": "Custom endpoint or CF AI Gateway for the selected completion model.",
+      "required": false
+    },
+    "JINA_AI_API_KEY": {
+      "type": "string",
+      "title": "Jina AI API key (optional)",
+      "description": "Enables jina_ai/ models referenced in a model chain. Without any cloud key the server uses local ONNX. https://jina.ai/api-dashboard/",
+      "sensitive": true,
+      "required": false
+    },
+    "GEMINI_API_KEY": {
+      "type": "string",
+      "title": "Gemini API key (optional)",
+      "description": "Enables gemini/ models referenced in a model chain. https://ai.google.dev/",
+      "sensitive": true,
+      "required": false
+    },
+    "OPENAI_API_KEY": {
+      "type": "string",
+      "title": "OpenAI API key (optional)",
+      "description": "Enables openai/ models referenced in a model chain. https://platform.openai.com/api-keys",
+      "sensitive": true,
+      "required": false
+    },
+    "OPENROUTER_API_KEY": {
+      "type": "string",
+      "title": "OpenRouter API key (optional)",
+      "description": "Enables openrouter/ models in the selected chain. https://openrouter.ai/settings/keys",
+      "sensitive": true,
+      "required": false
+    },
+    "COHERE_API_KEY": {
+      "type": "string",
+      "title": "Cohere API key (optional)",
+      "description": "Enables cohere/ models referenced in a model chain. https://dashboard.cohere.com/api-keys",
+      "sensitive": true,
+      "required": false
+    },
+    "GITHUB_TOKEN": {
+      "type": "string",
+      "title": "GitHub personal access token (optional)",
+      "description": "Optional. Bumps GitHub API rate limit (60->5000 req/hr) for library docs discovery. https://github.com/settings/tokens",
+      "sensitive": true,
+      "required": false
+    }
+  },
+  "author": {
+    "name": "n24q02m",
+    "url": "https://github.com/n24q02m"
+  },
+  "homepage": "https://github.com/n24q02m/wet",
+  "repository": "https://github.com/n24q02m/wet",
+  "license": "Apache-2.0",
+  "keywords": [
+    "web-search",
+    "content-extraction",
+    "documentation",
+    "mcp",
+    "claude-code"
+  ],
+  "mcpServers": {
+    "wet": {
+      "command": "uvx",
+      "args": [
+        "--python",
+        "3.13",
+        "wet-mcp"
+      ],
+      "env": {
+        "MCP_TRANSPORT": "stdio",
+        "EMBEDDING_MODELS": "${user_config.EMBEDDING_MODELS}",
+        "RERANK_MODELS": "${user_config.RERANK_MODELS}",
+        "LLM_MODELS": "${user_config.LLM_MODELS}",
+        "EMBEDDING_API_BASE": "${user_config.EMBEDDING_API_BASE}",
+        "RERANK_API_BASE": "${user_config.RERANK_API_BASE}",
+        "LLM_API_BASE": "${user_config.LLM_API_BASE}",
+        "JINA_AI_API_KEY": "${user_config.JINA_AI_API_KEY}",
+        "GEMINI_API_KEY": "${user_config.GEMINI_API_KEY}",
+        "OPENAI_API_KEY": "${user_config.OPENAI_API_KEY}",
+        "OPENROUTER_API_KEY": "${user_config.OPENROUTER_API_KEY}",
+        "COHERE_API_KEY": "${user_config.COHERE_API_KEY}",
+        "GITHUB_TOKEN": "${user_config.GITHUB_TOKEN}"
+      }
+    }
+  }
+}

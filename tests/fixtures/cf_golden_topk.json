@@ -1,0 +1,62 @@
+{
+  "async function": [
+    "alpha-1.0-0: define an async function to",
+    "alpha-1.0-5: define an async function to",
+    "alpha-2.0-0: define an async function to",
+    "alpha-2.0-5: define an async function to",
+    "alpha-3.0-0: define an async function to",
+    "alpha-3.0-5: define an async function to",
+    "beta-1.0-4: define an async function to ",
+    "beta-2.0-4: define an async function to ",
+    "beta-3.0-4: define an async function to ",
+    "gamma-1.0-3: define an async function to"
+  ],
+  "install the package": [
+    "alpha-1.0-1: install the package via pip",
+    "alpha-1.0-6: install the package via pip",
+    "alpha-2.0-1: install the package via pip",
+    "alpha-2.0-6: install the package via pip",
+    "alpha-3.0-1: install the package via pip",
+    "alpha-3.0-6: install the package via pip",
+    "beta-1.0-0: install the package via pip;",
+    "beta-1.0-5: install the package via pip;",
+    "beta-2.0-0: install the package via pip;",
+    "beta-2.0-5: install the package via pip;"
+  ],
+  "error handling": [
+    "alpha-1.0-0: define an async function to",
+    "alpha-1.0-5: define an async function to",
+    "alpha-2.0-0: define an async function to",
+    "alpha-2.0-5: define an async function to",
+    "alpha-3.0-0: define an async function to",
+    "alpha-3.0-5: define an async function to",
+    "beta-1.0-4: define an async function to ",
+    "beta-2.0-4: define an async function to ",
+    "beta-3.0-4: define an async function to ",
+    "gamma-1.0-3: define an async function to"
+  ],
+  "rate limit": [
+    "alpha-1.0-1: install the package via pip",
+    "alpha-1.0-6: install the package via pip",
+    "alpha-2.0-1: install the package via pip",
+    "alpha-2.0-6: install the package via pip",
+    "alpha-3.0-1: install the package via pip",
+    "alpha-3.0-6: install the package via pip",
+    "beta-1.0-0: install the package via pip;",
+    "beta-1.0-5: install the package via pip;",
+    "beta-2.0-0: install the package via pip;",
+    "beta-2.0-5: install the package via pip;"
+  ],
+  "vector search": [
+    "alpha-1.0-2: vector search uses cosine s",
+    "alpha-2.0-2: vector search uses cosine s",
+    "alpha-3.0-2: vector search uses cosine s",
+    "beta-1.0-1: vector search uses cosine si",
+    "beta-1.0-6: vector search uses cosine si",
+    "beta-2.0-1: vector search uses cosine si",
+    "beta-2.0-6: vector search uses cosine si",
+    "beta-3.0-1: vector search uses cosine si",
+    "beta-3.0-6: vector search uses cosine si",
+    "gamma-1.0-0: vector search uses cosine s"
+  ]
+}

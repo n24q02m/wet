@@ -1,0 +1,36 @@
+# Tier-1 popular URL fixture for extract regression tests.
+#
+# Usage: read line-by-line, skip blanks and lines starting with `#`.
+# Spec §3 target: >=95% success on a 200-URL set. This light list is the
+# v1.x.y starter (20 URLs, diverse popular domains) and gets expanded
+# pre-Phase 1 release. The integration test relaxes the success bar to
+# >=80% to reflect the smaller sample.
+#
+# Selection criteria:
+# - Diverse content types: news, blog, docs, e-commerce listings,
+#   wiki, marketplace, forum, dev portal.
+# - High availability + bot-tolerance for basic_http or tls_spoof tier
+#   so the suite stays runnable without a CapSolver key.
+# - Stable URLs (root or canonical landing pages, not feeds/dashboards
+#   with rotating content).
+
+https://en.wikipedia.org/wiki/Python_(programming_language)
+https://en.wikipedia.org/wiki/Web_scraping
+https://docs.python.org/3/tutorial/index.html
+https://docs.python.org/3/library/asyncio.html
+https://fastapi.tiangolo.com/
+https://docs.pydantic.dev/latest/
+https://news.ycombinator.com/
+https://github.com/n24q02m/wet-mcp
+https://github.com/python/cpython
+https://pypi.org/project/httpx/
+https://pypi.org/project/fastmcp/
+https://www.python.org/
+https://example.com/
+https://httpbin.org/html
+https://www.iana.org/
+https://stackoverflow.com/questions/tagged/python
+https://docs.djangoproject.com/en/stable/
+https://flask.palletsprojects.com/en/stable/
+https://requests.readthedocs.io/en/latest/
+https://scikit-learn.org/stable/

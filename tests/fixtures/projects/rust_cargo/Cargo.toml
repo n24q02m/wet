@@ -1,0 +1,12 @@
+[package]
+name = "demo-rust"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+tokio = { version = "1.40", features = ["full"] }
+serde = "1.0"
+clap = "4.5"
+
+[dev-dependencies]
+criterion = "0.5"

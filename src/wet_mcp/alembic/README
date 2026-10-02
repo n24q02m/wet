@@ -1,0 +1,6 @@
+Alembic migration scripts for wet-mcp docs.db.
+
+Run via the wet-mcp server (auto-migrate-on-startup with backup),
+or manually with:
+
+    WET_DOCS_DB_PATH=/abs/path/to/docs.db uv run alembic upgrade head

@@ -1,0 +1,12 @@
+# Public-by-design app identifiers -- reviewed and deliberately kept.
+# Google treats the Desktop/installed-app OAuth client_secret as PUBLIC
+# (https://developers.google.com/identity/protocols/oauth2#installed).
+# Scanner alerts on these exact values are false positives. Do NOT rotate,
+# do NOT placeholder-ize.
+version: 2
+secret:
+  ignored_matches:
+    - name: google-drive-desktop-oauth-client-id
+      match: "147668446467-olf2cf6e49rshqv9quvhq639110oc6hc.apps.googleusercontent.com"
+    - name: google-drive-desktop-oauth-client-secret
+      match: "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"

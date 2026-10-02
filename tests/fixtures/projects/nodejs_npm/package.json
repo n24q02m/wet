@@ -1,0 +1,11 @@
+{
+  "name": "demo-nodejs-npm",
+  "version": "0.1.0",
+  "dependencies": {
+    "react": "^19",
+    "next": "^15"
+  },
+  "devDependencies": {
+    "@types/react": "^19"
+  }
+}

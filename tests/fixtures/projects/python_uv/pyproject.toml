@@ -1,0 +1,11 @@
+[project]
+name = "demo-python-uv"
+version = "0.1.0"
+dependencies = [
+    "fastapi>=0.110",
+    "pydantic>=2",
+    "httpx",
+]
+
+[project.optional-dependencies]
+dev = ["pytest"]

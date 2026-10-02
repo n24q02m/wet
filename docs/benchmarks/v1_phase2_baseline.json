@@ -1,0 +1,36 @@
+{
+  "captured_at": "2026-05-10",
+  "git_head": "22a93a05d0834e108886aa740dfdfa893890995d",
+  "tag": "v2.31.0-beta.1",
+  "phase": "phase-2-stable-candidate",
+  "purpose": "Phase 3 regression-tolerance baseline (spec section 3, +/- 10%).",
+  "metrics": {
+    "test_suite": {
+      "passed": 1677,
+      "skipped": 34,
+      "deselected": 141,
+      "duration_seconds": 65.93
+    },
+    "coverage": {
+      "total_pct": 92.86,
+      "fail_under_gate": 92,
+      "long_term_target_pct": 95
+    },
+    "search_p95_ms": null,
+    "extract_tier1_success_rate": null,
+    "docs_query_p95_ms": null,
+    "docs_query_recall_at_10": null,
+    "startup_time_ms": null,
+    "rss_steady_mb": null
+  },
+  "phase_3_targets": {
+    "extract_agent_p95_seconds_for_5_url_synthesis": 30,
+    "extract_interact_per_action_p95_seconds": 5,
+    "regression_tolerance_pct": 10,
+    "coverage_post_phase_3_min_pct": 92
+  },
+  "notes": [
+    "Live latency metrics (search_p95_ms, extract_tier1_success_rate, docs_query_p95_ms, startup_time_ms, rss_steady_mb) are recorded in T0 as nullable placeholders; populated via dedicated bench harness during Test B / live integration runs (not part of unit test loop).",
+    "Phase 2 dropped fail_under from 93 to 92 to absorb new dispatcher/ingest_tier2 lines. Phase 3 maintains 92 floor; long-term 95 target deferred until consolidated coverage push post-Phase-3."
+  ]
+}

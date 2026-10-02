@@ -1,0 +1,14 @@
+[tool.poetry]
+name = "demo-python-poetry"
+version = "0.1.0"
+description = "Poetry fixture"
+authors = ["Test <test@example.com>"]
+
+[tool.poetry.dependencies]
+python = "^3.11"
+django = "^5.0"
+celery = { version = "^5.4", extras = ["redis"] }
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
