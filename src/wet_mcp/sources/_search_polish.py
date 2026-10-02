@@ -71,12 +71,39 @@ def _source_domain(url: str) -> str:
     """Extract the registrable domain (netloc) from a URL."""
     if not url:
         return ""
-    try:
-        netloc = urlparse(url).netloc
-    except (ValueError, TypeError):
-        return ""
-    # Strip port and leading 'www.' for cleaner display.
-    netloc = netloc.split(":", 1)[0]
+
+    start = url.find("://")
+    if start == -1:
+        # Fallback to urlparse for non-HTTP(S) schemas (e.g., mailto:) or relative URLs
+        try:
+            netloc = urlparse(url).netloc
+        except (ValueError, TypeError):
+            return ""
+        # Strip port and leading 'www.' for cleaner display.
+        netloc = netloc.split(":", 1)[0]
+        return netloc[4:] if netloc.startswith("www.") else netloc
+
+    start += 3
+
+    # Fast path extraction without urlparse to avoid object allocation overhead.
+    slash = url.find("/", start)
+    question = url.find("?", start)
+    hash_pos = url.find("#", start)
+
+    end = len(url)
+    if slash != -1 and slash < end:
+        end = slash
+    if question != -1 and question < end:
+        end = question
+    if hash_pos != -1 and hash_pos < end:
+        end = hash_pos
+
+    netloc = url[start:end]
+
+    colon_idx = netloc.find(":")
+    if colon_idx != -1:
+        netloc = netloc[:colon_idx]
+
     return netloc[4:] if netloc.startswith("www.") else netloc
 
 
