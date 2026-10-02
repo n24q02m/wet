@@ -163,6 +163,14 @@ class Settings(BaseSettings):
     # reCAPTCHA/Cloudflare Turnstile.
     capsolver_api_key: str = ""  # env CAPSOLVER_API_KEY
 
+    # Identity layer (E1-f): one seeded coherent browser profile shared by the
+    # basic_http/tls_spoof/headless strategies. 0 = derive once and persist
+    # under the sub root so restarts keep the same person; a nonzero value (or
+    # WET_IDENTITY_SEED) pins it explicitly. profile dir default resolves to
+    # sub_root()/profiles per namespace at use time.
+    identity_seed: int = 0  # env WET_IDENTITY_SEED
+    identity_profile_dir: str = ""  # env IDENTITY_PROFILE_DIR
+
     # SearXNG Management
     # web-core runner tries Docker fallback first, then subprocess install.
     # On Windows, Docker path handles lxml/build-tool constraints that would
