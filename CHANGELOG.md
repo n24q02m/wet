@@ -2,6 +2,74 @@
 
 <!-- version list -->
 
+## v3.19.0-beta.1 (2026-10-03)
+
+### Bug Fixes
+
+- Add a protocol gate that runs in the default CI suite
+  ([#1841](https://github.com/n24q02m/wet/pull/1841),
+  [`2888a10`](https://github.com/n24q02m/wet/commit/2888a104b44dbd533017ec8800cfb01dfbf64521))
+
+- Hold every Renovate update for 7 days ([#1843](https://github.com/n24q02m/wet/pull/1843),
+  [`c252e3c`](https://github.com/n24q02m/wet/commit/c252e3c0622fc401d02fd943dc28d3655dec6eca))
+
+- Make release dispatch-only (remove push-triggered stable)
+  ([#1834](https://github.com/n24q02m/wet/pull/1834),
+  [`fcb511d`](https://github.com/n24q02m/wet/commit/fcb511da89c09badf8ed1ac9519ec31935321275))
+
+- Make the ty type check a blocking CI gate ([#1840](https://github.com/n24q02m/wet/pull/1840),
+  [`e18c5f9`](https://github.com/n24q02m/wet/commit/e18c5f9ec2506c49162ac0185c1c3e8a8a75bfdf))
+
+- Make the ty type check a blocking gate and clear its diagnostics
+  ([#1840](https://github.com/n24q02m/wet/pull/1840),
+  [`e18c5f9`](https://github.com/n24q02m/wet/commit/e18c5f9ec2506c49162ac0185c1c3e8a8a75bfdf))
+
+- Make ty check a clean pass by typing the dual-backend seams honestly
+  ([#1840](https://github.com/n24q02m/wet/pull/1840),
+  [`e18c5f9`](https://github.com/n24q02m/wet/commit/e18c5f9ec2506c49162ac0185c1c3e8a8a75bfdf))
+
+- Pin hull-core to merged 5e29415b (identity + invisible tier on hull main)
+  ([#1844](https://github.com/n24q02m/wet/pull/1844),
+  [`6214c1e`](https://github.com/n24q02m/wet/commit/6214c1e6dba877ac1b7351131bafc14a1e5ce6f3))
+
+- **cd**: Grant id-token write + pypi environment for uv publish OIDC
+  ([#1847](https://github.com/n24q02m/wet/pull/1847),
+  [`5652a53`](https://github.com/n24q02m/wet/commit/5652a539fbbdf7d405875ea99dd83df520902201))
+
+- **deps**: Point hull-core[web] at the merged single-dist commit
+  ([`c5b8888`](https://github.com/n24q02m/wet/commit/c5b88886914218c1084d6e51372f332c283463c8))
+
+### Documentation
+
+- Invisible tier + seeded identity in README browser backends
+  ([#1844](https://github.com/n24q02m/wet/pull/1844),
+  [`6214c1e`](https://github.com/n24q02m/wet/commit/6214c1e6dba877ac1b7351131bafc14a1e5ce6f3))
+
+### Features
+
+- Seeded identity + invisible browser tier (E1-e/E1-f) on hull-web pin 240959d
+  ([#1844](https://github.com/n24q02m/wet/pull/1844),
+  [`6214c1e`](https://github.com/n24q02m/wet/commit/6214c1e6dba877ac1b7351131bafc14a1e5ce6f3))
+
+- Seeded identity + invisible browser tier on hull-web pin 5e29415b
+  ([#1844](https://github.com/n24q02m/wet/pull/1844),
+  [`6214c1e`](https://github.com/n24q02m/wet/commit/6214c1e6dba877ac1b7351131bafc14a1e5ce6f3))
+
+- Wet extras identity/invisible mapping to hull-core optional engines
+  ([#1844](https://github.com/n24q02m/wet/pull/1844),
+  [`6214c1e`](https://github.com/n24q02m/wet/commit/6214c1e6dba877ac1b7351131bafc14a1e5ce6f3))
+
+- **warmup**: Pre-download identity GeoIP mmdb (best-effort, skip without extra)
+  ([#1844](https://github.com/n24q02m/wet/pull/1844),
+  [`6214c1e`](https://github.com/n24q02m/wet/commit/6214c1e6dba877ac1b7351131bafc14a1e5ce6f3))
+
+### Refactoring
+
+- **interact**: Point at hull_web.browsers.interact; delete wet-local module
+  ([#1844](https://github.com/n24q02m/wet/pull/1844),
+  [`6214c1e`](https://github.com/n24q02m/wet/commit/6214c1e6dba877ac1b7351131bafc14a1e5ce6f3))
+
+
 ## v3.18.0 (2026-09-27)
 
 ### Code Style
