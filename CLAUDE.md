@@ -86,7 +86,7 @@ mise run dev       # uv run wet
 - Sync dung Google Drive API truc tiep (httpx). OAuth Device Code flow, token luu tai `~/.wet/tokens/google_drive.json`
 - HTTP auth (live self-host): credentials are configured via the OAuth-AS browser form at `<PUBLIC_URL>/authorize`; `GET /mcp` without a Bearer token returns 401 + `www-authenticate` pointing at `/.well-known/oauth-protected-resource`. The browser form is gated by `MCP_RELAY_PASSWORD` (single shared password, gate only — empty disables it; not per-user). Multi-user remote mode also requires `CREDENTIAL_SECRET` (per-sub vault key) + `MCP_DCR_SERVER_SECRET` (proof of intentional multi-user deploy).
 - `MCP_RELAY_URL`: read only by the legacy `ensure_config` create-session/poll path (`relay_setup.py`), which has no production caller — the live setup UX is the OAuth-AS form above, not an ECDH relay.
-- Secrets: skret SSM namespace `/wet/prod` (region `ap-southeast-1`)
+- Secrets: skret SSM namespace `/wet-mcp/prod` (region `ap-southeast-1`)
 
 ### Manual config example
 
@@ -186,7 +186,7 @@ t2-interaction: GDrive device-code (900s); per-sub token storage at ``~/.wet/sub
 Tier policy:
 
 - **T0** (precommit + CI on PR / main push) - runs without upstream identity. Skret keys not required.
-- **T2 non-interaction** (`make e2e-config CONFIG=<id>` locally) - driver pre-fills relay form from skret AWS SSM `/wet/prod` (`ap-southeast-1`). No user gate.
+- **T2 non-interaction** (`make e2e-config CONFIG=<id>` locally) - driver pre-fills relay form from skret AWS SSM `/wet-mcp/prod` (`ap-southeast-1`). No user gate.
 - **T2 interaction** - driver fills relay form, then prints upstream user-gate URL; user signs in / types OTP at provider. Driver enforces per-flow timeouts (device-code 900s, oauth-redirect 300s, browser-form 600s) and emits `[poll] elapsed=Xs remaining=Ys status=<body>` every 30s. On timeout, container logs + last `setup-status` are saved to `<tmp>/e2e-diag/` BEFORE teardown for post-mortem.
 
 Multi-user remote mode (deployment property; not a separate config) requires `MCP_DCR_SERVER_SECRET` in the same skret namespace - driver refuses to start the container without it when `PUBLIC_URL` is set.
