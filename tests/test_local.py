@@ -1,4 +1,4 @@
-"""Local functionality test for wet-mcp (no SearXNG required).
+"""Local functionality test for wet (no SearXNG required).
 
 Tests extract, sitemap, list_media, and help tools.
 Run with: uv run python tests/test_local.py
@@ -19,7 +19,7 @@ logger.add(sys.stdout, level="INFO")
 
 async def test_extract():
     """Test content extraction from example.com."""
-    from wet_mcp.sources.crawler import extract
+    from wet.sources.crawler import extract
 
     print("\n" + "=" * 50)
     print("TEST 1: Extract (example.com)")
@@ -53,7 +53,7 @@ async def test_extract():
 
 async def test_sitemap():
     """Test sitemap/map discovery."""
-    from wet_mcp.sources.crawler import sitemap
+    from wet.sources.crawler import sitemap
 
     print("\n" + "=" * 50)
     print("TEST 2: Sitemap (example.com)")
@@ -80,7 +80,7 @@ async def test_sitemap():
 
 async def test_list_media():
     """Test media listing from a page with images."""
-    from wet_mcp.sources.crawler import list_media
+    from wet.sources.crawler import list_media
 
     print("\n" + "=" * 50)
     print("TEST 3: List Media (wikipedia)")
@@ -111,7 +111,7 @@ async def test_list_media():
 
 async def test_help():
     """Test help tool documentation."""
-    from wet_mcp.server import help
+    from wet.server import help
 
     print("\n" + "=" * 50)
     print("TEST 4: Help Tool")
@@ -132,7 +132,7 @@ async def test_help():
 
 async def test_extract_tool():
     """Test the extract() tool with extract action (full MCP tool path)."""
-    from wet_mcp.server import extract
+    from wet.server import extract
 
     print("\n" + "=" * 50)
     print("TEST 5: extract() tool - extract action")
@@ -164,7 +164,7 @@ async def test_extract_tool():
 
 async def test_search_fallback():
     """Test search() action when no SearXNG (should return error gracefully)."""
-    from wet_mcp.server import search
+    from wet.server import search
 
     print("\n" + "=" * 50)
     print("TEST 6: search() tool - search (no SearXNG)")

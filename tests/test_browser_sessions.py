@@ -8,7 +8,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from wet_mcp.sources import _browser_sessions as bs
+from wet.sources import _browser_sessions as bs
 
 
 @pytest.fixture

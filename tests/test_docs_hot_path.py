@@ -30,7 +30,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from wet_mcp.sources.docs import (
+from wet.sources.docs import (
     _ANY_HEADING_RE,
     _strip_nav_heading_blocks,
     try_llms_txt,
@@ -215,7 +215,7 @@ async def _fetch(body: str) -> str | None:
     mock_client.__aenter__.return_value = mock_client
     mock_client.__aexit__.return_value = None
 
-    with patch("wet_mcp.sources.docs._safe_httpx_client", return_value=mock_client):
+    with patch("wet.sources.docs._safe_httpx_client", return_value=mock_client):
         return await try_llms_txt("https://example.com/docs")
 
 

@@ -1,7 +1,7 @@
 import sys
 from unittest import mock
 
-from wet_mcp.config import (
+from wet.config import (
     Settings,
     _detect_gpu,
     _has_gguf_support,
@@ -92,8 +92,8 @@ def test_has_gguf_support_not_installed():
 def test_resolve_local_model_gpu_gguf():
     """Test _resolve_local_model chooses GGUF if GPU and GGUF support are present."""
     with (
-        mock.patch("wet_mcp.config._detect_gpu", return_value=True),
-        mock.patch("wet_mcp.config._has_gguf_support", return_value=True),
+        mock.patch("wet.config._detect_gpu", return_value=True),
+        mock.patch("wet.config._has_gguf_support", return_value=True),
     ):
         assert _resolve_local_model("onnx", "gguf") == "gguf"
 
@@ -101,8 +101,8 @@ def test_resolve_local_model_gpu_gguf():
 def test_resolve_local_model_gpu_no_gguf():
     """Test _resolve_local_model chooses ONNX if GPU present but no GGUF support."""
     with (
-        mock.patch("wet_mcp.config._detect_gpu", return_value=True),
-        mock.patch("wet_mcp.config._has_gguf_support", return_value=False),
+        mock.patch("wet.config._detect_gpu", return_value=True),
+        mock.patch("wet.config._has_gguf_support", return_value=False),
     ):
         assert _resolve_local_model("onnx", "gguf") == "onnx"
 
@@ -110,8 +110,8 @@ def test_resolve_local_model_gpu_no_gguf():
 def test_resolve_local_model_no_gpu_gguf():
     """Test _resolve_local_model chooses ONNX if no GPU, even with GGUF support."""
     with (
-        mock.patch("wet_mcp.config._detect_gpu", return_value=False),
-        mock.patch("wet_mcp.config._has_gguf_support", return_value=True),
+        mock.patch("wet.config._detect_gpu", return_value=False),
+        mock.patch("wet.config._has_gguf_support", return_value=True),
     ):
         assert _resolve_local_model("onnx", "gguf") == "onnx"
 
@@ -119,8 +119,8 @@ def test_resolve_local_model_no_gpu_gguf():
 def test_resolve_local_model_no_gpu_no_gguf():
     """Test _resolve_local_model chooses ONNX if neither GPU nor GGUF support."""
     with (
-        mock.patch("wet_mcp.config._detect_gpu", return_value=False),
-        mock.patch("wet_mcp.config._has_gguf_support", return_value=False),
+        mock.patch("wet.config._detect_gpu", return_value=False),
+        mock.patch("wet.config._has_gguf_support", return_value=False),
     ):
         assert _resolve_local_model("onnx", "gguf") == "onnx"
 
@@ -133,8 +133,8 @@ def test_resolve_local_embedding_model_gpu(monkeypatch):
     monkeypatch.delenv("LOCAL_EMBEDDING_MODEL", raising=False)
     s = Settings()
     with (
-        mock.patch("wet_mcp.config._detect_gpu", return_value=True),
-        mock.patch("wet_mcp.config._has_gguf_support", return_value=True),
+        mock.patch("wet.config._detect_gpu", return_value=True),
+        mock.patch("wet.config._has_gguf_support", return_value=True),
     ):
         result = s.resolve_local_embedding_model()
         assert "GGUF" in result
@@ -146,8 +146,8 @@ def test_resolve_local_embedding_model_no_gpu(monkeypatch):
     monkeypatch.delenv("LOCAL_EMBEDDING_MODEL", raising=False)
     s = Settings()
     with (
-        mock.patch("wet_mcp.config._detect_gpu", return_value=False),
-        mock.patch("wet_mcp.config._has_gguf_support", return_value=True),
+        mock.patch("wet.config._detect_gpu", return_value=False),
+        mock.patch("wet.config._has_gguf_support", return_value=True),
     ):
         result = s.resolve_local_embedding_model()
         assert "ONNX" in result
@@ -160,8 +160,8 @@ def test_resolve_local_rerank_model_gpu(monkeypatch):
     monkeypatch.delenv("LOCAL_RERANK_MODEL", raising=False)
     s = Settings()
     with (
-        mock.patch("wet_mcp.config._detect_gpu", return_value=True),
-        mock.patch("wet_mcp.config._has_gguf_support", return_value=True),
+        mock.patch("wet.config._detect_gpu", return_value=True),
+        mock.patch("wet.config._has_gguf_support", return_value=True),
     ):
         result = s.resolve_local_rerank_model()
         assert "GGUF" in result
@@ -173,8 +173,8 @@ def test_resolve_local_rerank_model_no_gpu(monkeypatch):
     monkeypatch.delenv("LOCAL_RERANK_MODEL", raising=False)
     s = Settings()
     with (
-        mock.patch("wet_mcp.config._detect_gpu", return_value=False),
-        mock.patch("wet_mcp.config._has_gguf_support", return_value=False),
+        mock.patch("wet.config._detect_gpu", return_value=False),
+        mock.patch("wet.config._has_gguf_support", return_value=False),
     ):
         result = s.resolve_local_rerank_model()
         assert "ONNX" in result

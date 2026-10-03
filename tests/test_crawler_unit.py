@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from wet_mcp.sources.crawler import crawl
+from wet.sources.crawler import crawl
 
 
 @pytest.mark.asyncio
@@ -21,7 +21,7 @@ async def test_crawl_basic_success(mock_crawler_instance):
     mock_crawler_instance.arun = AsyncMock(return_value=mock_result)
 
     with patch(
-        "wet_mcp.sources.crawler._get_crawler",
+        "wet.sources.crawler._get_crawler",
         new_callable=AsyncMock,
         return_value=mock_crawler_instance,
     ):
@@ -64,7 +64,7 @@ async def test_crawl_depth_limit(mock_crawler_instance):
     mock_crawler_instance.arun = AsyncMock(side_effect=side_effect)
 
     with patch(
-        "wet_mcp.sources.crawler._get_crawler",
+        "wet.sources.crawler._get_crawler",
         new_callable=AsyncMock,
         return_value=mock_crawler_instance,
     ):
@@ -100,7 +100,7 @@ async def test_crawl_max_pages(mock_crawler_instance):
     mock_crawler_instance.arun = AsyncMock(side_effect=side_effect)
 
     with patch(
-        "wet_mcp.sources.crawler._get_crawler",
+        "wet.sources.crawler._get_crawler",
         new_callable=AsyncMock,
         return_value=mock_crawler_instance,
     ):
@@ -125,12 +125,12 @@ async def test_crawl_unsafe_url(mock_crawler_instance):
 
     with (
         patch(
-            "wet_mcp.sources.crawler._get_crawler",
+            "wet.sources.crawler._get_crawler",
             new_callable=AsyncMock,
             return_value=mock_crawler_instance,
         ),
         patch(
-            "wet_mcp.sources.crawler.is_safe_url", return_value=False
+            "wet.sources.crawler.is_safe_url", return_value=False
         ) as mock_is_safe,
     ):
         result_json = await crawl(urls=["https://unsafe.com"])
@@ -147,7 +147,7 @@ async def test_crawl_error_handling(mock_crawler_instance):
     mock_crawler_instance.arun = AsyncMock(side_effect=Exception("Crawl failed"))
 
     with patch(
-        "wet_mcp.sources.crawler._get_crawler",
+        "wet.sources.crawler._get_crawler",
         new_callable=AsyncMock,
         return_value=mock_crawler_instance,
     ):
@@ -186,7 +186,7 @@ async def test_crawl_already_visited(mock_crawler_instance):
     mock_crawler_instance.arun = AsyncMock(side_effect=side_effect)
 
     with patch(
-        "wet_mcp.sources.crawler._get_crawler",
+        "wet.sources.crawler._get_crawler",
         new_callable=AsyncMock,
         return_value=mock_crawler_instance,
     ):
@@ -211,7 +211,7 @@ async def test_crawl_stealth_param(mock_crawler_instance):
     mock_crawler_instance.arun = AsyncMock(return_value=mock_result)
 
     with patch(
-        "wet_mcp.sources.crawler._get_crawler",
+        "wet.sources.crawler._get_crawler",
         new_callable=AsyncMock,
         return_value=mock_crawler_instance,
     ) as mock_get_crawler:
@@ -238,7 +238,7 @@ async def test_crawl_content_truncation(mock_crawler_instance):
     mock_crawler_instance.arun = AsyncMock(return_value=mock_result)
 
     with patch(
-        "wet_mcp.sources.crawler._get_crawler",
+        "wet.sources.crawler._get_crawler",
         new_callable=AsyncMock,
         return_value=mock_crawler_instance,
     ):
@@ -259,7 +259,7 @@ async def test_crawl_failed_result(mock_crawler_instance):
     mock_crawler_instance.arun = AsyncMock(return_value=mock_result)
 
     with patch(
-        "wet_mcp.sources.crawler._get_crawler",
+        "wet.sources.crawler._get_crawler",
         new_callable=AsyncMock,
         return_value=mock_crawler_instance,
     ):
@@ -282,7 +282,7 @@ async def test_crawl_multiple_roots(mock_crawler_instance):
     mock_crawler_instance.arun = AsyncMock(return_value=mock_result)
 
     with patch(
-        "wet_mcp.sources.crawler._get_crawler",
+        "wet.sources.crawler._get_crawler",
         new_callable=AsyncMock,
         return_value=mock_crawler_instance,
     ):

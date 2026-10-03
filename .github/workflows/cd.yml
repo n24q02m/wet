@@ -259,5 +259,5 @@ jobs:
         run: |
           gh api repos/n24q02m/claude-plugins/dispatches \
             -f event_type=plugin-sync \
-            -f 'client_payload[repo]=wet-mcp' \
+            -f 'client_payload[repo]=wet' \
             -f 'client_payload[tag]=${{ needs.release.outputs.tag }}'

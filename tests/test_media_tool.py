@@ -4,12 +4,12 @@ from unittest.mock import AsyncMock, patch
 import pytest
 from structured import payload, text
 
-from wet_mcp.server import media
+from wet.server import media
 
 
 @pytest.fixture
 def mock_settings():
-    with patch("wet_mcp.server.settings") as mock_settings:
+    with patch("wet.server.settings") as mock_settings:
         mock_settings.tool_timeout = 0  # Disable timeout for faster tests
         mock_settings.download_dir = "/tmp/downloads"
         mock_settings.log_level = "INFO"
@@ -21,7 +21,7 @@ async def test_media_list_success(mock_settings):
     """Test media list action successfully calls list_media."""
     mock_list_media = AsyncMock(return_value='{"images": []}')
 
-    with patch("wet_mcp.server.list_media", mock_list_media):
+    with patch("wet.server.list_media", mock_list_media):
         result = await media(
             action="list", url="http://example.com", media_type="images", max_items=5
         )
@@ -49,7 +49,7 @@ async def test_media_download_success(mock_settings):
     # output_dir must be within the configured download_dir
     sub_dir = "/tmp/downloads/images"
 
-    with patch("wet_mcp.sources.crawler.download_media", mock_download_media):
+    with patch("wet.sources.crawler.download_media", mock_download_media):
         result = await media(
             action="download",
             media_urls=["http://example.com/img.jpg"],
@@ -80,7 +80,7 @@ async def test_media_download_default_dir(mock_settings):
     """Test media download action uses default directory if not provided."""
     mock_download_media = AsyncMock(return_value='["file1.jpg"]')
 
-    with patch("wet_mcp.sources.crawler.download_media", mock_download_media):
+    with patch("wet.sources.crawler.download_media", mock_download_media):
         result = await media(
             action="download", media_urls=["http://example.com/img.jpg"]
         )
@@ -106,7 +106,7 @@ async def test_media_analyze_returns_unknown_action_post_removal(mock_settings):
     """Phase 3 Task 5 BREAKING: analyze removed -- routes to unknown-action."""
     mock_analyze_media = AsyncMock(return_value="Analysis result")
 
-    with patch("wet_mcp.llm.analyze_media", mock_analyze_media):
+    with patch("wet.llm.analyze_media", mock_analyze_media):
         result = await media(
             action="analyze", url="/path/to/image.jpg", prompt="Describe it"
         )
@@ -147,16 +147,16 @@ async def test_media_download_adds_extension_from_content_type(mock_settings, tm
     mock_client.get = mock_get
 
     with (
-        patch("wet_mcp.sources.crawler.is_safe_url", return_value=True),
-        patch("wet_mcp.sources.crawler._safe_httpx_client") as MockClient,
-        patch("wet_mcp.sources.crawler.settings") as crawler_settings,
+        patch("wet.sources.crawler.is_safe_url", return_value=True),
+        patch("wet.sources.crawler._safe_httpx_client") as MockClient,
+        patch("wet.sources.crawler.settings") as crawler_settings,
     ):
         crawler_settings.crawler_timeout = 30
         # Use tmp_path as output dir to capture real writes
         MockClient.return_value.__aenter__ = AsyncMock(return_value=mock_client)
         MockClient.return_value.__aexit__ = AsyncMock(return_value=False)
 
-        from wet_mcp.sources.crawler import download_media
+        from wet.sources.crawler import download_media
 
         result_str = await download_media(
             media_urls=["https://example.com/image/photo"],

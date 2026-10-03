@@ -44,9 +44,9 @@ class TestRunWarmup:
     async def test_warmup_returns_dict_with_status(self):
         """run_warmup() must return a dict with 'status' key."""
         with (
-            patch("wet_mcp.setup.run_auto_setup"),
-            patch("wet_mcp.runtime.cell_configured", _no_cells()),
-            patch("wet_mcp.setup_tool.settings") as mock_settings,
+            patch("wet.setup.run_auto_setup"),
+            patch("wet.runtime.cell_configured", _no_cells()),
+            patch("wet.setup_tool.settings") as mock_settings,
             patch("fastretrieval.TextEmbedding") as mock_embed,
         ):
             mock_settings.rerank_enabled = False
@@ -54,7 +54,7 @@ class TestRunWarmup:
 
             mock_embed.return_value.embed.return_value = iter([[0.1] * 768])
 
-            from wet_mcp.setup_tool import run_warmup
+            from wet.setup_tool import run_warmup
 
             result = await run_warmup()
 
@@ -65,11 +65,11 @@ class TestRunWarmup:
     async def test_warmup_cloud_models_success(self):
         """When the provider cells are configured and healthy, skip local downloads."""
         with (
-            patch("wet_mcp.setup.run_auto_setup"),
-            patch("wet_mcp.runtime.cell_configured", _all_cells()),
-            patch("wet_mcp.setup_tool.settings"),
-            patch("wet_mcp.embedder.init_backend") as mock_init_backend,
-            patch("wet_mcp.reranker.init_reranker") as mock_init_reranker,
+            patch("wet.setup.run_auto_setup"),
+            patch("wet.runtime.cell_configured", _all_cells()),
+            patch("wet.setup_tool.settings"),
+            patch("wet.embedder.init_backend") as mock_init_backend,
+            patch("wet.reranker.init_reranker") as mock_init_reranker,
         ):
             cell = MagicMock()
             cell.model = "text-embedding-3-large"
@@ -81,7 +81,7 @@ class TestRunWarmup:
             mock_reranker.check_available.return_value = True
             mock_init_reranker.return_value = mock_reranker
 
-            from wet_mcp.setup_tool import run_warmup
+            from wet.setup_tool import run_warmup
 
             result = await run_warmup()
 
@@ -93,10 +93,10 @@ class TestRunWarmup:
     async def test_warmup_cloud_fallback_to_local(self):
         """When the configured cell fails its check, fall back to local download."""
         with (
-            patch("wet_mcp.setup.run_auto_setup"),
-            patch("wet_mcp.runtime.cell_configured", _embed_cell_only()),
-            patch("wet_mcp.setup_tool.settings") as mock_settings,
-            patch("wet_mcp.embedder.init_backend") as mock_init_backend,
+            patch("wet.setup.run_auto_setup"),
+            patch("wet.runtime.cell_configured", _embed_cell_only()),
+            patch("wet.setup_tool.settings") as mock_settings,
+            patch("wet.embedder.init_backend") as mock_init_backend,
             patch("fastretrieval.TextEmbedding") as mock_embed,
         ):
             mock_settings.rerank_enabled = False
@@ -106,7 +106,7 @@ class TestRunWarmup:
 
             mock_embed.return_value.embed.return_value = iter([[0.1] * 768])
 
-            from wet_mcp.setup_tool import run_warmup
+            from wet.setup_tool import run_warmup
 
             result = await run_warmup()
 
@@ -117,11 +117,11 @@ class TestRunWarmup:
         """Auto-setup failure is reported but non-fatal."""
         with (
             patch(
-                "wet_mcp.setup.run_auto_setup",
+                "wet.setup.run_auto_setup",
                 side_effect=Exception("setup failed"),
             ),
-            patch("wet_mcp.runtime.cell_configured", _no_cells()),
-            patch("wet_mcp.setup_tool.settings") as mock_settings,
+            patch("wet.runtime.cell_configured", _no_cells()),
+            patch("wet.setup_tool.settings") as mock_settings,
             patch("fastretrieval.TextEmbedding") as mock_embed,
         ):
             mock_settings.rerank_enabled = False
@@ -129,7 +129,7 @@ class TestRunWarmup:
 
             mock_embed.return_value.embed.return_value = iter([[0.1] * 768])
 
-            from wet_mcp.setup_tool import run_warmup
+            from wet.setup_tool import run_warmup
 
             result = await run_warmup()
 
@@ -139,9 +139,9 @@ class TestRunWarmup:
     async def test_warmup_local_embedding_with_reranker(self):
         """Both local embedding and reranker are downloaded when rerank enabled."""
         with (
-            patch("wet_mcp.setup.run_auto_setup"),
-            patch("wet_mcp.runtime.cell_configured", _no_cells()),
-            patch("wet_mcp.setup_tool.settings") as mock_settings,
+            patch("wet.setup.run_auto_setup"),
+            patch("wet.runtime.cell_configured", _no_cells()),
+            patch("wet.setup_tool.settings") as mock_settings,
             patch("fastretrieval.TextEmbedding") as mock_embed,
             patch("fastretrieval.TextCrossEncoder") as mock_reranker,
         ):
@@ -152,7 +152,7 @@ class TestRunWarmup:
             mock_embed.return_value.embed.return_value = iter([[0.1] * 768])
             mock_reranker.return_value.rerank.return_value = iter([0.9])
 
-            from wet_mcp.setup_tool import run_warmup
+            from wet.setup_tool import run_warmup
 
             result = await run_warmup()
 
@@ -163,10 +163,10 @@ class TestRunWarmup:
     async def test_warmup_corrupted_cache_retry(self):
         """Corrupted cache triggers clear + retry."""
         with (
-            patch("wet_mcp.setup.run_auto_setup"),
-            patch("wet_mcp.runtime.cell_configured", _no_cells()),
-            patch("wet_mcp.setup_tool.settings") as mock_settings,
-            patch("wet_mcp.setup_tool.clear_model_cache") as mock_clear,
+            patch("wet.setup.run_auto_setup"),
+            patch("wet.runtime.cell_configured", _no_cells()),
+            patch("wet.setup_tool.settings") as mock_settings,
+            patch("wet.setup_tool.clear_model_cache") as mock_clear,
             patch("fastretrieval.TextEmbedding") as mock_embed,
         ):
             mock_settings.rerank_enabled = False
@@ -185,7 +185,7 @@ class TestRunWarmup:
 
             mock_embed.side_effect = side_effect
 
-            from wet_mcp.setup_tool import run_warmup
+            from wet.setup_tool import run_warmup
 
             result = await run_warmup()
 
@@ -199,18 +199,18 @@ class TestSetupMcpTool:
     async def test_config_tool_warmup_action(self):
         """config tool with action='warmup' calls run_warmup."""
         with patch(
-            "wet_mcp.setup_tool.run_warmup",
+            "wet.setup_tool.run_warmup",
             new_callable=AsyncMock,
             return_value={"status": "ok", "steps": [], "mode": "local"},
         ):
-            from wet_mcp.server import config
+            from wet.server import config
 
             result = await config(action="warmup")
             assert '"status": "ok"' in text(result)
 
     async def test_config_tool_invalid_action(self):
         """config tool with invalid action returns an error payload."""
-        from wet_mcp.server import config
+        from wet.server import config
 
         result = await config(action="invalid_xyz_action")
         assert '"error"' in text(result)
@@ -222,7 +222,7 @@ class TestSetupMcpTool:
         They must not silently resurrect: each reports the same unknown-action
         error an operator would get for any typo, naming the valid actions.
         """
-        from wet_mcp.server import config
+        from wet.server import config
 
         for action in ("setup_sync", "setup_status", "setup_start", "setup_reset"):
             result = await config(action=action)

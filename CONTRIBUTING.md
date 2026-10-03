@@ -1,6 +1,6 @@
-# Contributing to wet-mcp
+# Contributing to wet
 
-Thank you for your interest in contributing to wet-mcp! This guide will help you get started.
+Thank you for your interest in contributing to wet! This guide will help you get started.
 
 ## Getting Started
 
@@ -17,8 +17,8 @@ Thank you for your interest in contributing to wet-mcp! This guide will help you
 1. **Fork the repository** and clone your fork
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/wet-mcp
-cd wet-mcp
+git clone https://github.com/YOUR_USERNAME/wet
+cd wet
 ```
 
 2. **Install tools and dependencies**
@@ -50,7 +50,7 @@ uv run ruff format --check .
 
 ```bash
 # Run the server (SearXNG will auto-start as embedded subprocess)
-uv run wet-mcp
+uv run wet
 
 # For LLM-based media analysis, set API keys:
 export API_KEYS="GOOGLE_API_KEY:your-key"
@@ -148,9 +148,9 @@ uv run pytest --tb=short   # Short tracebacks
 ## Project Structure
 
 ```text
-wet-mcp/
+wet/
 ├── src/
-│   └── wet_mcp/
+│   └── wet/
 │       ├── __init__.py
 │       ├── config.py          # Configuration
 │       ├── server.py          # MCP server

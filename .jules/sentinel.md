@@ -16,7 +16,7 @@ repository history before the same finding is raised again.
 
 ## 2026-07-10 - Path Hijacking in subprocess.run
 **Commit:** 879ca76
-**Vulnerability:** The `subprocess.run` call in `src/wet_mcp/server.py` used a partial executable name (`"gh"`) instead of an absolute path. This is susceptible to path hijacking (where an attacker controls the PATH environment variable to execute a malicious binary).
+**Vulnerability:** The `subprocess.run` call in `src/wet/server.py` used a partial executable name (`"gh"`) instead of an absolute path. This is susceptible to path hijacking (where an attacker controls the PATH environment variable to execute a malicious binary).
 **Learning:** Even though `shutil.which` was used to check for the existence of an executable, the result was discarded, and the partial name was still passed to `subprocess.run`.
 **Prevention:** Always use the absolute path returned by `shutil.which` (or hardcode the absolute path if known) when passing the executable name to `subprocess.run`.
 

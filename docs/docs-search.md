@@ -1,8 +1,8 @@
-# wet-mcp Docs Search (Context7-parity)
+# wet Docs Search (Context7-parity)
 
 > Context7-level docs search.
 
-This document explains how wet-mcp's docs search compares with
+This document explains how wet's docs search compares with
 Context7, Nia, Docfork, and Grounded Docs, and how to use the three
 `search` actions in practice.
 
@@ -71,7 +71,7 @@ search(action="docs_query",
 
 ## Comparison vs alternatives
 
-| Capability | wet-mcp | Context7 | Nia | Docfork | Grounded Docs |
+| Capability | wet | Context7 | Nia | Docfork | Grounded Docs |
 |---|---|---|---|---|---|
 | Tier 1 curated libs | 50 (expanding) | 9000+ aspirational | varies | varies | varies |
 | Tier 2 on-demand | Yes (web-core ScrapingAgent + RTD/Docusaurus/Mintlify/MkDocs detection) | No | partial | No | partial |
@@ -93,14 +93,14 @@ search(action="docs_query",
 
 ## Cross-references
 
-- Action surface: `src/wet_mcp/docs/search.md`
-- Server dispatcher: `src/wet_mcp/server.py` (`case "docs_resolve"` /
+- Action surface: `src/wet/docs/search.md`
+- Server dispatcher: `src/wet/server.py` (`case "docs_resolve"` /
   `case "docs_query"` / `case "docs_lock_project"`)
-- Resolve / query: `src/wet_mcp/sources/docs.py::resolve_library` /
+- Resolve / query: `src/wet/sources/docs.py::resolve_library` /
   `query_docs` / `ingest_tier2`
-- Project lock: `src/wet_mcp/sources/project_lock.py`
-- Tier 1 fixture: `src/wet_mcp/data/tier1_libraries.json`
-- Tier 1 warmup: `src/wet_mcp/sources/tier1_warmup.py::maybe_warm`
+- Project lock: `src/wet/sources/project_lock.py`
+- Tier 1 fixture: `src/wet/data/tier1_libraries.json`
+- Tier 1 warmup: `src/wet/sources/tier1_warmup.py::maybe_warm`
 - Eager Tier 1 build: `scripts/build_tier1_index.py`
 - Schema migrations: `alembic/versions/docs_002_libraries.py` +
   `alembic/versions/docs_003_project_context.py`

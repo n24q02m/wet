@@ -14,8 +14,8 @@ import pytest
 from mcp.types import CallToolResult
 from structured import payload, text
 
-from wet_mcp import server as srv
-from wet_mcp.db import DocsDB
+from wet import server as srv
+from wet.db import DocsDB
 
 
 @pytest.fixture
@@ -75,7 +75,7 @@ async def test_docs_query_seeded_library_without_chunks_triggers_ingest(
     """
     import asyncio
 
-    from wet_mcp.sources import docs as docs_mod
+    from wet.sources import docs as docs_mod
 
     ingested: list[str] = []
 

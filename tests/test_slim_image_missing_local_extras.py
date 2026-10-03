@@ -38,16 +38,16 @@ from unittest.mock import AsyncMock, Mock
 import pytest
 from hull_core.auth.context import AuthContext, reset_current_user, set_current_user
 
-from wet_mcp import server
-from wet_mcp.db import INDEX_STATE_DONE, INDEX_STATE_RUNNING, DocsDB
+from wet import server
+from wet.db import INDEX_STATE_DONE, INDEX_STATE_RUNNING, DocsDB
 
 # Captured at collection time, BEFORE conftest's autouse lifespan stub
 # replaces both factories with MagicMocks that report a healthy backend and never
 # touch the module singleton. Under that stub the startup tests below pass on
 # unfixed code, asserting nothing. Its docstring says as much: "Tests that
 # exercise these init factories patch the same targets themselves."
-from wet_mcp.embedder import init_backend as _REAL_INIT_BACKEND
-from wet_mcp.reranker import init_reranker as _REAL_INIT_RERANKER
+from wet.embedder import init_backend as _REAL_INIT_BACKEND
+from wet.reranker import init_reranker as _REAL_INIT_RERANKER
 
 DOCS_URL = "https://example.test/alpha"
 
@@ -60,8 +60,8 @@ def _isolate(monkeypatch):
     that never set them and is nonetheless running an image without the local
     extras.
     """
-    from wet_mcp import embedder, reranker
-    from wet_mcp.config import settings
+    from wet import embedder, reranker
+    from wet.config import settings
 
     monkeypatch.setattr(settings, "disable_local_embed", False)
     monkeypatch.setattr(settings, "disable_local_rerank", False)
@@ -116,7 +116,7 @@ def slim_image(monkeypatch):
 class TestEmbedResolutionOnASlimImage:
     def test_absent_local_extras_resolve_to_none_without_any_flag(self, slim_image):
         """The flag is unset; the package is gone. That is still 'unavailable'."""
-        from wet_mcp.embedder import resolve_embed_backend_for_request
+        from wet.embedder import resolve_embed_backend_for_request
 
         assert resolve_embed_backend_for_request() is None
         assert slim_image == [], f"local ONNX leg was entered: {slim_image}"
@@ -128,13 +128,13 @@ class TestEmbedResolutionOnASlimImage:
         ``_embed_batch``'s permanent-error branch, which is how the failure
         reached the index record as the version's ``index_error``.
         """
-        from wet_mcp import server
+        from wet import server
 
         assert await server._embed_batch(["a", "b"]) is None
         assert slim_image == [], f"local ONNX leg was entered: {slim_image}"
 
     async def test_query_embed_degrades_instead_of_raising(self, slim_image):
-        from wet_mcp import server
+        from wet import server
 
         assert await server._embed("hello", is_query=True) is None
         assert slim_image == [], f"local ONNX leg was entered: {slim_image}"
@@ -146,7 +146,7 @@ class TestEmbedResolutionOnASlimImage:
         after the wrong thing; the actionable fact is that the image has no
         local extras, so the deployment needs a cloud cell.
         """
-        from wet_mcp.embedder import embedding_unavailable_reason
+        from wet.embedder import embedding_unavailable_reason
 
         reason = embedding_unavailable_reason()
         assert reason is not None
@@ -161,8 +161,8 @@ class TestEmbedResolutionOnASlimImage:
         self, monkeypatch
     ):
         """Control for the branch above: the flag wording must not be lost."""
-        from wet_mcp.config import settings
-        from wet_mcp.embedder import embedding_unavailable_reason
+        from wet.config import settings
+        from wet.embedder import embedding_unavailable_reason
 
         monkeypatch.setattr(settings, "disable_local_embed", True)
 
@@ -173,8 +173,8 @@ class TestEmbedResolutionOnASlimImage:
 
     def test_installed_local_extras_are_still_used(self):
         """No regression: a full image with the flag off keeps its local leg."""
-        from wet_mcp import embedder
-        from wet_mcp.embedder import LocalEmbeddingBackend
+        from wet import embedder
+        from wet.embedder import LocalEmbeddingBackend
 
         backend = embedder.resolve_embed_backend_for_request()
         assert isinstance(backend, LocalEmbeddingBackend)
@@ -183,7 +183,7 @@ class TestEmbedResolutionOnASlimImage:
 
 class TestRerankResolutionOnASlimImage:
     def test_absent_local_extras_resolve_to_none_without_any_flag(self, slim_image):
-        from wet_mcp.reranker import resolve_rerank_backend_for_request
+        from wet.reranker import resolve_rerank_backend_for_request
 
         assert resolve_rerank_backend_for_request() is None
         assert slim_image == [], f"local ONNX leg was entered: {slim_image}"
@@ -192,15 +192,15 @@ class TestRerankResolutionOnASlimImage:
         """``LocalReranker.rerank`` swallows its own load failure and returns
         ``[]``, so the broken leg is invisible in the result. The import list is
         the only thing that can tell "skipped" from "failed quietly"."""
-        from wet_mcp import server
+        from wet import server
 
         results = [{"content": "doc-a"}, {"content": "doc-b"}]
         assert await server._rerank_results("q", results, 1) == [{"content": "doc-a"}]
         assert slim_image == [], f"local ONNX leg was entered: {slim_image}"
 
     def test_installed_local_extras_are_still_used(self):
-        from wet_mcp import reranker
-        from wet_mcp.reranker import LocalReranker
+        from wet import reranker
+        from wet.reranker import LocalReranker
 
         assert isinstance(reranker.resolve_rerank_backend_for_request(), LocalReranker)
 
@@ -299,7 +299,7 @@ class TestBackgroundIndexerOnASlimImage:
         self, docs_db, no_searxng, monkeypatch
     ):
         """Control: the happy path must not grow a spurious error string."""
-        from wet_mcp import embedder
+        from wet import embedder
 
         lib_id, ver_id = _fresh_version(docs_db)
         monkeypatch.setattr(
@@ -339,7 +339,7 @@ def real_backend_factories(monkeypatch):
 
     Without this the code under test never runs at all.
     """
-    from wet_mcp import embedder, reranker
+    from wet import embedder, reranker
 
     monkeypatch.setattr(embedder, "init_backend", _REAL_INIT_BACKEND)
     monkeypatch.setattr(reranker, "init_reranker", _REAL_INIT_RERANKER)
@@ -348,7 +348,7 @@ def real_backend_factories(monkeypatch):
 class TestStartupNeverInstallsABackendItCannotLoad:
     @staticmethod
     def _enable_local_startup(monkeypatch):
-        from wet_mcp.config import settings
+        from wet.config import settings
 
         monkeypatch.setattr(type(settings), "local_embed_available", lambda self: True)
         monkeypatch.setattr(type(settings), "local_rerank_available", lambda self: True)
@@ -363,7 +363,7 @@ class TestStartupNeverInstallsABackendItCannotLoad:
         use raises, and the indexer's ``is None`` guard -- the one place
         written to produce a loud, informative degrade -- never fires.
         """
-        from wet_mcp import embedder
+        from wet import embedder
 
         await server._init_embedding_backend()
 
@@ -373,8 +373,8 @@ class TestStartupNeverInstallsABackendItCannotLoad:
     async def test_local_backend_is_cleared_when_availability_check_returns_zero(
         self, real_backend_factories, monkeypatch
     ):
-        from wet_mcp import embedder
-        from wet_mcp.embedder import LocalEmbeddingBackend
+        from wet import embedder
+        from wet.embedder import LocalEmbeddingBackend
 
         self._enable_local_startup(monkeypatch)
         monkeypatch.setattr(
@@ -388,8 +388,8 @@ class TestStartupNeverInstallsABackendItCannotLoad:
     async def test_local_backend_is_cleared_when_availability_check_raises(
         self, real_backend_factories, monkeypatch
     ):
-        from wet_mcp import embedder
-        from wet_mcp.embedder import LocalEmbeddingBackend
+        from wet import embedder
+        from wet.embedder import LocalEmbeddingBackend
 
         self._enable_local_startup(monkeypatch)
         monkeypatch.setattr(
@@ -405,7 +405,7 @@ class TestStartupNeverInstallsABackendItCannotLoad:
     async def test_local_reranker_is_not_installed_when_the_package_is_absent(
         self, slim_image, real_backend_factories
     ):
-        from wet_mcp import reranker
+        from wet import reranker
 
         await server._init_reranker_backend()
 
@@ -415,8 +415,8 @@ class TestStartupNeverInstallsABackendItCannotLoad:
     async def test_local_reranker_is_cleared_when_availability_check_returns_false(
         self, real_backend_factories, monkeypatch
     ):
-        from wet_mcp import reranker
-        from wet_mcp.reranker import LocalReranker
+        from wet import reranker
+        from wet.reranker import LocalReranker
 
         self._enable_local_startup(monkeypatch)
         monkeypatch.setattr(LocalReranker, "check_available", Mock(return_value=False))
@@ -428,8 +428,8 @@ class TestStartupNeverInstallsABackendItCannotLoad:
     async def test_local_reranker_is_cleared_when_availability_check_raises(
         self, real_backend_factories, monkeypatch
     ):
-        from wet_mcp import reranker
-        from wet_mcp.reranker import LocalReranker
+        from wet import reranker
+        from wet.reranker import LocalReranker
 
         self._enable_local_startup(monkeypatch)
         monkeypatch.setattr(

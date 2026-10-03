@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from wet_mcp.sources.crawler import sitemap
+from wet.sources.crawler import sitemap
 
 
 @pytest.mark.asyncio
@@ -17,7 +17,7 @@ async def test_sitemap_basic(mock_crawler_instance):
     mock_crawler_instance.arun = AsyncMock(return_value=mock_result)
 
     with patch(
-        "wet_mcp.sources.crawler._get_crawler",
+        "wet.sources.crawler._get_crawler",
         new_callable=AsyncMock,
         return_value=mock_crawler_instance,
     ):
@@ -40,7 +40,7 @@ async def test_sitemap_dict_links(mock_crawler_instance):
     mock_crawler_instance.arun = AsyncMock(return_value=mock_result)
 
     with patch(
-        "wet_mcp.sources.crawler._get_crawler",
+        "wet.sources.crawler._get_crawler",
         new_callable=AsyncMock,
         return_value=mock_crawler_instance,
     ):
@@ -70,7 +70,7 @@ async def test_sitemap_depth_limit(mock_crawler_instance):
     mock_crawler_instance.arun = AsyncMock(side_effect=side_effect)
 
     with patch(
-        "wet_mcp.sources.crawler._get_crawler",
+        "wet.sources.crawler._get_crawler",
         new_callable=AsyncMock,
         return_value=mock_crawler_instance,
     ):
@@ -93,7 +93,7 @@ async def test_sitemap_max_pages(mock_crawler_instance):
     mock_crawler_instance.arun = AsyncMock(return_value=mock_result)
 
     with patch(
-        "wet_mcp.sources.crawler._get_crawler",
+        "wet.sources.crawler._get_crawler",
         new_callable=AsyncMock,
         return_value=mock_crawler_instance,
     ):
@@ -109,7 +109,7 @@ async def test_sitemap_error_handling(mock_crawler_instance):
     mock_crawler_instance.arun = AsyncMock(side_effect=Exception("Network error"))
 
     with patch(
-        "wet_mcp.sources.crawler._get_crawler",
+        "wet.sources.crawler._get_crawler",
         new_callable=AsyncMock,
         return_value=mock_crawler_instance,
     ):
@@ -127,11 +127,11 @@ async def test_sitemap_unsafe_url(mock_crawler_instance):
 
     with (
         patch(
-            "wet_mcp.sources.crawler._get_crawler",
+            "wet.sources.crawler._get_crawler",
             new_callable=AsyncMock,
             return_value=mock_crawler_instance,
         ),
-        patch("wet_mcp.sources.crawler.is_safe_url", return_value=False),
+        patch("wet.sources.crawler.is_safe_url", return_value=False),
     ):
         result = await sitemap(["https://unsafe.example.com"], depth=1)
 
@@ -149,7 +149,7 @@ async def test_sitemap_multiple_roots(mock_crawler_instance):
     mock_crawler_instance.arun = AsyncMock(return_value=mock_result)
 
     with patch(
-        "wet_mcp.sources.crawler._get_crawler",
+        "wet.sources.crawler._get_crawler",
         new_callable=AsyncMock,
         return_value=mock_crawler_instance,
     ):
@@ -185,7 +185,7 @@ async def test_sitemap_no_duplicate_visits(mock_crawler_instance):
     mock_crawler_instance.arun = AsyncMock(side_effect=side_effect)
 
     with patch(
-        "wet_mcp.sources.crawler._get_crawler",
+        "wet.sources.crawler._get_crawler",
         new_callable=AsyncMock,
         return_value=mock_crawler_instance,
     ):

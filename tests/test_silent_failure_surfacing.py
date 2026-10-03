@@ -20,9 +20,9 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from loguru import logger
 
-from wet_mcp import server
-from wet_mcp.db import DocsDB
-from wet_mcp.server import search
+from wet import server
+from wet.db import DocsDB
+from wet.server import search
 
 if TYPE_CHECKING:
     from loguru import Record
@@ -43,7 +43,7 @@ def captured_logs(level: str = "DEBUG"):
     """Collect loguru records emitted inside the block.
 
     ``logger.add`` is additive, so the module-level stderr sink configured by
-    ``wet_mcp.server`` keeps working and no global logger state is mutated.
+    ``wet.server`` keeps working and no global logger state is mutated.
     """
     records: list[Record] = []
     sink_id = logger.add(lambda message: records.append(message.record), level=level)
@@ -80,7 +80,7 @@ def _single_user_context():
       identity so every test here runs in the single-user context.
     * conftest's ``_disable_uvx_tool_venv_detection`` neutralises
       ``is_uvx_tool_venv`` only on whatever object is registered as
-      ``sys.modules["wet_mcp.server"]``. A module that pops that key and
+      ``sys.modules["wet.server"]``. A module that pops that key and
       re-imports leaves the object bound at the top of this file a *different*
       object, and conftest patches the other one. The detector genuinely
       returns True here -- it keys off a missing ``pip``, which this
@@ -94,7 +94,7 @@ def _single_user_context():
     token = set_current_user(AuthContext.local())
     previous_db = server._docs_db
     with (
-        patch("wet_mcp.embedder.resolve_embed_backend_for_request", return_value=None),
+        patch("wet.embedder.resolve_embed_backend_for_request", return_value=None),
         patch.object(server, "is_uvx_tool_venv", lambda: False),
     ):
         yield
@@ -110,7 +110,7 @@ def _diag() -> dict:
 
     return {
         "uvx": server.is_uvx_tool_venv(),
-        "same_module": server is sys.modules.get("wet_mcp.server"),
+        "same_module": server is sys.modules.get("wet.server"),
         "namespace": current_user().namespace,
     }
 
@@ -128,7 +128,7 @@ async def test_rerank_failure_is_reported_at_warning():
 
     with (
         patch(
-            "wet_mcp.reranker.resolve_rerank_backend_for_request",
+            "wet.reranker.resolve_rerank_backend_for_request",
             return_value=reranker,
         ),
         captured_logs() as records,
@@ -157,10 +157,10 @@ async def test_search_rerank_step_failure_is_reported_at_warning():
     chain = AsyncMock(return_value=backend_results)
     with (
         patch(
-            "wet_mcp.sources.search_backends.chain_backend_names",
+            "wet.sources.search_backends.chain_backend_names",
             return_value=[],
         ),
-        patch("wet_mcp.sources.search_backends.run_search_chain", new=chain),
+        patch("wet.sources.search_backends.run_search_chain", new=chain),
         patch.object(
             server,
             "_rerank_results",
@@ -193,10 +193,10 @@ async def test_search_enrichment_failure_is_reported_at_warning():
     chain = AsyncMock(return_value=backend_results)
     with (
         patch(
-            "wet_mcp.sources.search_backends.chain_backend_names",
+            "wet.sources.search_backends.chain_backend_names",
             return_value=[],
         ),
-        patch("wet_mcp.sources.search_backends.run_search_chain", new=chain),
+        patch("wet.sources.search_backends.run_search_chain", new=chain),
         patch.object(
             server,
             "_rerank_results",
@@ -204,7 +204,7 @@ async def test_search_enrichment_failure_is_reported_at_warning():
             side_effect=lambda q, r, top_n: r,
         ),
         patch(
-            "wet_mcp.sources.search_strategies.enrich_snippets",
+            "wet.sources.search_strategies.enrich_snippets",
             new_callable=AsyncMock,
             side_effect=RuntimeError("enrichment fetch failed"),
         ),
@@ -239,10 +239,10 @@ async def test_search_citation_standardization_failure_is_reported_at_warning():
     chain = AsyncMock(return_value=backend_results)
     with (
         patch(
-            "wet_mcp.sources.search_backends.chain_backend_names",
+            "wet.sources.search_backends.chain_backend_names",
             return_value=[],
         ),
-        patch("wet_mcp.sources.search_backends.run_search_chain", new=chain),
+        patch("wet.sources.search_backends.run_search_chain", new=chain),
         patch.object(
             server,
             "_rerank_results",
@@ -250,7 +250,7 @@ async def test_search_citation_standardization_failure_is_reported_at_warning():
             side_effect=lambda q, r, top_n: r,
         ),
         patch(
-            "wet_mcp.sources._search_polish.standardize_results",
+            "wet.sources._search_polish.standardize_results",
             side_effect=RuntimeError("bad citation shape"),
         ),
         patch.object(server, "_web_cache", None),
@@ -284,7 +284,7 @@ async def test_background_index_alternate_source_failure_is_reported():
     searx_payload = json.dumps({"results": [{"url": "https://alt.example/docs"}]})
 
     with (
-        patch("wet_mcp.sources.docs._normalize_docs_url", return_value="http://docs"),
+        patch("wet.sources.docs._normalize_docs_url", return_value="http://docs"),
         patch.object(
             server,
             "_fetch_and_chunk_docs",
@@ -323,7 +323,7 @@ async def test_background_index_alternate_source_failure_is_reported():
 async def test_background_index_configured_search_fallback_failure_is_reported():
     """The last-resort configured search fallback reports its own failure."""
     with (
-        patch("wet_mcp.sources.docs._normalize_docs_url", return_value="http://docs"),
+        patch("wet.sources.docs._normalize_docs_url", return_value="http://docs"),
         patch.object(
             server,
             "_fetch_and_chunk_docs",
@@ -368,7 +368,7 @@ async def test_background_index_embedding_timeout_is_reported():
     try:
         with (
             patch(
-                "wet_mcp.sources.docs._normalize_docs_url", return_value="http://docs"
+                "wet.sources.docs._normalize_docs_url", return_value="http://docs"
             ),
             patch.object(
                 server,
@@ -377,7 +377,7 @@ async def test_background_index_embedding_timeout_is_reported():
                 return_value=(chunks, 5),
             ),
             patch(
-                "wet_mcp.embedder.resolve_embed_backend_for_request",
+                "wet.embedder.resolve_embed_backend_for_request",
                 return_value=MagicMock(),
             ),
             patch.object(
@@ -423,7 +423,7 @@ async def test_background_index_crash_keeps_the_traceback():
     try:
         with (
             patch(
-                "wet_mcp.sources.docs._normalize_docs_url",
+                "wet.sources.docs._normalize_docs_url",
                 return_value="http://docs.example/guide",
             ),
             patch.object(
@@ -433,7 +433,7 @@ async def test_background_index_crash_keeps_the_traceback():
                 return_value=(chunks, 5),
             ),
             patch(
-                "wet_mcp.embedder.resolve_embed_backend_for_request",
+                "wet.embedder.resolve_embed_backend_for_request",
                 return_value=None,
             ),
             captured_logs() as records,
@@ -471,7 +471,7 @@ async def test_discover_docs_url_non_json_configured_search_is_reported():
     """A configured search failure string is logged, not mistaken for no result."""
     with (
         patch(
-            "wet_mcp.sources.docs.discover_library",
+            "wet.sources.docs.discover_library",
             new_callable=AsyncMock,
             return_value=None,
         ),

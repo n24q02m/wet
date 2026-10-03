@@ -15,7 +15,7 @@ import unittest.mock
 
 from structured import payload
 
-from wet_mcp.sources.search_backends import (
+from wet.sources.search_backends import (
     _TAVILY_COUNTRY_BY_ISO,
     BraveBackend,
     ExaBackend,
@@ -45,7 +45,7 @@ async def test_searxng_region_plumbs_combined_locale():
         return json.dumps({"results": [], "total": 0, "query": kwargs["query"]})
 
     with unittest.mock.patch(
-        "wet_mcp.sources.searxng.search", side_effect=fake_searxng_search
+        "wet.sources.searxng.search", side_effect=fake_searxng_search
     ):
         await SearxngBackend("http://x").search("q", language="vi", region="vn")
     assert seen["language"] == "vi-VN"
@@ -131,7 +131,7 @@ async def test_run_search_chain_region_skips_unsupported_backend_named(
     exa = _mock_backend("exa", hit)
     brave = _mock_backend("brave", hit)
     with unittest.mock.patch(
-        "wet_mcp.sources.search_backends.search_backends_from_env",
+        "wet.sources.search_backends.search_backends_from_env",
         return_value=[exa, brave],
     ):
         out = json.loads(await run_search_chain("q", region="US"))
@@ -153,7 +153,7 @@ async def test_run_search_chain_region_all_unsupported_is_structured_error(
 
     exa = _mock_backend("exa", hit)
     with unittest.mock.patch(
-        "wet_mcp.sources.search_backends.search_backends_from_env",
+        "wet.sources.search_backends.search_backends_from_env",
         return_value=[exa],
     ):
         out = json.loads(await run_search_chain("q", region="US"))
@@ -177,7 +177,7 @@ async def test_run_search_chain_region_reaches_capable_backend(monkeypatch):
 
     brave = _mock_backend("brave", hit)
     with unittest.mock.patch(
-        "wet_mcp.sources.search_backends.search_backends_from_env",
+        "wet.sources.search_backends.search_backends_from_env",
         return_value=[brave],
     ):
         out = json.loads(await run_search_chain("q", region="vn"))
@@ -210,18 +210,18 @@ def _chain_mock(responses):
 
 
 async def _call_search(**overrides):
-    from wet_mcp.server import search
+    from wet.server import search
 
     return await search(action="search", query="python tutorial", **overrides)
 
 
 def _patch_chain(fake):
-    return unittest.mock.patch("wet_mcp.sources.search_backends.run_search_chain", fake)
+    return unittest.mock.patch("wet.sources.search_backends.run_search_chain", fake)
 
 
 def _patch_rewrite(side_effect):
     return unittest.mock.patch(
-        "wet_mcp.sources.search_strategies.rewrite_query",
+        "wet.sources.search_strategies.rewrite_query",
         unittest.mock.AsyncMock(side_effect=side_effect),
     )
 

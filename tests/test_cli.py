@@ -1,4 +1,4 @@
-"""Tests for the de-hosted ``wet`` CLI control plane (wet_mcp.cli).
+"""Tests for the de-hosted ``wet`` CLI control plane (wet.cli).
 
 The old mcp_core build_cli mount is gone: bare ``wet`` prints help (rc 0),
 subcommands run one-shot operator actions, and unknown subcommands fail with
@@ -13,7 +13,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from wet_mcp import cli
+from wet import cli
 
 # ---------------------------------------------------------------------------
 # helpers
@@ -59,7 +59,7 @@ class TestBareInvocation:
         assert "config" in out
 
     def test_bare_invocation_does_not_start_server(self, capsys):
-        with patch("wet_mcp.server.run_server_blocking") as mock_serve:
+        with patch("wet.server.run_server_blocking") as mock_serve:
             rc = cli.main([])
 
         mock_serve.assert_not_called()
@@ -92,8 +92,8 @@ class TestServerStart:
     def test_foreground_calls_run_server_blocking(self, monkeypatch, capsys):
         monkeypatch.setattr(cli, "_find_locks", lambda port: [])
         with (
-            patch("wet_mcp.runtime.hull_settings", return_value=_hs(port=9101)),
-            patch("wet_mcp.server.run_server_blocking") as mock_serve,
+            patch("wet.runtime.hull_settings", return_value=_hs(port=9101)),
+            patch("wet.server.run_server_blocking") as mock_serve,
         ):
             rc = cli.main(["server", "start", "--foreground", "--port", "9101"])
 
@@ -104,8 +104,8 @@ class TestServerStart:
         """No --host/--port: the config file decides the bind inside run_server_blocking."""
         monkeypatch.setattr(cli, "_find_locks", lambda port: [])
         with (
-            patch("wet_mcp.runtime.hull_settings", return_value=_hs(port=9101)),
-            patch("wet_mcp.server.run_server_blocking") as mock_serve,
+            patch("wet.runtime.hull_settings", return_value=_hs(port=9101)),
+            patch("wet.server.run_server_blocking") as mock_serve,
         ):
             rc = cli.main(["server", "start", "--foreground"])
 
@@ -115,9 +115,9 @@ class TestServerStart:
     def test_foreground_startup_refusal_reports_error(self, monkeypatch, capsys):
         monkeypatch.setattr(cli, "_find_locks", lambda port: [])
         with (
-            patch("wet_mcp.runtime.hull_settings", return_value=_hs()),
+            patch("wet.runtime.hull_settings", return_value=_hs()),
             patch(
-                "wet_mcp.server.run_server_blocking",
+                "wet.server.run_server_blocking",
                 side_effect=ValueError("no-auth loopback"),
             ),
         ):
@@ -134,8 +134,8 @@ class TestServerStart:
             cmd="wet", timeout=2.0
         )
         with (
-            patch("wet_mcp.runtime.hull_settings", return_value=_hs(port=9102)),
-            patch("wet_mcp.cli._spawn_server", return_value=proc) as mock_spawn,
+            patch("wet.runtime.hull_settings", return_value=_hs(port=9102)),
+            patch("wet.cli._spawn_server", return_value=proc) as mock_spawn,
         ):
             rc = cli.main(["server", "start"])
 
@@ -150,9 +150,9 @@ class TestServerStart:
     def test_already_running_lock_blocks_start(self, monkeypatch, capsys, locks_dir):
         lock = _write_lock(locks_dir)
         with (
-            patch("wet_mcp.runtime.hull_settings", return_value=_hs()),
-            patch("wet_mcp.cli._pid_alive", return_value=True),
-            patch("wet_mcp.cli._spawn_server") as mock_spawn,
+            patch("wet.runtime.hull_settings", return_value=_hs()),
+            patch("wet.cli._pid_alive", return_value=True),
+            patch("wet.cli._spawn_server") as mock_spawn,
         ):
             rc = cli.main(["server", "start"])
 
@@ -174,9 +174,9 @@ class TestServerStart:
         log_path = tmp_path / "wet-server.log"
         log_path.write_text("boom: bad config\n", encoding="utf-8")
         with (
-            patch("wet_mcp.runtime.hull_settings", return_value=_hs()),
-            patch("wet_mcp.cli._spawn_server", return_value=proc),
-            patch("wet_mcp.cli._server_log_path", return_value=log_path),
+            patch("wet.runtime.hull_settings", return_value=_hs()),
+            patch("wet.cli._spawn_server", return_value=proc),
+            patch("wet.cli._server_log_path", return_value=log_path),
         ):
             rc = cli.main(["server", "start"])
 
@@ -204,7 +204,7 @@ class TestServerStop:
         rc = cli.main(["server", "stop", "--port", "8802"])
 
         assert rc == 0
-        assert "stopped wet-mcp server" in capsys.readouterr().out
+        assert "stopped wet server" in capsys.readouterr().out
         assert not lock.exists()
 
     def test_stop_removes_stale_lock(self, monkeypatch, capsys, locks_dir):
@@ -241,8 +241,8 @@ class TestServerStatus:
         self, monkeypatch, capsys, locks_dir
     ):
         with (
-            patch("wet_mcp.runtime.hull_settings", return_value=_hs(port=9103)),
-            patch("wet_mcp.cli._http_probe", return_value=False),
+            patch("wet.runtime.hull_settings", return_value=_hs(port=9103)),
+            patch("wet.cli._http_probe", return_value=False),
         ):
             rc = cli.main(["server", "status"])
 
@@ -285,8 +285,8 @@ def config_dir(tmp_path, monkeypatch):
     """Point wet's instance-config root at the test tmp tree."""
     d = tmp_path / "wet-home"
     d.mkdir()
-    monkeypatch.setattr("wet_mcp.runtime.wet_config_dir", lambda: d)
-    monkeypatch.setattr("wet_mcp.runtime.wet_config_path", lambda: d / "config.toml")
+    monkeypatch.setattr("wet.runtime.wet_config_dir", lambda: d)
+    monkeypatch.setattr("wet.runtime.wet_config_path", lambda: d / "config.toml")
     return d
 
 
@@ -402,7 +402,7 @@ class TestTokenHash:
 
 class TestUsersPath:
     def test_default_users_path(self, monkeypatch, capsys, config_dir):
-        with patch("wet_mcp.runtime.hull_settings", return_value=_hs()):
+        with patch("wet.runtime.hull_settings", return_value=_hs()):
             rc = cli.main(["users", "path"])
 
         assert rc == 0
@@ -411,7 +411,7 @@ class TestUsersPath:
     def test_configured_users_file_wins(self, monkeypatch, capsys, tmp_path):
         hs = _hs()
         hs.server.users_file = tmp_path / "custom-users.toml"
-        with patch("wet_mcp.runtime.hull_settings", return_value=hs):
+        with patch("wet.runtime.hull_settings", return_value=hs):
             rc = cli.main(["users", "path"])
 
         assert rc == 0
@@ -427,7 +427,7 @@ class TestDocsReindexSubcommand:
     """`wet docs reindex <library>` opens a standalone DocsDB."""
 
     def _patch_docs_db(self, monkeypatch, mock_db):
-        monkeypatch.setattr("wet_mcp.db.DocsDB", lambda *a, **k: mock_db)
+        monkeypatch.setattr("wet.db.DocsDB", lambda *a, **k: mock_db)
 
     def test_reindex_known_library_clears_chunks(self, monkeypatch, capsys, tmp_path):
         mock_db = MagicMock()
@@ -470,7 +470,7 @@ class TestDocsReembedSubcommand:
             "db_path": "/tmp/docs.db",
         }
         with patch(
-            "wet_mcp.docs_reembed.reembed", new_callable=AsyncMock, return_value=result
+            "wet.docs_reembed.reembed", new_callable=AsyncMock, return_value=result
         ):
             rc = cli.main(["docs", "reembed", "--dry-run"])
 
@@ -482,7 +482,7 @@ class TestDocsReembedSubcommand:
     def test_reembed_error_returns_nonzero(self, monkeypatch, capsys):
         result = {"status": "error", "reason": "embedding model mismatch"}
         with patch(
-            "wet_mcp.docs_reembed.reembed", new_callable=AsyncMock, return_value=result
+            "wet.docs_reembed.reembed", new_callable=AsyncMock, return_value=result
         ):
             rc = cli.main(["docs", "reembed"])
 
@@ -492,7 +492,7 @@ class TestDocsReembedSubcommand:
     def test_reembed_unconfigured_cell_returns_3(self, monkeypatch, capsys):
         result = {"status": "pending", "reason": "no embed cell configured"}
         with patch(
-            "wet_mcp.docs_reembed.reembed", new_callable=AsyncMock, return_value=result
+            "wet.docs_reembed.reembed", new_callable=AsyncMock, return_value=result
         ):
             rc = cli.main(["docs", "reembed"])
 
@@ -508,9 +508,9 @@ class TestDocsReembedSubcommand:
 class TestSearchSubcommand:
     def test_connection_failure_hints_server_start(self, monkeypatch, capsys):
         with (
-            patch("wet_mcp.runtime.hull_settings", return_value=_hs(port=9104)),
+            patch("wet.runtime.hull_settings", return_value=_hs(port=9104)),
             patch(
-                "wet_mcp.cli._post_rpc",
+                "wet.cli._post_rpc",
                 return_value=(None, None, None, OSError("refused")),
             ),
         ):
@@ -526,7 +526,7 @@ class TestWarmupSubcommand:
     def test_happy_path(self, capsys):
         result = {"status": "ok", "mode": "local", "steps": []}
         with patch(
-            "wet_mcp.setup_tool.run_warmup", new_callable=AsyncMock, return_value=result
+            "wet.setup_tool.run_warmup", new_callable=AsyncMock, return_value=result
         ) as mock_warmup:
             rc = cli.main(["warmup"])
 
@@ -537,7 +537,7 @@ class TestWarmupSubcommand:
     def test_error_status_returns_nonzero(self, capsys):
         result = {"status": "error", "steps": []}
         with patch(
-            "wet_mcp.setup_tool.run_warmup", new_callable=AsyncMock, return_value=result
+            "wet.setup_tool.run_warmup", new_callable=AsyncMock, return_value=result
         ):
             rc = cli.main(["warmup"])
 

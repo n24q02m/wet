@@ -1,6 +1,6 @@
 ---
 name: lock-project-stack
-description: Detect a project's manifest (pyproject.toml / package.json / go.mod / Cargo.toml), pin its library set into wet-mcp's Cabinets project_context, then route subsequent docs queries to the locked versions automatically.
+description: Detect a project's manifest (pyproject.toml / package.json / go.mod / Cargo.toml), pin its library set into wet's Cabinets project_context, then route subsequent docs queries to the locked versions automatically.
 argument-hint: "[absolute path to project root]"
 ---
 
@@ -48,7 +48,7 @@ the Cabinets workflow from spec section 4.3.
 
 - Re-run after every dependency bump so the lock stays in sync with
   what is actually installed.
-- For monorepos, lock each workspace project separately — wet-mcp keys
+- For monorepos, lock each workspace project separately — wet keys
   on absolute path so `apps/web` and `apps/api` get distinct locks.
 - The lock is a hint, not a hard constraint — callers can always
   override the version by passing it explicitly to `docs_query`.

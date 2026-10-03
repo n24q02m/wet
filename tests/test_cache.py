@@ -1,4 +1,4 @@
-"""Tests for src/wet_mcp/cache.py — WebCache with TTL-based expiry.
+"""Tests for src/wet/cache.py — WebCache with TTL-based expiry.
 
 Covers cache hit/miss, TTL expiry, hit counting, purge mechanics,
 deterministic cache keys and stats.
@@ -9,7 +9,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from wet_mcp.cache import WebCache, _cache_key
+from wet.cache import WebCache, _cache_key
 
 
 @pytest.fixture
@@ -85,7 +85,7 @@ class TestGetSet:
 
         # Mock time to be 10 seconds after creation
         now = time.time()
-        with patch("wet_mcp.cache.time.time", return_value=now + 10):
+        with patch("wet.cache.time.time", return_value=now + 10):
             res = cache.get_with_age("search", params)
             assert res is not None
             content, age = res
@@ -122,7 +122,7 @@ class TestTTLExpiry:
         assert short_ttl_cache.get("search", {"query": "test"}) is not None
 
         # Mock time to be 2 seconds in the future (past 1s TTL)
-        with patch("wet_mcp.cache.time.time", return_value=time.time() + 2):
+        with patch("wet.cache.time.time", return_value=time.time() + 2):
             result = short_ttl_cache.get("search", {"query": "test"})
             assert result is None
 
@@ -137,7 +137,7 @@ class TestTTLExpiry:
             cache.set("extract", {"urls": ["url"]}, "slow result")
 
             # After 120 seconds: search expired, extract still valid
-            with patch("wet_mcp.cache.time.time", return_value=time.time() + 120):
+            with patch("wet.cache.time.time", return_value=time.time() + 120):
                 assert cache.get("search", {"q": "fast"}) is None
                 assert cache.get("extract", {"urls": ["url"]}) == "slow result"
         finally:
@@ -198,7 +198,7 @@ class TestPurge:
         """Manually trigger purge of expired entries."""
         short_ttl_cache.set("search", {"q": "old"}, "old result")
         # Force purge with time in the future
-        with patch("wet_mcp.cache.time.time", return_value=time.time() + 5):
+        with patch("wet.cache.time.time", return_value=time.time() + 5):
             short_ttl_cache._purge_expired()
         # Even without time mock, the entry should be gone from DB
         stats = short_ttl_cache.stats()
@@ -206,7 +206,7 @@ class TestPurge:
 
     def test_periodic_purge(self, short_ttl_cache):
         """Automatic purge triggers every _PURGE_INTERVAL operations."""
-        from wet_mcp.cache import _PURGE_INTERVAL
+        from wet.cache import _PURGE_INTERVAL
 
         # 1. Fill with expired entries
         short_ttl_cache.set("search", {"q": "expired"}, "value")
@@ -215,7 +215,7 @@ class TestPurge:
         future = time.time() + 10
 
         # 3. Trigger _PURGE_INTERVAL sets. The last one should trigger purge.
-        with patch("wet_mcp.cache.time.time", return_value=future):
+        with patch("wet.cache.time.time", return_value=future):
             for i in range(_PURGE_INTERVAL):
                 short_ttl_cache.set("search", {"q": f"new_{i}"}, "val")
 
@@ -254,7 +254,7 @@ class TestStats:
         """Stats distinguish active vs expired entries."""
         short_ttl_cache.set("search", {"q": "a"}, "result")
 
-        with patch("wet_mcp.cache.time.time", return_value=time.time() + 5):
+        with patch("wet.cache.time.time", return_value=time.time() + 5):
             stats = short_ttl_cache.stats()
             assert stats["search"]["total"] == 1
             assert stats["search"]["active"] == 0
@@ -346,7 +346,7 @@ class TestCacheEdgeCases:
 
         with (
             patch("sqlite3.connect", return_value=mock_conn),
-            patch("wet_mcp.cache.logger") as mock_logger,
+            patch("wet.cache.logger") as mock_logger,
         ):
             cache = WebCache(tmp_path / "mock.db")
             # Should not raise

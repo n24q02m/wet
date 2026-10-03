@@ -3,7 +3,7 @@
 import json
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from wet_mcp.sources.structured import extract_structured
+from wet.sources.structured import extract_structured
 
 SAMPLE_SCHEMA = {
     "type": "object",
@@ -40,20 +40,20 @@ async def test_extract_structured_success():
 
     with (
         patch(
-            "wet_mcp.sources.structured.raw_extract",
+            "wet.sources.structured.raw_extract",
             new_callable=AsyncMock,
             return_value=json.dumps(SAMPLE_PAGES),
         ),
         patch(
-            "wet_mcp.sources.structured.has_llm_provider",
+            "wet.sources.structured.has_llm_provider",
             return_value=True,
         ),
         patch(
-            "wet_mcp.sources.structured.get_llm_config",
+            "wet.sources.structured.get_llm_config",
             return_value={"model": "gpt-4", "fallbacks": None, "temperature": 0},
         ),
         patch(
-            "wet_mcp.sources.structured.acompletion",
+            "wet.sources.structured.acompletion",
             new_callable=AsyncMock,
             return_value=_mock_llm_response(llm_output),
         ),
@@ -85,17 +85,17 @@ async def test_extract_structured_reads_clean_text_key():
 
     with (
         patch(
-            "wet_mcp.sources.structured.raw_extract",
+            "wet.sources.structured.raw_extract",
             new_callable=AsyncMock,
             return_value=json.dumps(real_shape_pages),
         ),
-        patch("wet_mcp.sources.structured.has_llm_provider", return_value=True),
+        patch("wet.sources.structured.has_llm_provider", return_value=True),
         patch(
-            "wet_mcp.sources.structured.get_llm_config",
+            "wet.sources.structured.get_llm_config",
             return_value={"model": "gpt-4", "fallbacks": None, "temperature": 0},
         ),
         patch(
-            "wet_mcp.sources.structured.acompletion",
+            "wet.sources.structured.acompletion",
             new_callable=AsyncMock,
             return_value=_mock_llm_response(llm_output),
         ),
@@ -112,7 +112,7 @@ async def test_extract_structured_reads_clean_text_key():
 
 async def test_extract_structured_local_mode_error():
     """Local mode (no LLM) returns an error."""
-    with patch("wet_mcp.sources.structured.has_llm_provider", return_value=False):
+    with patch("wet.sources.structured.has_llm_provider", return_value=False):
         result_str = await extract_structured(
             urls=["https://example.com"],
             schema=SAMPLE_SCHEMA,
@@ -131,11 +131,11 @@ async def test_extract_structured_no_content():
 
     with (
         patch(
-            "wet_mcp.sources.structured.raw_extract",
+            "wet.sources.structured.raw_extract",
             new_callable=AsyncMock,
             return_value=json.dumps(empty_pages),
         ),
-        patch("wet_mcp.sources.structured.has_llm_provider", return_value=True),
+        patch("wet.sources.structured.has_llm_provider", return_value=True),
     ):
         result_str = await extract_structured(
             urls=["https://example.com"],
@@ -154,17 +154,17 @@ async def test_extract_structured_validation_warning():
 
     with (
         patch(
-            "wet_mcp.sources.structured.raw_extract",
+            "wet.sources.structured.raw_extract",
             new_callable=AsyncMock,
             return_value=json.dumps(SAMPLE_PAGES),
         ),
-        patch("wet_mcp.sources.structured.has_llm_provider", return_value=True),
+        patch("wet.sources.structured.has_llm_provider", return_value=True),
         patch(
-            "wet_mcp.sources.structured.get_llm_config",
+            "wet.sources.structured.get_llm_config",
             return_value={"model": "gpt-4", "fallbacks": None, "temperature": 0},
         ),
         patch(
-            "wet_mcp.sources.structured.acompletion",
+            "wet.sources.structured.acompletion",
             new_callable=AsyncMock,
             return_value=_mock_llm_response(llm_output),
         ),
@@ -196,17 +196,17 @@ async def test_extract_structured_fallback_to_json_object():
 
     with (
         patch(
-            "wet_mcp.sources.structured.raw_extract",
+            "wet.sources.structured.raw_extract",
             new_callable=AsyncMock,
             return_value=json.dumps(SAMPLE_PAGES),
         ),
-        patch("wet_mcp.sources.structured.has_llm_provider", return_value=True),
+        patch("wet.sources.structured.has_llm_provider", return_value=True),
         patch(
-            "wet_mcp.sources.structured.get_llm_config",
+            "wet.sources.structured.get_llm_config",
             return_value={"model": "gpt-4", "fallbacks": None, "temperature": 0},
         ),
         patch(
-            "wet_mcp.sources.structured.acompletion",
+            "wet.sources.structured.acompletion",
             side_effect=mock_acompletion,
         ),
     ):
@@ -229,17 +229,17 @@ async def test_extract_structured_llm_failure():
 
     with (
         patch(
-            "wet_mcp.sources.structured.raw_extract",
+            "wet.sources.structured.raw_extract",
             new_callable=AsyncMock,
             return_value=json.dumps(SAMPLE_PAGES),
         ),
-        patch("wet_mcp.sources.structured.has_llm_provider", return_value=True),
+        patch("wet.sources.structured.has_llm_provider", return_value=True),
         patch(
-            "wet_mcp.sources.structured.get_llm_config",
+            "wet.sources.structured.get_llm_config",
             return_value={"model": "gpt-4", "fallbacks": None, "temperature": 0},
         ),
         patch(
-            "wet_mcp.sources.structured.acompletion",
+            "wet.sources.structured.acompletion",
             side_effect=mock_acompletion,
         ),
     ):
@@ -260,13 +260,13 @@ async def test_extract_structured_with_fallbacks():
 
     with (
         patch(
-            "wet_mcp.sources.structured.raw_extract",
+            "wet.sources.structured.raw_extract",
             new_callable=AsyncMock,
             return_value=json.dumps(SAMPLE_PAGES),
         ),
-        patch("wet_mcp.sources.structured.has_llm_provider", return_value=True),
+        patch("wet.sources.structured.has_llm_provider", return_value=True),
         patch(
-            "wet_mcp.sources.structured.get_llm_config",
+            "wet.sources.structured.get_llm_config",
             return_value={
                 "model": "gpt-4",
                 "fallbacks": fallback_config,
@@ -274,7 +274,7 @@ async def test_extract_structured_with_fallbacks():
             },
         ),
         patch(
-            "wet_mcp.sources.structured.acompletion",
+            "wet.sources.structured.acompletion",
             new_callable=AsyncMock,
             return_value=_mock_llm_response(llm_output),
         ) as mock_llm,
@@ -294,11 +294,11 @@ async def test_extract_structured_content_extraction_error():
     """Raw extraction raises exception -- returns error."""
     with (
         patch(
-            "wet_mcp.sources.structured.raw_extract",
+            "wet.sources.structured.raw_extract",
             new_callable=AsyncMock,
             side_effect=Exception("Connection refused"),
         ),
-        patch("wet_mcp.sources.structured.has_llm_provider", return_value=True),
+        patch("wet.sources.structured.has_llm_provider", return_value=True),
     ):
         result_str = await extract_structured(
             urls=["https://example.com"],
@@ -311,7 +311,7 @@ async def test_extract_structured_content_extraction_error():
 
 async def test_extract_structured_truncates_long_content():
     """Content exceeding _MAX_CONTENT_CHARS is truncated."""
-    from wet_mcp.sources.structured import _MAX_CONTENT_CHARS
+    from wet.sources.structured import _MAX_CONTENT_CHARS
 
     long_content = "x" * (_MAX_CONTENT_CHARS + 1000)
     long_pages = [
@@ -321,17 +321,17 @@ async def test_extract_structured_truncates_long_content():
 
     with (
         patch(
-            "wet_mcp.sources.structured.raw_extract",
+            "wet.sources.structured.raw_extract",
             new_callable=AsyncMock,
             return_value=json.dumps(long_pages),
         ),
-        patch("wet_mcp.sources.structured.has_llm_provider", return_value=True),
+        patch("wet.sources.structured.has_llm_provider", return_value=True),
         patch(
-            "wet_mcp.sources.structured.get_llm_config",
+            "wet.sources.structured.get_llm_config",
             return_value={"model": "gpt-4", "fallbacks": None, "temperature": 0},
         ),
         patch(
-            "wet_mcp.sources.structured.acompletion",
+            "wet.sources.structured.acompletion",
             new_callable=AsyncMock,
             return_value=_mock_llm_response(llm_output),
         ) as mock_llm,
@@ -354,17 +354,17 @@ async def test_extract_structured_with_custom_prompt():
 
     with (
         patch(
-            "wet_mcp.sources.structured.raw_extract",
+            "wet.sources.structured.raw_extract",
             new_callable=AsyncMock,
             return_value=json.dumps(SAMPLE_PAGES),
         ),
-        patch("wet_mcp.sources.structured.has_llm_provider", return_value=True),
+        patch("wet.sources.structured.has_llm_provider", return_value=True),
         patch(
-            "wet_mcp.sources.structured.get_llm_config",
+            "wet.sources.structured.get_llm_config",
             return_value={"model": "gpt-4", "fallbacks": None, "temperature": 0},
         ),
         patch(
-            "wet_mcp.sources.structured.acompletion",
+            "wet.sources.structured.acompletion",
             new_callable=AsyncMock,
             return_value=_mock_llm_response(llm_output),
         ) as mock_llm,

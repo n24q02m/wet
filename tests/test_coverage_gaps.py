@@ -22,7 +22,7 @@ class TestSetupToolCoverageGaps:
     @patch("fastretrieval.TextEmbedding")
     def test_local_embedding_empty_result(self, mock_te):
         """embed returns empty list -- returns warning dict."""
-        from wet_mcp.setup_tool import _download_local_embedding
+        from wet.setup_tool import _download_local_embedding
 
         mock_settings = MagicMock()
         mock_settings.resolve_local_embedding_model.return_value = "org/embed"
@@ -34,11 +34,11 @@ class TestSetupToolCoverageGaps:
         result = _download_local_embedding(mock_settings)
         assert result["status"] == "warning"
 
-    @patch("wet_mcp.setup_tool.clear_model_cache")
+    @patch("wet.setup_tool.clear_model_cache")
     @patch("fastretrieval.TextEmbedding")
     def test_local_embedding_empty_after_retry(self, mock_te, mock_clear):
         """embed returns empty after cache clear retry."""
-        from wet_mcp.setup_tool import _download_local_embedding
+        from wet.setup_tool import _download_local_embedding
 
         mock_settings = MagicMock()
         mock_settings.resolve_local_embedding_model.return_value = "org/embed"
@@ -53,8 +53,8 @@ class TestSetupToolCoverageGaps:
         mock_clear.assert_called_once_with("org/embed")
         assert result["status"] == "warning"
 
-    @patch("wet_mcp.reranker.init_reranker")
-    @patch("wet_mcp.embedder.init_backend")
+    @patch("wet.reranker.init_reranker")
+    @patch("wet.embedder.init_backend")
     async def test_cloud_reranker_init_exception(self, mock_init, mock_rr_init):
         """reranker init raises exception, caught and reported under errors.
 
@@ -62,7 +62,7 @@ class TestSetupToolCoverageGaps:
         failed rerank cell is named in ``errors`` instead of silently vanish
         -- and ``reranker`` is absent, not a fake-ok entry.
         """
-        from wet_mcp.setup_tool import _validate_cloud_models
+        from wet.setup_tool import _validate_cloud_models
 
         def _both_cells(task, settings=None):
             return task in ("embed", "rerank")
@@ -77,8 +77,8 @@ class TestSetupToolCoverageGaps:
         mock_rr_init.side_effect = Exception("reranker init failed")
 
         with (
-            patch("wet_mcp.runtime.cell_configured", _both_cells),
-            patch("wet_mcp.runtime.model_cell", lambda task, settings=None: cell),
+            patch("wet.runtime.cell_configured", _both_cells),
+            patch("wet.runtime.model_cell", lambda task, settings=None: cell),
         ):
             result = await _validate_cloud_models(MagicMock())
 
@@ -89,7 +89,7 @@ class TestSetupToolCoverageGaps:
     @patch("fastretrieval.TextCrossEncoder")
     def test_local_reranker_empty_result(self, mock_tce):
         """local reranker returns empty scores."""
-        from wet_mcp.setup_tool import _download_local_reranker
+        from wet.setup_tool import _download_local_reranker
 
         mock_settings = MagicMock()
         mock_settings.rerank_enabled = True
@@ -102,11 +102,11 @@ class TestSetupToolCoverageGaps:
         result = _download_local_reranker(mock_settings)
         assert result["status"] == "warning"
 
-    @patch("wet_mcp.setup_tool.clear_model_cache")
+    @patch("wet.setup_tool.clear_model_cache")
     @patch("fastretrieval.TextCrossEncoder")
     def test_local_reranker_empty_after_retry(self, mock_tce, mock_clear):
         """reranker retry returns empty scores."""
-        from wet_mcp.setup_tool import _download_local_reranker
+        from wet.setup_tool import _download_local_reranker
 
         mock_settings = MagicMock()
         mock_settings.rerank_enabled = True
@@ -125,7 +125,7 @@ class TestSetupToolCoverageGaps:
     @patch("fastretrieval.TextCrossEncoder")
     def test_local_reranker_non_cache_error_reraises(self, mock_tce):
         """non-cache reranker error is re-raised."""
-        from wet_mcp.setup_tool import _download_local_reranker
+        from wet.setup_tool import _download_local_reranker
 
         mock_settings = MagicMock()
         mock_settings.rerank_enabled = True
@@ -147,8 +147,8 @@ class TestCachePurgeAndClose:
 
     def test_periodic_purge_triggered(self, tmp_path):
         """_purge_expired called after _PURGE_INTERVAL ops."""
-        from wet_mcp import cache as cache_mod
-        from wet_mcp.cache import WebCache
+        from wet import cache as cache_mod
+        from wet.cache import WebCache
 
         c = WebCache(tmp_path / "test.db")
 
@@ -164,7 +164,7 @@ class TestCachePurgeAndClose:
 
     def test_close_handles_exception(self):
         """close() catches exceptions from conn.close()."""
-        from wet_mcp.cache import WebCache
+        from wet.cache import WebCache
 
         cache = WebCache.__new__(WebCache)
         cache._conn = MagicMock()
@@ -183,7 +183,7 @@ class TestCloudRerankerResults:
     """Cover CloudReranker rerank result parsing (over the hull client)."""
 
     async def test_rerank_with_dict_results(self):
-        from wet_mcp.reranker import CloudReranker
+        from wet.reranker import CloudReranker
 
         client = MagicMock()
         client.cell.model = "cohere/rerank-v3.5"
@@ -203,7 +203,7 @@ class TestCloudRerankerResults:
         """A broken cell degrades to "no reranking", not an exception."""
         from hull_core.providers.openai_spec import ProviderError
 
-        from wet_mcp.reranker import CloudReranker
+        from wet.reranker import CloudReranker
 
         client = MagicMock()
         client.cell.model = "cohere/rerank-v3.5"
@@ -218,9 +218,9 @@ class TestCloudRerankerResults:
 class TestSetupPatchSearxngVersion:
     """Cover setup.py patch_searxng_version() gaps."""
 
-    @patch("wet_mcp.setup._find_searx_package_dir")
+    @patch("wet.setup._find_searx_package_dir")
     def test_patch_searxng_version_success(self, mock_find_dir):
-        from wet_mcp.setup import patch_searxng_version
+        from wet.setup import patch_searxng_version
 
         mock_dir = MagicMock(spec=Path)
         mock_find_dir.return_value = mock_dir
@@ -234,9 +234,9 @@ class TestSetupPatchSearxngVersion:
         args = mock_file.write_text.call_args[0][0]
         assert "VERSION_STRING =" in args
 
-    @patch("wet_mcp.setup._find_searx_package_dir")
+    @patch("wet.setup._find_searx_package_dir")
     def test_patch_searxng_version_already_exists(self, mock_find_dir):
-        from wet_mcp.setup import patch_searxng_version
+        from wet.setup import patch_searxng_version
 
         mock_dir = MagicMock(spec=Path)
         mock_find_dir.return_value = mock_dir
@@ -248,18 +248,18 @@ class TestSetupPatchSearxngVersion:
 
         mock_file.write_text.assert_not_called()
 
-    @patch("wet_mcp.setup._find_searx_package_dir")
+    @patch("wet.setup._find_searx_package_dir")
     def test_patch_searxng_version_no_dir(self, mock_find_dir):
-        from wet_mcp.setup import patch_searxng_version
+        from wet.setup import patch_searxng_version
 
         mock_find_dir.return_value = None
         patch_searxng_version()
         # No error should be raised
 
-    @patch("wet_mcp.setup._find_searx_package_dir", side_effect=Exception("Test error"))
-    @patch("wet_mcp.setup.logger.warning")
+    @patch("wet.setup._find_searx_package_dir", side_effect=Exception("Test error"))
+    @patch("wet.setup.logger.warning")
     def test_patch_searxng_version_exception(self, mock_warning, mock_find_dir):
-        from wet_mcp.setup import patch_searxng_version
+        from wet.setup import patch_searxng_version
 
         patch_searxng_version()
         mock_warning.assert_called_once()

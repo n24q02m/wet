@@ -12,7 +12,7 @@ import pytest
 from alembic import command
 from alembic.config import Config
 
-from wet_mcp.migrations import _ALEMBIC_INI_PATH, _ALEMBIC_SCRIPT_LOCATION
+from wet.migrations import _ALEMBIC_INI_PATH, _ALEMBIC_SCRIPT_LOCATION
 
 
 def test_run_migrations_offline(tmp_path: Path) -> None:

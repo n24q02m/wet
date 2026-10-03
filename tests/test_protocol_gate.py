@@ -1,6 +1,6 @@
 """Protocol gate that runs in the DEFAULT CI suite (no marker, HTTP transport).
 
-De-host: there is ONE transport — the HTTP server (``python -m wet_mcp.server``,
+De-host: there is ONE transport — the HTTP server (``python -m wet.server``,
 bind from WET_HOST/WET_PORT). Unlike ``test_live_protocol.py`` (marker-gated),
 this gate runs against the SOURCE TREE over that production HTTP transport in
 every default ``pytest`` run: ``list_tools``, per-tool dispatch, one real
@@ -8,7 +8,7 @@ representative domain round-trip and one bounded concurrency case.
 
 Scope honesty (mcp-dev/references/protocol-test-coverage.md):
 - This is PRE-BETA hardening of the source tree. The authoritative D3 gate runs
-  against the INSTALLED BETA artifact (``uvx --from wet-mcp==<beta>``) with the
+  against the INSTALLED BETA artifact (``uvx --from wet==<beta>``) with the
   headless creds/searxng wiring the reference requires, and is blocked until
   PyPI trusted publishing exists. This file does NOT claim D3 is satisfied.
 - A real ``search`` is deliberately NOT asserted here: it needs a searxng
@@ -154,18 +154,18 @@ def _wait_until_up(port: int, timeout: float = 60.0) -> None:
             return  # any HTTP response (incl. 4xx) means the listener is up
         except httpx.HTTPError:
             time.sleep(0.25)
-    raise RuntimeError(f"wet-mcp server on port {port} never came up")
+    raise RuntimeError(f"wet server on port {port} never came up")
 
 
 @pytest.fixture
 async def mcp_session(searxng_server: str, tmp_path):
-    """Start a real local-only wet-mcp HTTP server; yield an MCP session."""
+    """Start a real local-only wet HTTP server; yield an MCP session."""
     env, _state = _server_env(tmp_path, searxng_server)
     port = int(env["WET_PORT"])
     log_path = tmp_path / "server.log"
     with open(log_path, "ab") as log_fh:
         proc = subprocess.Popen(
-            [sys.executable, "-m", "wet_mcp.server"],
+            [sys.executable, "-m", "wet.server"],
             env=env,
             stdout=log_fh,
             stderr=log_fh,

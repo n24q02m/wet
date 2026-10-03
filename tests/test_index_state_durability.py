@@ -30,8 +30,8 @@ from unittest.mock import AsyncMock, patch
 import pytest
 from loguru import logger
 
-from wet_mcp import server
-from wet_mcp.db import (
+from wet import server
+from wet.db import (
     INDEX_STATE_DONE,
     INDEX_STATE_FAILED,
     INDEX_STATE_RUNNING,
@@ -210,8 +210,8 @@ async def test_config_status_reports_why_there_are_no_chunks(docs_db):
     docs_db.set_index_state(ver_id, INDEX_STATE_FAILED, "Could not extract content")
 
     with (
-        patch("wet_mcp.embedder.get_backend", return_value=None),
-        patch("wet_mcp.reranker.get_reranker", return_value=None),
+        patch("wet.embedder.get_backend", return_value=None),
+        patch("wet.reranker.get_reranker", return_value=None),
     ):
         status = await server._handle_config_status()
 
@@ -259,7 +259,7 @@ async def test_successful_reindex_still_replaces_the_old_chunks(
         AsyncMock(return_value=(_chunks(2, prefix="fresh"), 2)),
     )
     monkeypatch.setattr(
-        "wet_mcp.embedder.resolve_embed_backend_for_request", lambda: None
+        "wet.embedder.resolve_embed_backend_for_request", lambda: None
     )
 
     await _run_indexer(lib_id, ver_id)

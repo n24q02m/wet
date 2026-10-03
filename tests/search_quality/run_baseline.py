@@ -177,7 +177,7 @@ async def run(queries: list[dict[str, Any]]) -> dict[str, Any]:
     with tempfile.TemporaryDirectory(prefix="wet-search-quality-") as temp_dir:
         temp_path = Path(temp_dir)
         env = _server_env(temp_path)
-        params = StdioServerParameters(command="uv", args=["run", "wet-mcp"], env=env)
+        params = StdioServerParameters(command="uv", args=["run", "wet"], env=env)
         try:
             async with stdio_client(params) as (read_stream, write_stream):
                 async with ClientSession(read_stream, write_stream) as session:

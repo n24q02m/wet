@@ -1,7 +1,7 @@
 """Run docs search benchmark directly (no MCP server needed).
 
 Usage:
-    cd wet-mcp
+    cd wet
     uv run --no-sync python tests/run_benchmark.py [--start N] [--end N] [--ids id1,id2]
 
 Outputs a compact summary per library and a final table.
@@ -34,8 +34,8 @@ from benchmark_docs_search import BENCHMARK_CASES  # noqa: E402
 
 async def run_single(case: dict, docs_db, embed_fn, embed_batch_fn, rerank_fn):
     """Run a single benchmark case and return results dict."""
-    from wet_mcp.server import _fetch_and_chunk_docs
-    from wet_mcp.sources.docs import (
+    from wet.server import _fetch_and_chunk_docs
+    from wet.sources.docs import (
         DISCOVERY_VERSION,
         _normalize_docs_url,
         discover_library,
@@ -243,8 +243,8 @@ async def main():
     print("=" * 80)
 
     # Init DB (use separate benchmark DB to avoid conflicts)
-    from wet_mcp.config import settings
-    from wet_mcp.db import DocsDB
+    from wet.config import settings
+    from wet.db import DocsDB
 
     db_path = settings.get_db_path()
     db_path.parent.mkdir(parents=True, exist_ok=True)
@@ -265,7 +265,7 @@ async def main():
     embed_batch_fn = None
     rerank_fn = None
     try:
-        from wet_mcp.embedder import get_backend, init_backend
+        from wet.embedder import get_backend, init_backend
 
         backend = init_backend("local", None)
         ndims = await backend.check_available()
@@ -273,7 +273,7 @@ async def main():
             print(f"Embedding: local ONNX (dims={ndims})")
 
             async def _embed(text, is_query=False):
-                from wet_mcp.embedder import LocalEmbeddingBackend
+                from wet.embedder import LocalEmbeddingBackend
 
                 b = get_backend()
                 if not b:
@@ -436,7 +436,7 @@ async def main():
     # Cleanup
     docs_db.close()
     try:
-        from wet_mcp.searxng_runner import stop_searxng
+        from wet.searxng_runner import stop_searxng
 
         stop_searxng()
     except Exception:

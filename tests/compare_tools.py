@@ -1,4 +1,4 @@
-"""Compare wet-mcp docs search vs Context7 vs Tavily for 30 out-of-benchmark libraries.
+"""Compare wet docs search vs Context7 vs Tavily for 30 out-of-benchmark libraries.
 
 Runs wet's discover_library internally, calls Context7 REST API and Tavily REST API,
 then compares results side-by-side.
@@ -101,10 +101,10 @@ class ComparisonResult:
 
 
 async def test_wet(name: str, query: str, lang: str) -> ToolResult:
-    """Test wet-mcp's discover_library."""
+    """Test wet's discover_library."""
     result = ToolResult()
     try:
-        from wet_mcp.sources.docs import discover_library
+        from wet.sources.docs import discover_library
 
         start = time.monotonic()
         disc = await discover_library(name, language=lang)
@@ -254,10 +254,10 @@ def print_summary(results: list[ComparisonResult]):
     tavily_latency = [r.tavily.latency_ms for r in results if r.tavily.found]
 
     print("\n" + "=" * 80)
-    print("COMPARISON SUMMARY: wet-mcp vs Context7 vs Tavily (30 cases)")
+    print("COMPARISON SUMMARY: wet vs Context7 vs Tavily (30 cases)")
     print("=" * 80)
 
-    print(f"\n{'Metric':<25} {'wet-mcp':>12} {'Context7':>12} {'Tavily':>12}")
+    print(f"\n{'Metric':<25} {'wet':>12} {'Context7':>12} {'Tavily':>12}")
     print("-" * 65)
     print(
         f"{'Found docs':<25} {wet_found:>9}/30 {ctx7_found:>9}/30 {tavily_found:>9}/30"
@@ -341,7 +341,7 @@ def print_summary(results: list[ComparisonResult]):
 
 
 async def main():
-    print("Comparing wet-mcp vs Context7 vs Tavily on 30 out-of-benchmark cases\n")
+    print("Comparing wet vs Context7 vs Tavily on 30 out-of-benchmark cases\n")
     results = await run_comparison()
     print_summary(results)
 

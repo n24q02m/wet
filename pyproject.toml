@@ -84,7 +84,7 @@ dependencies = [
     # pull deserializes untrusted manifests without trust boundary
     # warning). Reachable transitively via hull-web -> langgraph ->
     # langchain-core -> langsmith (used for tracing, not prompt pull, so
-    # the vulnerable Client.pull_prompt path is not exercised by wet-mcp
+    # the vulnerable Client.pull_prompt path is not exercised by wet
     # — pinned as defense-in-depth). First patched in langsmith 0.8.0.
     "langsmith>=0.10.10",
 ]
@@ -110,8 +110,8 @@ dev = [
 ]
 
 [project.scripts]
-wet = "wet_mcp.cli:main"
-wet-mcp = "wet_mcp.cli:main"  # legacy command alias (uvx wet-mcp configs)
+wet = "wet.cli:main"
+wet-mcp = "wet.cli:main"  # legacy command alias (uvx wet-mcp configs)
 
 [project.urls]
 Homepage = "https://github.com/n24q02m/wet"
@@ -124,20 +124,20 @@ build-backend = "hatchling.build"
 
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/wet_mcp"]
-artifacts = ["src/wet_mcp/data/**/*.json"]
+packages = ["src/wet"]
+artifacts = ["src/wet/data/**/*.json"]
 
 [tool.hatch.build.targets.wheel.sources]
 "src" = ""
 
 [tool.hatch.build.targets.sdist]
 include = [
-    "src/wet_mcp/**/*.py",
-    "src/wet_mcp/**/*.yml",
-    "src/wet_mcp/**/*.md",
-    "src/wet_mcp/**/*.ini",
-    "src/wet_mcp/**/*.mako",
-    "src/wet_mcp/alembic/README",
+    "src/wet/**/*.py",
+    "src/wet/**/*.yml",
+    "src/wet/**/*.md",
+    "src/wet/**/*.ini",
+    "src/wet/**/*.mako",
+    "src/wet/alembic/README",
 ]
 
 [tool.pytest.ini_options]
@@ -184,7 +184,7 @@ ignore = ["E501"]
 quote-style = "double"
 
 [tool.coverage.run]
-source = ["src/wet_mcp"]
+source = ["src/wet"]
 branch = true
 
 [tool.coverage.report]

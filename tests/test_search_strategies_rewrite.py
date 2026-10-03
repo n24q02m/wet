@@ -10,7 +10,7 @@ from contextlib import contextmanager
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from wet_mcp.sources.search_strategies import rewrite_query
+from wet.sources.search_strategies import rewrite_query
 
 
 def _llm(content: str | None):
@@ -30,13 +30,13 @@ def _provider(content: str | None = None, *, error=None, capture: list | None = 
         return _llm(content)
 
     with (
-        patch("wet_mcp.sources.search_strategies.has_llm_provider", return_value=True),
+        patch("wet.sources.search_strategies.has_llm_provider", return_value=True),
         patch(
-            "wet_mcp.sources.search_strategies.get_llm_config",
+            "wet.sources.search_strategies.get_llm_config",
             return_value={"model": "gpt-x", "fallbacks": None, "temperature": 0},
         ),
         patch(
-            "wet_mcp.sources.search_strategies.acompletion",
+            "wet.sources.search_strategies.acompletion",
             side_effect=fake_acompletion,
         ),
     ):
@@ -73,7 +73,7 @@ async def test_rewrite_prompt_carries_query_reason_and_avoid_list():
 
 async def test_rewrite_none_without_provider():
     with patch(
-        "wet_mcp.sources.search_strategies.has_llm_provider", return_value=False
+        "wet.sources.search_strategies.has_llm_provider", return_value=False
     ):
         assert await rewrite_query("q", avoid=["x"]) is None
 

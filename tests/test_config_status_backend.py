@@ -22,9 +22,9 @@ def _status_backends():
     stub keeps the local ONNX legs from being constructed during a status read.
     """
     with (
-        patch("wet_mcp.embedder.resolve_embed_backend_for_request", return_value=None),
-        patch("wet_mcp.reranker.resolve_rerank_backend_for_request", return_value=None),
-        patch("wet_mcp.embedder.embedding_unavailable_reason", return_value=None),
+        patch("wet.embedder.resolve_embed_backend_for_request", return_value=None),
+        patch("wet.reranker.resolve_rerank_backend_for_request", return_value=None),
+        patch("wet.embedder.embedding_unavailable_reason", return_value=None),
     ):
         yield
 
@@ -40,7 +40,7 @@ def _built_backend(monkeypatch):
 
     Returns a list that records ``"sqlite"`` per construction.
     """
-    from wet_mcp.db import DocsDB
+    from wet.db import DocsDB
 
     built: list[str] = []
 
@@ -53,7 +53,7 @@ def _built_backend(monkeypatch):
 
 async def test_status_names_the_single_sqlite_backend(monkeypatch, _status_backends):
     """The only backend is the local store; the label is a constant."""
-    from wet_mcp.server import _active_docs_backend, _handle_config_status
+    from wet.server import _active_docs_backend, _handle_config_status
 
     assert _active_docs_backend() == "sqlite"
     status = await _handle_config_status()
@@ -69,7 +69,7 @@ async def test_status_names_sqlite_even_with_stale_backend_env(
     container env still carries it. The status label and the store must not
     flip based on dead configuration.
     """
-    from wet_mcp.server import _active_docs_backend, _handle_config_status
+    from wet.server import _active_docs_backend, _handle_config_status
 
     monkeypatch.setenv("DOCS_DB_BACKEND", "cf-d1")
 
@@ -79,8 +79,8 @@ async def test_status_names_sqlite_even_with_stale_backend_env(
 
 async def test_status_reports_the_local_docs_path(monkeypatch, _status_backends):
     """The field every existing reader expects: the real local file."""
-    from wet_mcp.config import settings
-    from wet_mcp.server import _handle_config_status
+    from wet.config import settings
+    from wet.server import _handle_config_status
 
     status = await _handle_config_status()
 
@@ -95,8 +95,8 @@ async def test_status_leaks_no_host_secret(monkeypatch, _status_backends):
     reports and agent transcripts; whatever shows up here must be paths and
     labels only.
     """
-    from wet_mcp.config import settings
-    from wet_mcp.server import _handle_config_status
+    from wet.config import settings
+    from wet.server import _handle_config_status
 
     monkeypatch.setattr(settings, "tavily_api_key", "SECRET-TAVILY", raising=False)
     monkeypatch.setattr(settings, "brave_api_key", "SECRET-BRAVE", raising=False)
@@ -117,8 +117,8 @@ async def test_make_docs_db_builds_sqlite_and_status_agrees(
     builds. A docstring is a promise nobody checks, so run the real builder
     (leaf-stubbed) and hold the label against the outcome.
     """
-    from wet_mcp.config import settings
-    from wet_mcp.server import _active_docs_backend, _handle_config_status, make_docs_db
+    from wet.config import settings
+    from wet.server import _active_docs_backend, _handle_config_status, make_docs_db
 
     make_docs_db()
     assert _built_backend == ["sqlite"], "make_docs_db built something else"
@@ -134,8 +134,8 @@ async def test_status_reports_empty_stats_when_docs_db_not_initialized(
     monkeypatch, _status_backends
 ):
     """Before the lifespan opens the store, stats read as ``{}`` — not a lie."""
-    from wet_mcp import server
-    from wet_mcp.server import _handle_config_status
+    from wet import server
+    from wet.server import _handle_config_status
 
     monkeypatch.setattr(server, "_docs_db", None)
 

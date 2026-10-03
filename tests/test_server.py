@@ -1,4 +1,4 @@
-"""Tests for src/wet_mcp/server.py."""
+"""Tests for src/wet/server.py."""
 
 import json
 from unittest.mock import AsyncMock, patch
@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 from structured import payload, text
 
-from wet_mcp.server import (
+from wet.server import (
     _maybe_register_custom_embed,
     _maybe_register_custom_rerank,
     extract,
@@ -23,7 +23,7 @@ def _no_real_searxng_spawn():
     them and their patch overrides this default (same pattern as the conftest
     backend/crawler stubs)."""
     with patch(
-        "wet_mcp.sources.searxng._ensure_searxng_healthy",
+        "wet.sources.searxng._ensure_searxng_healthy",
         new_callable=AsyncMock,
         side_effect=lambda url: url,
     ):
@@ -32,7 +32,7 @@ def _no_real_searxng_spawn():
 
 def test_maybe_register_custom_embed_no_optin_noop(monkeypatch):
     """No registration when LOCAL_EMBEDDING_MODEL is unset (default local)."""
-    from wet_mcp.config import settings
+    from wet.config import settings
 
     monkeypatch.setattr(settings, "local_embedding_model", "")
     _maybe_register_custom_embed("local-model")
@@ -42,7 +42,7 @@ def test_maybe_register_custom_embed_builtin_noop(monkeypatch):
     """Any id in the live registry is left untouched."""
     import fastretrieval
 
-    from wet_mcp.config import settings
+    from wet.config import settings
 
     monkeypatch.setattr(settings, "local_embedding_model", "acme/tiny-e5")
     monkeypatch.setattr(
@@ -64,7 +64,7 @@ def test_maybe_register_custom_embed_registers_public_spec(monkeypatch):
     """A BYO id with explicit metadata registers through the public spec API."""
     import fastretrieval
 
-    from wet_mcp.config import settings
+    from wet.config import settings
 
     monkeypatch.setattr(settings, "local_embedding_model", "Org/custom-embed")
     monkeypatch.setattr(settings, "local_embedding_dim", 768)
@@ -98,7 +98,7 @@ def test_maybe_register_custom_embed_missing_dim(monkeypatch):
     """A BYO id without LOCAL_EMBEDDING_DIM skips registration (no call)."""
     import fastretrieval
 
-    from wet_mcp.config import settings
+    from wet.config import settings
 
     monkeypatch.setattr(settings, "local_embedding_model", "Org/custom-embed")
     monkeypatch.setattr(settings, "local_embedding_dim", 0)
@@ -119,7 +119,7 @@ def test_maybe_register_custom_embed_missing_dim(monkeypatch):
 
 def test_maybe_register_custom_rerank_no_optin_noop(monkeypatch):
     """No registration when LOCAL_RERANK_MODEL is unset (default local)."""
-    from wet_mcp.config import settings
+    from wet.config import settings
 
     monkeypatch.setattr(settings, "local_rerank_model", "")
     _maybe_register_custom_rerank("local-reranker")
@@ -129,7 +129,7 @@ def test_maybe_register_custom_rerank_builtin_noop(monkeypatch):
     """Any reranker id in the live registry is left untouched."""
     import fastretrieval
 
-    from wet_mcp.config import settings
+    from wet.config import settings
 
     monkeypatch.setattr(settings, "local_rerank_model", "acme/tiny-reranker")
     monkeypatch.setattr(
@@ -151,7 +151,7 @@ def test_maybe_register_custom_rerank_registers_public_spec(monkeypatch):
     """A BYO reranker id registers through the public spec API."""
     import fastretrieval
 
-    from wet_mcp.config import settings
+    from wet.config import settings
 
     monkeypatch.setattr(settings, "local_rerank_model", "Org/custom-reranker")
     monkeypatch.setattr(
@@ -186,7 +186,7 @@ def test_maybe_register_custom_rerank_registers_public_spec(monkeypatch):
 async def test_search_success():
     """Test search action success path."""
     with patch(
-        "wet_mcp.server._run_configured_search",
+        "wet.server._run_configured_search",
         new_callable=AsyncMock,
         return_value=(
             '{"results": [{"url": "https://e", "title": "T", "snippet": "Search Results"}], '
@@ -210,7 +210,7 @@ async def test_search_missing_query():
 @pytest.mark.asyncio
 async def test_extract_success():
     """Test extract action success path."""
-    with patch("wet_mcp.server._extract", new_callable=AsyncMock) as mock_extract:
+    with patch("wet.server._extract", new_callable=AsyncMock) as mock_extract:
         mock_extract.return_value = "Extracted Content"
 
         result = await extract(action="extract", urls=["https://example.com"])
@@ -228,7 +228,7 @@ async def test_extract_success():
 @pytest.mark.asyncio
 async def test_extract_with_options():
     """Test extract action with custom options."""
-    with patch("wet_mcp.server._extract", new_callable=AsyncMock) as mock_extract:
+    with patch("wet.server._extract", new_callable=AsyncMock) as mock_extract:
         mock_extract.return_value = "Extracted Content"
 
         result = await extract(
@@ -257,7 +257,7 @@ async def test_extract_missing_urls():
 @pytest.mark.asyncio
 async def test_crawl_success():
     """Test crawl action success path."""
-    with patch("wet_mcp.server._crawl", new_callable=AsyncMock) as mock_crawl:
+    with patch("wet.server._crawl", new_callable=AsyncMock) as mock_crawl:
         mock_crawl.return_value = "Crawl Results"
 
         result = await extract(
@@ -283,7 +283,7 @@ async def test_crawl_success():
 @pytest.mark.asyncio
 async def test_crawl_defaults():
     """Test crawl action with defaults."""
-    with patch("wet_mcp.server._crawl", new_callable=AsyncMock) as mock_crawl:
+    with patch("wet.server._crawl", new_callable=AsyncMock) as mock_crawl:
         mock_crawl.return_value = "Crawl Results"
 
         result = await extract(action="crawl", urls=["https://example.com"])
@@ -309,7 +309,7 @@ async def test_crawl_missing_urls():
 @pytest.mark.asyncio
 async def test_map_success():
     """Test map action success path."""
-    with patch("wet_mcp.server._sitemap", new_callable=AsyncMock) as mock_sitemap:
+    with patch("wet.server._sitemap", new_callable=AsyncMock) as mock_sitemap:
         mock_sitemap.return_value = "Sitemap Content"
 
         result = await extract(
@@ -328,7 +328,7 @@ async def test_map_success():
 @pytest.mark.asyncio
 async def test_map_defaults():
     """Test map action with defaults."""
-    with patch("wet_mcp.server._sitemap", new_callable=AsyncMock) as mock_sitemap:
+    with patch("wet.server._sitemap", new_callable=AsyncMock) as mock_sitemap:
         mock_sitemap.return_value = "Sitemap Content"
 
         result = await extract(action="map", urls=["https://example.com"])
@@ -403,16 +403,16 @@ async def test_search_applies_reranking():
 
     with (
         patch(
-            "wet_mcp.server._run_configured_search",
+            "wet.server._run_configured_search",
             new_callable=AsyncMock,
             return_value=mock_results,
         ),
         patch(
-            "wet_mcp.server._rerank_results",
+            "wet.server._rerank_results",
             new_callable=AsyncMock,
             return_value=reranked,
         ) as mock_rerank,
-        patch("wet_mcp.server._web_cache", None),
+        patch("wet.server._web_cache", None),
     ):
         result = await search(action="search", query="test", max_results=3)
 
@@ -443,16 +443,16 @@ async def test_search_reranking_failure_falls_back():
 
     with (
         patch(
-            "wet_mcp.server._run_configured_search",
+            "wet.server._run_configured_search",
             new_callable=AsyncMock,
             return_value=mock_results,
         ),
         patch(
-            "wet_mcp.server._rerank_results",
+            "wet.server._rerank_results",
             new_callable=AsyncMock,
             side_effect=Exception("rerank fail"),
         ),
-        patch("wet_mcp.server._web_cache", None),
+        patch("wet.server._web_cache", None),
     ):
         result = await search(action="search", query="test", max_results=3)
         data = payload(result)
@@ -473,7 +473,7 @@ async def test_extract_convert_requires_paths():
 async def test_extract_structured_action():
     """Test extract_structured delegates to structured.extract_structured."""
     with patch(
-        "wet_mcp.sources.structured.extract_structured",
+        "wet.sources.structured.extract_structured",
         new_callable=AsyncMock,
         return_value='{"name": "Test"}',
     ) as mock_fn:
@@ -528,7 +528,7 @@ async def test_extract_batch_requires_urls():
 async def test_search_similar_action_uses_configured_chain():
     """The similar action delegates without forcing a SearXNG URL."""
     with patch(
-        "wet_mcp.sources.search_strategies.find_similar",
+        "wet.sources.search_strategies.find_similar",
         new_callable=AsyncMock,
         return_value='{"results": []}',
     ) as mock_fn:
@@ -565,7 +565,7 @@ async def test_search_expand_flag():
     """Test expand=True calls expand_query and uses expanded query."""
     with (
         patch(
-            "wet_mcp.server._run_configured_search",
+            "wet.server._run_configured_search",
             new_callable=AsyncMock,
             return_value=(
                 '{"results": [{"url": "https://e", "title": "T", "snippet": "Search Results"}], '
@@ -573,7 +573,7 @@ async def test_search_expand_flag():
             ),
         ) as mock_search,
         patch(
-            "wet_mcp.sources.search_strategies.expand_query",
+            "wet.sources.search_strategies.expand_query",
             new_callable=AsyncMock,
             return_value=[
                 "python web scraping",
@@ -621,18 +621,18 @@ async def test_search_enrich_flag():
 
     with (
         patch(
-            "wet_mcp.server._run_configured_search",
+            "wet.server._run_configured_search",
             new_callable=AsyncMock,
             return_value=mock_results,
         ),
         patch(
-            "wet_mcp.server._rerank_results",
+            "wet.server._rerank_results",
             new_callable=AsyncMock,
             return_value=None,
         ),
-        patch("wet_mcp.server._web_cache", None),
+        patch("wet.server._web_cache", None),
         patch(
-            "wet_mcp.sources.search_strategies.enrich_snippets",
+            "wet.sources.search_strategies.enrich_snippets",
             new_callable=AsyncMock,
             return_value=enriched_results,
         ) as mock_enrich,

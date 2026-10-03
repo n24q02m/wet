@@ -1,7 +1,7 @@
 """Eager Tier 1 docs ingestion for the curated library list.
 
 Invoked manually or via CI weekly cron (.github/workflows/ci.yml).
-Walks every entry in src/wet_mcp/data/tier1_libraries.json, calls
+Walks every entry in src/wet/data/tier1_libraries.json, calls
 ``ingest_tier2`` so doc chunks are pulled via the web-core
 ``library_docs_strategy`` chain (RTD / Docusaurus / Mintlify / GitHub
 README), and rewrites a ``tier1_index_metrics.json`` summary alongside
@@ -53,7 +53,7 @@ def open_docs_db(db_path: Path):
     instead of a run that quietly ingests into D1.
     """
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
-    from wet_mcp.server import make_docs_db
+    from wet.server import make_docs_db
 
     return make_docs_db(db_path=db_path)
 
@@ -63,8 +63,8 @@ async def _amain() -> int:
     parser.add_argument(
         "--db-path",
         type=Path,
-        default=Path.home() / ".wet-mcp" / "docs.db",
-        help="Path to docs.db (default ~/.wet-mcp/docs.db)",
+        default=Path.home() / ".wet" / "docs.db",
+        help="Path to docs.db (default ~/.wet/docs.db)",
     )
     parser.add_argument(
         "--min-success-rate",
@@ -79,9 +79,9 @@ async def _amain() -> int:
 
     # Lazy imports so script-only deps stay out of the runtime hot path.
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
-    from wet_mcp.migrations import run_migrations_on_startup
-    from wet_mcp.sources.docs import ingest_tier2
-    from wet_mcp.sources.tier1_warmup import _load_tier1_payload, maybe_warm
+    from wet.migrations import run_migrations_on_startup
+    from wet.sources.docs import ingest_tier2
+    from wet.sources.tier1_warmup import _load_tier1_payload, maybe_warm
 
     args.db_path.parent.mkdir(parents=True, exist_ok=True)
     db = open_docs_db(args.db_path)

@@ -1,4 +1,4 @@
-"""Tests for ``wet_mcp.sources._search_polish`` (Phase 1, Task 5).
+"""Tests for ``wet.sources._search_polish`` (Phase 1, Task 5).
 
 Covers query normalization, snippet token cap, citation standardization,
 freshness signal logic, and TTL policy. All deps are pure stdlib.
@@ -13,8 +13,8 @@ from unittest.mock import patch
 
 import pytest
 
-from wet_mcp.cache import WebCache
-from wet_mcp.sources._search_polish import (
+from wet.cache import WebCache
+from wet.sources._search_polish import (
     cap_snippet_tokens,
     freshness_signal,
     normalize_query,
@@ -215,14 +215,14 @@ def test_cache_ttl_expiry(tmp_path) -> None:
     params = {"q": "x"}
 
     # time anchor: t=1000.
-    with patch("wet_mcp.cache.time.time", return_value=1000.0):
+    with patch("wet.cache.time.time", return_value=1000.0):
         cache.set("search", params, "payload", ttl_override=300)
         # Within TTL window.
-        with patch("wet_mcp.cache.time.time", return_value=1100.0):
+        with patch("wet.cache.time.time", return_value=1100.0):
             assert cache.get("search", params) == "payload"
 
     # Past TTL window.
-    with patch("wet_mcp.cache.time.time", return_value=1500.0):
+    with patch("wet.cache.time.time", return_value=1500.0):
         assert cache.get("search", params) is None
     cache.close()
 
@@ -231,11 +231,11 @@ def test_cache_get_with_age_returns_age_seconds(tmp_path) -> None:
     cache = WebCache(tmp_path / "cache.db")
     params = {"q": "y"}
 
-    with patch("wet_mcp.cache.time.time", return_value=2000.0):
+    with patch("wet.cache.time.time", return_value=2000.0):
         cache.set("search", params, "payload", ttl_override=3600)
 
     # 600s later, still within TTL.
-    with patch("wet_mcp.cache.time.time", return_value=2600.0):
+    with patch("wet.cache.time.time", return_value=2600.0):
         hit = cache.get_with_age("search", params)
         assert hit is not None
         content, age = hit
@@ -252,7 +252,7 @@ def test_cache_get_with_age_miss_returns_none(tmp_path) -> None:
 
 # Pytest sanity: smoke ensure the module imports.
 def test_module_imports() -> None:
-    import wet_mcp.sources._search_polish as mod  # noqa: F401
+    import wet.sources._search_polish as mod  # noqa: F401
 
     assert mod is not None
 

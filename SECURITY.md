@@ -24,7 +24,7 @@ You will receive acknowledgment within 48 hours.
 
 ## Security Best Practices
 
-When using wet-mcp:
+When using wet:
 
 - **Never commit API keys** to version control
 - Use environment variables or secure secret management

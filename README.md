@@ -1,10 +1,10 @@
 # WET - Web Extended Toolkit MCP Server
 
-> **Renamed (2026-09-13):** repo is now `wet` — CLI-first (`wet` command). PyPI package stays `wet-mcp` (PyPI policy blocks new project `wet`); MCP server is a secondary surface: run `wet` with no subcommand.
+> **Renamed (2026-09-13):** repo is now `wet` — CLI-first (`wet` command). PyPI package stays `wet` (PyPI policy blocks new project `wet`); MCP server is a secondary surface: run `wet` with no subcommand.
 
 mcp-name: io.github.n24q02m/wet-mcp
 
-> **Renamed (2026-09-13):** package/repo is now `wet` (CLI-first). Install: `pip install wet`. The MCP server remains available: run `wet` with no subcommand (bare = MCP passthrough); legacy package name `wet-mcp` still installs the old CLI.
+> **Renamed:** the repo, CLI and Python module are now `wet`. The PyPI distribution stays **`wet-mcp`** (install `pip install wet-mcp` / `uvx wet-mcp`). The MCP server remains available: run `wet` with no subcommand (bare = MCP passthrough); the legacy `wet-mcp` console alias still works.
 
 **Open-source MCP server for AI agents: web search, content extraction, and library docs.**
 
@@ -25,7 +25,7 @@ mcp-name: io.github.n24q02m/wet-mcp
 [![CI](https://github.com/n24q02m/wet/actions/workflows/ci.yml/badge.svg)](https://github.com/n24q02m/wet/actions/workflows/ci.yml)
 [![codecov](https://codecov.io/gh/n24q02m/wet/graph/badge.svg?token=JK19TRLPEX)](https://codecov.io/gh/n24q02m/wet)
 [![PyPI](https://img.shields.io/pypi/v/wet-mcp?logo=pypi&logoColor=white)](https://pypi.org/project/wet-mcp/)
-[![License: Apache-2.0](https://img.shields.io/github/license/n24q02m/wet-mcp)](LICENSE)
+[![License: Apache-2.0](https://img.shields.io/github/license/n24q02m/wet)](LICENSE)
 
 <!-- Badge Row 2: Tech -->
 [![Python](https://img.shields.io/badge/Python-3776AB?logo=python&logoColor=white)](#)
@@ -41,7 +41,7 @@ mcp-name: io.github.n24q02m/wet-mcp
 | Project | Tagline | Tag |
 |---|---|---|
 | [agent-chat-plugin](https://github.com/n24q02m/agent-chat-plugin) | Peer AI agents chat in a shared folder — no human relay, no orchestrator, wor... | Tooling |
-| [better-code-review-graph](https://github.com/n24q02m/better-code-review-graph) | Knowledge graph for token-efficient code reviews -- semantic search and call-... | MCP |
+| [crg](https://github.com/n24q02m/crg) | Knowledge graph for token-efficient code reviews -- semantic search and call-... | MCP |
 | [better-drive](https://github.com/n24q02m/better-drive) | 2-way Google Drive sync with .driveignore filter — rclone engine, Windows tray | Tooling |
 | [better-email-mcp](https://github.com/n24q02m/better-email-mcp) | IMAP/SMTP email for AI agents -- read, send, organize folders, and manage att... | MCP |
 | [better-godot-mcp](https://github.com/n24q02m/better-godot-mcp) | Composite MCP server for Godot Engine -- 17 composite tools for AI-assisted g... | MCP |
@@ -53,12 +53,12 @@ mcp-name: io.github.n24q02m/wet-mcp
 | [imagine-mcp](https://github.com/n24q02m/imagine-mcp) | Image and video understanding + generation for AI agents -- across Gemini, Op... | MCP |
 | [jules-task-archiver](https://github.com/n24q02m/jules-task-archiver) | Chrome Extension for bulk operations on Jules tasks via batchexecute API -- a... | Tooling |
 | [mcp-core](https://github.com/n24q02m/mcp-core) | Shared foundation for building MCP servers -- Streamable HTTP transport, OAut... | MCP |
-| [mnemo-mcp](https://github.com/n24q02m/mnemo-mcp) | Persistent AI memory with hybrid search and embedded sync. Open, free, unlimi... | MCP |
+| [mnemo](https://github.com/n24q02m/mnemo) | Persistent AI memory with hybrid search and embedded sync. Open, free, unlimi... | MCP |
 | [fastretrieval](https://github.com/n24q02m/fastretrieval) | Multi-model embedding and reranking runtime via ONNX and GGUF | Library |
 | [skret](https://github.com/n24q02m/skret) | Secrets without the server. | CLI |
 | [tacet](https://github.com/n24q02m/tacet) | A self-distilling neuro-symbolic cascade that amortises LLM cost across knowl... | Tooling |
 | [web-core](https://github.com/n24q02m/web-core) | Shared web infrastructure package for search, scraping, HTTP security, and st... | Library |
-| [wet-mcp](https://github.com/n24q02m/wet) | Open-source MCP server for AI agents: web search, content extraction, and lib... | MCP |
+| [wet](https://github.com/n24q02m/wet) | Open-source MCP server for AI agents: web search, content extraction, and lib... | MCP |
 
 </details>
 <!-- END: AUTO-GENERATED-CROSS-PROMO -->
@@ -83,8 +83,8 @@ mcp-name: io.github.n24q02m/wet-mcp
 
 
 
-<a href="https://glama.ai/mcp/servers/n24q02m/wet-mcp">
-  <img width="380" height="200" src="https://glama.ai/mcp/servers/n24q02m/wet-mcp/badge" alt="WET MCP server" />
+<a href="https://glama.ai/mcp/servers/n24q02m/wet">
+  <img width="380" height="200" src="https://glama.ai/mcp/servers/n24q02m/wet/badge" alt="WET MCP server" />
 </a>
 
 ## Features
@@ -104,26 +104,26 @@ mcp-name: io.github.n24q02m/wet-mcp
 ```bash
 # Method 1 (default): plugin install via Claude Code
 /plugin marketplace add n24q02m/claude-plugins
-/plugin install wet-mcp@n24q02m-plugins
+/plugin install wet@n24q02m-plugins
 
 # Method 2 (CLI): direct uvx invocation
 claude mcp add wet -- uvx wet-mcp
 
 # Method 3 (source-built container for HTTP / multi-device / OAuth)
-docker build --target http -t wet-mcp:local .
-docker run -d --name wet-mcp-http -p 8084:8080 \
+docker build --target http -t wet:local .
+docker run -d --name wet-http -p 8084:8080 \
   -v wet-data:/data -e PUBLIC_URL=https://wet.example.com \
-  wet-mcp:local
+  wet:local
 
 # Method 4 (remote): point a client at an HTTP deployment
 claude mcp add --transport http wet https://<your-host>/mcp
 ```
 
-Install matrix (stdio unless noted; see the [Setup](https://mcp.n24q02m.com/servers/wet-mcp/setup/) page for full steps):
+Install matrix (stdio unless noted; see the [Setup](https://mcp.n24q02m.com/servers/wet/setup/) page for full steps):
 
 | Client | Install |
 |---|---|
-| Claude Code (plugin) | `/plugin marketplace add n24q02m/claude-plugins` then `/plugin install wet-mcp@n24q02m-plugins` |
+| Claude Code (plugin) | `/plugin marketplace add n24q02m/claude-plugins` then `/plugin install wet@n24q02m-plugins` |
 | Claude Code (stdio) | `claude mcp add wet -- uvx wet-mcp` |
 | Codex | register stdio command `uvx wet-mcp` under `mcp_servers` in `~/.codex/config.toml` |
 | Gemini CLI | add the `mcpServers` JSON below to `~/.gemini/settings.json` |
@@ -140,9 +140,9 @@ Stand one up via Method 3 or the
 [Deploy to Cloudflare](#deploy-to-cloudflare) section.
 
 Full setup matrices live at the canonical docs site
-[mcp.n24q02m.com/servers/wet-mcp/setup/](https://mcp.n24q02m.com/servers/wet-mcp/setup/)
+[mcp.n24q02m.com/servers/wet/setup/](https://mcp.n24q02m.com/servers/wet/setup/)
 and the paste-to-agent snippets at
-[claude-plugins/plugins/wet-mcp/setup-with-agent.md](https://github.com/n24q02m/claude-plugins/blob/main/plugins/wet-mcp/setup-with-agent.md)
+[claude-plugins/plugins/wet/setup-with-agent.md](https://github.com/n24q02m/claude-plugins/blob/main/plugins/wet/setup-with-agent.md)
 (per Spec F single source of truth).
 
 ## Self-host usage
@@ -303,7 +303,7 @@ operator requires robots enforcement.
 step (`hull-core[invisible]` extra: `pip install "wet-mcp[invisible]"`). One
 coherent browser identity spans the whole chain: seed it with `WET_IDENTITY_SEED`
 (or let wet derive once and persist it under `~/.wet/subs/<sub>/identity.json`)
-and install the `wet-mcp[identity]` extra. Without the extras the chain keeps
+and install the `wet[identity]` extra. Without the extras the chain keeps
 legacy behaviour (warn-once). `STEALTHFOX_BINARY` points at a patched Firefox
 build to skip the engine download; `IDENTITY_PROFILE_DIR` (default
 `~/.wet/subs/<sub>/profiles`) keeps persistent browser profiles per namespace.
@@ -314,7 +314,7 @@ backends only): `DISABLE_LOCAL_BROWSER`, `DISABLE_LOCAL_SEARCH`,
 `DISABLE_LOCAL_EMBED`, `DISABLE_LOCAL_RERANK`.
 
 **Docs sync** -- `SYNC_ENABLED` (default `true`), `GOOGLE_DRIVE_CLIENT_ID`
-(required for sync), `SYNC_FOLDER` (default `wet-mcp`), `SYNC_INTERVAL` (default
+(required for sync), `SYNC_FOLDER` (default `wet`), `SYNC_INTERVAL` (default
 `300`s). Sync uses Google Drive over the OAuth Device Code flow (no browser
 redirect).
 `DOCS_DB_BACKEND=cf-d1` disables GDrive/S3 file sync, including automatic
@@ -357,22 +357,22 @@ recipe. Current release line: v3.x.
 
 ## Documentation
 
-Full docs at **[mcp.n24q02m.com/servers/wet-mcp/setup/](https://mcp.n24q02m.com/servers/wet-mcp/setup/)**:
+Full docs at **[mcp.n24q02m.com/servers/wet/setup/](https://mcp.n24q02m.com/servers/wet/setup/)**:
 
-- [Setup](https://mcp.n24q02m.com/servers/wet-mcp/setup/) -- install methods for Claude Code, Codex, Gemini CLI, Cursor, Windsurf, mcp.json
+- [Setup](https://mcp.n24q02m.com/servers/wet/setup/) -- install methods for Claude Code, Codex, Gemini CLI, Cursor, Windsurf, mcp.json
 - [Modes overview](https://mcp.n24q02m.com/get-started/modes-overview/) -- stdio / local-relay / remote-relay / remote-oauth
 - [Multi-user setup](https://mcp.n24q02m.com/get-started/multi-user/) -- per-JWT-sub credential model
 
 In-repo references (Spec F single source of truth: setup docs live in
-[claude-plugins/plugins/wet-mcp/](https://github.com/n24q02m/claude-plugins/tree/main/plugins/wet-mcp)):
+[claude-plugins/plugins/wet/](https://github.com/n24q02m/claude-plugins/tree/main/plugins/wet)):
 
 - [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) -- web-core ScrapingAgent integration, strategy chain, storage layout, LLM provider dispatch
 - [`docs/BENCHMARKS.md`](docs/BENCHMARKS.md) -- v1.x baseline coverage / latency placeholders + tier-1 fixture metrics
 
 **Install with AI agent** -- paste this to your AI coding agent:
 
-> Install MCP server `wet-mcp` following the steps at
-> https://raw.githubusercontent.com/n24q02m/claude-plugins/main/plugins/wet-mcp/setup-with-agent.md
+> Install MCP server `wet` following the steps at
+> https://raw.githubusercontent.com/n24q02m/claude-plugins/main/plugins/wet/setup-with-agent.md
 
 ## Tools
 
@@ -416,7 +416,7 @@ wet docs reindex <library>      # drop the cached docs index for <library>; the 
 and `--client-secret` (single-user / local machine only; the token is written to
 the local store). Each subcommand prints a JSON result and exits.
 
-| Capability | wet-mcp | Brave Search | Tavily | Firecrawl | Context7 |
+| Capability | wet | Brave Search | Tavily | Firecrawl | Context7 |
 |---|---|---|---|---|---|
 | Web search | Yes (SearXNG aggregation) | Yes | Yes | No | No |
 | Extract URL | Yes (5-strategy chain) | No | Yes (basic) | Yes | No |
@@ -437,9 +437,9 @@ the local store). Each subcommand prints a JSON result and exits.
 
 ```bash
 git clone https://github.com/n24q02m/wet.git
-cd wet-mcp
+cd wet
 uv sync
-uv run wet-mcp
+uv run wet
 ```
 
 ## Deploy to Cloudflare
@@ -450,7 +450,7 @@ Run your own single-user wet instance serverless on Cloudflare (Containers + D1 
 
 **Prerequisites:** a Cloudflare account on the **Workers Paid plan** — required for Containers, D1, and Vectorize (the Cloudflare free tier does not include them) — and the `wrangler` CLI.
 
-1. `git clone https://github.com/n24q02m/wet && cd wet-mcp`
+1. `git clone https://github.com/n24q02m/wet && cd wet`
 2. `wrangler login`
 3. Provision resources and apply the D1 schema:
    ```
@@ -466,8 +466,8 @@ Run your own single-user wet instance serverless on Cloudflare (Containers + D1 
    Cloudflare's managed registry (CF Containers cannot pull from external
    registries):
    ```
-   docker build --target http --build-arg SLIM=1 -t wet-mcp:beta .
-   wrangler containers push wet-mcp:beta   # prints registry.cloudflare.com/<ACCOUNT_ID>/wet-mcp:beta
+   docker build --target http --build-arg SLIM=1 -t wet:beta .
+   wrangler containers push wet:beta   # prints registry.cloudflare.com/<ACCOUNT_ID>/wet:beta
    ```
 5. Set operator auth/storage and Browser Run secrets:
    ```
@@ -528,7 +528,7 @@ account (the button above) is unaffected.
 
 ## Smithery
 
-wet-mcp ships a [`smithery.yaml`](smithery.yaml) so it can be installed and run
+wet ships a [`smithery.yaml`](smithery.yaml) so it can be installed and run
 through [Smithery](https://smithery.ai). The manifest declares a stdio start
 command (`uvx --python 3.13 wet-mcp`) with an empty config schema -- no config is
 required to start, and providers and credentials are configured at runtime via
@@ -540,7 +540,7 @@ This plugin implements **TC-Local** (machine-bound, single trust principal). See
 
 | Mode | Storage | Encryption | Who can read your data? |
 |---|---|---|---|
-| stdio (default) | `~/.wet-mcp/config.json` | AES-GCM, machine-bound key | Only your OS user (file perm 0600) |
+| stdio (default) | `~/.wet/config.json` | AES-GCM, machine-bound key | Only your OS user (file perm 0600) |
 | HTTP self-host | Same as stdio | Same | Only you (admin = user) |
 
 ## License

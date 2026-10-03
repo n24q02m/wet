@@ -1,4 +1,4 @@
-"""Comprehensive real-world testing for wet-mcp.
+"""Comprehensive real-world testing for wet.
 
 Tests the kept surface across configuration combinations:
 1. Embedding: local ONNX vs an OpenAI-compatible provider cell
@@ -46,42 +46,42 @@ class TestDocsDiscoveryFixes:
         pass
 
     async def test_vinejs_discovery(self):
-        from wet_mcp.sources.docs import discover_library
+        from wet.sources.docs import discover_library
 
         result = await discover_library("vinejs")
         assert result is not None, "vinejs should be discovered"
         assert "vinejs.dev" in result.get("homepage", ""), f"Got: {result}"
 
     async def test_vinejs_scoped_discovery(self):
-        from wet_mcp.sources.docs import discover_library
+        from wet.sources.docs import discover_library
 
         result = await discover_library("@vinejs/vine")
         assert result is not None, "@vinejs/vine should be discovered"
         assert "vinejs.dev" in result.get("homepage", ""), f"Got: {result}"
 
     async def test_inertia_discovery(self):
-        from wet_mcp.sources.docs import discover_library
+        from wet.sources.docs import discover_library
 
         result = await discover_library("inertia")
         assert result is not None, "inertia should be discovered"
         assert "inertiajs.com" in result.get("homepage", ""), f"Got: {result}"
 
     async def test_inertiajs_react_discovery(self):
-        from wet_mcp.sources.docs import discover_library
+        from wet.sources.docs import discover_library
 
         result = await discover_library("@inertiajs/react")
         assert result is not None, "@inertiajs/react should be discovered"
         assert "inertiajs.com" in result.get("homepage", ""), f"Got: {result}"
 
     async def test_dry_rb_discovery(self):
-        from wet_mcp.sources.docs import discover_library
+        from wet.sources.docs import discover_library
 
         result = await discover_library("dry-rb")
         assert result is not None, "dry-rb should be discovered"
         assert "dry-rb.org" in result.get("homepage", ""), f"Got: {result}"
 
     async def test_dry_validation_discovery(self):
-        from wet_mcp.sources.docs import discover_library
+        from wet.sources.docs import discover_library
 
         result = await discover_library("dry-validation")
         assert result is not None, "dry-validation should be discovered"
@@ -97,8 +97,8 @@ class TestSearchTool:
     """Test search tool with embedded SearXNG."""
 
     async def test_general_search(self):
-        from wet_mcp.config import settings
-        from wet_mcp.sources.searxng import search
+        from wet.config import settings
+        from wet.sources.searxng import search
 
         searxng_url = settings.searxng_url
         result = await search(searxng_url, "Python asyncio tutorial", max_results=5)
@@ -106,8 +106,8 @@ class TestSearchTool:
         assert len(data) > 0, "General search should return results"
 
     async def test_academic_search(self):
-        from wet_mcp.config import settings
-        from wet_mcp.sources.searxng import search
+        from wet.config import settings
+        from wet.sources.searxng import search
 
         searxng_url = settings.searxng_url
         result = await search(
@@ -120,21 +120,21 @@ class TestSearchTool:
         assert len(data) > 0, "Academic search should return results"
 
     async def test_docs_search_fastapi(self):
-        from wet_mcp.sources.docs import discover_library
+        from wet.sources.docs import discover_library
 
         result = await discover_library("fastapi", language="python")
         assert result is not None
         assert "fastapi" in result.get("homepage", "").lower()
 
     async def test_docs_search_react(self):
-        from wet_mcp.sources.docs import discover_library
+        from wet.sources.docs import discover_library
 
         result = await discover_library("react", language="javascript")
         assert result is not None
         assert "react" in result.get("homepage", "").lower()
 
     async def test_docs_search_axum(self):
-        from wet_mcp.sources.docs import discover_library
+        from wet.sources.docs import discover_library
 
         result = await discover_library("axum", language="rust")
         assert result is not None
@@ -177,7 +177,7 @@ class TestExtractTool:
     """Test content extraction including document conversion."""
 
     async def test_extract_web_page(self):
-        from wet_mcp.sources.crawler import extract
+        from wet.sources.crawler import extract
 
         result = await extract(
             ["https://httpbin.org/html"],
@@ -191,7 +191,7 @@ class TestExtractTool:
 
     async def test_extract_pdf_markitdown(self):
         """Test PDF extraction via markitdown."""
-        from wet_mcp.sources.crawler import extract
+        from wet.sources.crawler import extract
 
         # Use a well-known small public PDF
         result = await extract(
@@ -207,7 +207,7 @@ class TestExtractTool:
             assert data[0]["converter"] == "markitdown"
 
     async def test_is_document_url_detection(self):
-        from wet_mcp.sources.crawler import _is_document_url
+        from wet.sources.crawler import _is_document_url
 
         assert _is_document_url("https://example.com/file.pdf")
         assert _is_document_url("https://example.com/report.docx")
@@ -268,7 +268,7 @@ class TestCustomApiBaseProxy:
 
     async def test_proxy_rerank_via_cell_client(self):
         """Reranking through wet's cell seam (hull OpenAICompatClient)."""
-        from wet_mcp.reranker import CloudReranker
+        from wet.reranker import CloudReranker
 
         reranker = CloudReranker(self._cell_client())
         results = await reranker.rerank(
@@ -297,7 +297,7 @@ class TestLocalONNX:
     """Test local ONNX embedding and reranking."""
 
     async def test_local_embedding(self):
-        from wet_mcp.embedder import LocalEmbeddingBackend
+        from wet.embedder import LocalEmbeddingBackend
 
         backend = LocalEmbeddingBackend()
         vectors = await backend.embed_texts(["Hello world", "Python programming"])
@@ -305,7 +305,7 @@ class TestLocalONNX:
         assert len(vectors[0]) > 0  # Should have dimensions
 
     async def test_local_reranking(self):
-        from wet_mcp.reranker import LocalReranker
+        from wet.reranker import LocalReranker
 
         reranker = LocalReranker()
         results = reranker.rerank(
@@ -331,7 +331,7 @@ class TestConfigTool:
     """Test config tool actions."""
 
     async def test_config_status(self):
-        from wet_mcp.config import settings
+        from wet.config import settings
 
         assert settings.log_level in ("INFO", "DEBUG", "WARNING", "ERROR")
         assert settings.tool_timeout > 0
@@ -339,8 +339,8 @@ class TestConfigTool:
 
     async def test_local_backend_availability_flags(self):
         """De-host: backend availability is the local-leg flags + cell state."""
-        from wet_mcp.config import settings
-        from wet_mcp.runtime import cell_configured
+        from wet.config import settings
+        from wet.runtime import cell_configured
 
         assert isinstance(settings.local_embed_available(), bool)
         assert isinstance(settings.local_rerank_available(), bool)
@@ -357,7 +357,7 @@ class TestMediaTool:
     """Test media listing from web pages."""
 
     async def test_list_media(self):
-        from wet_mcp.sources.crawler import list_media
+        from wet.sources.crawler import list_media
 
         result = await list_media(
             "https://httpbin.org/html",
@@ -380,7 +380,7 @@ class TestE2EDocsSearch:
     @pytest.mark.timeout(120)
     async def test_docs_search_htmx(self):
         """Full pipeline: discover → index → search."""
-        from wet_mcp.sources.docs import discover_library
+        from wet.sources.docs import discover_library
 
         result = await discover_library("htmx")
         assert result is not None

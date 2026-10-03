@@ -8,7 +8,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from wet_mcp.identity import get_or_create_identity_seed, identity_profile_dir
+from wet.identity import get_or_create_identity_seed, identity_profile_dir
 
 
 @pytest.fixture()
@@ -16,9 +16,9 @@ def isolated_sub_root(monkeypatch: pytest.MonkeyPatch, tmp_path):
     """Point sub_root at a tmp dir so persistence never touches ~/.wet."""
     root = tmp_path / "sub"
     root.mkdir(parents=True)
-    monkeypatch.setattr("wet_mcp.runtime.sub_root", lambda namespace=None: root)
+    monkeypatch.setattr("wet.runtime.sub_root", lambda namespace=None: root)
     monkeypatch.delenv("WET_IDENTITY_SEED", raising=False)
-    monkeypatch.setattr("wet_mcp.config.settings.identity_seed", 0)
+    monkeypatch.setattr("wet.config.settings.identity_seed", 0)
     return root
 
 
@@ -31,7 +31,7 @@ class TestIdentitySeed:
         (isolated_sub_root / "identity.json").write_text(
             '{"identity_seed": 111}', encoding="utf-8"
         )
-        monkeypatch.setattr("wet_mcp.config.settings.identity_seed", 222)
+        monkeypatch.setattr("wet.config.settings.identity_seed", 222)
         assert get_or_create_identity_seed() == 222
 
     def test_persists_and_reloads(self, isolated_sub_root):
@@ -73,13 +73,13 @@ def _stub_open_interact(monkeypatch: pytest.MonkeyPatch, calls: list[str]) -> No
 
 class TestPoolSubKeying:
     async def test_same_session_id_isolated_per_sub(self, monkeypatch):
-        from wet_mcp.sources._browser_sessions import SessionPool
+        from wet.sources._browser_sessions import SessionPool
 
         calls: list[str] = []
         _stub_open_interact(monkeypatch, calls)
 
         subs = iter(["alice", "alice", "bob"])
-        monkeypatch.setattr("wet_mcp.runtime.current_sub", lambda: next(subs))
+        monkeypatch.setattr("wet.runtime.current_sub", lambda: next(subs))
 
         pool = SessionPool()
         ops_a1 = await pool.get("s1", "https://example.com")

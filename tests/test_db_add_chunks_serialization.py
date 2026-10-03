@@ -3,7 +3,7 @@ from typing import Any, cast
 
 import pytest
 
-from wet_mcp.db import DocsDB
+from wet.db import DocsDB
 
 
 class TestAddChunksSerialization:

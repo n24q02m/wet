@@ -1,4 +1,4 @@
-"""Windows console Unicode encoding guard in wet_mcp.server.
+"""Windows console Unicode encoding guard in wet.server.
 
 Bug: on Windows the default console encoding is cp1252, so emitting
 Vietnamese / non-ASCII text on stdout/stderr raises UnicodeEncodeError and
@@ -19,13 +19,13 @@ from pathlib import Path
 
 def _extract_win32_guard() -> str:
     """Return the source of the module-level ``if sys.platform == "win32"``
-    guard from wet_mcp/server.py.
+    guard from wet/server.py.
 
     Fails loudly if the guard is missing (mutation sanity: deleting the fix
     makes this raise, so every test below fails too).
     """
     src = (
-        Path(__file__).resolve().parent.parent / "src" / "wet_mcp" / "server.py"
+        Path(__file__).resolve().parent.parent / "src" / "wet" / "server.py"
     ).read_text(encoding="utf-8")
     tree = ast.parse(src)
     for node in tree.body:
@@ -39,7 +39,7 @@ def _extract_win32_guard() -> str:
                 and cond.comparators[0].value == "win32"
             ):
                 return ast.get_source_segment(src, node) or ""
-    raise AssertionError("win32 console-encoding guard missing from wet_mcp/server.py")
+    raise AssertionError("win32 console-encoding guard missing from wet/server.py")
 
 
 def _make_stream() -> io.TextIOWrapper:

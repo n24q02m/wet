@@ -1,6 +1,6 @@
-"""Verify wet-mcp runs in stdio direct mode (no smart_stdio bridge).
+"""Verify wet runs in stdio direct mode (no smart_stdio bridge).
 
-Spawns ``python -m wet_mcp`` with ``MCP_TRANSPORT=stdio`` and exercises the
+Spawns ``python -m wet`` with ``MCP_TRANSPORT=stdio`` and exercises the
 JSON-RPC handshake plus ``tools/list`` to prove the FastMCP stdio server is
 wired directly (no daemon-spawn bridge layer in front of it).
 
@@ -22,13 +22,13 @@ pytestmark = [pytest.mark.live, pytest.mark.timeout(60)]
 
 
 def _spawn_stdio_server() -> subprocess.Popen[str]:
-    """Start ``python -m wet_mcp`` with stdio transport.
+    """Start ``python -m wet`` with stdio transport.
 
     Returns the running subprocess. Caller is responsible for terminating it.
     """
     env = {**os.environ, "MCP_TRANSPORT": "stdio"}
     return subprocess.Popen(
-        [sys.executable, "-m", "wet_mcp"],
+        [sys.executable, "-m", "wet"],
         stdin=subprocess.PIPE,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,

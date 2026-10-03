@@ -1,4 +1,4 @@
-"""Tests for ``wet_mcp.transport_check`` and the search-tool uvx gate.
+"""Tests for ``wet.transport_check`` and the search-tool uvx gate.
 
 Per spec ``2026-05-01-stdio-pure-http-multiuser.md`` §4.1.1: stdio uvx
 mode must reject ``web.search`` / ``research`` / ``docs`` / ``similar``
@@ -23,7 +23,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 from structured import payload, text
 
-import wet_mcp.transport_check as tc
+import wet.transport_check as tc
 
 
 @pytest.fixture
@@ -35,7 +35,7 @@ def _allow_real_uvx_detection(monkeypatch):
     test can monkeypatch the underlying signals (``sys.executable``,
     ``importlib.util.find_spec``) and observe the genuine outcome.
     """
-    import wet_mcp.server as srv
+    import wet.server as srv
 
     # Resolve the real function via the module ``__dict__`` source rather
     # than the live attribute, so we don't accidentally restore a stub
@@ -62,7 +62,7 @@ def test_is_uvx_tool_venv_false_in_docker(
 ):
     """Docker short-circuit: even with no pip + uv venv path, container = False.
 
-    The wet-mcp Docker image uses ``uv sync`` which produces a venv WITHOUT
+    The wet Docker image uses ``uv sync`` which produces a venv WITHOUT
     pip. Without the Docker short-circuit, that signal would trip the
     pip-missing fallback and incorrectly reject SearXNG-dependent actions
     inside Method 3 stdio Docker (where Docker daemon access enables
@@ -107,7 +107,7 @@ def test_is_uvx_tool_venv_true_when_executable_under_uv_tools(
     _allow_real_uvx_detection, monkeypatch, tmp_path
 ):
     """``sys.executable`` containing ``uv/tools/`` triggers detection."""
-    fake_exe = tmp_path / "uv" / "tools" / "wet-mcp" / "Scripts" / "python.exe"
+    fake_exe = tmp_path / "uv" / "tools" / "wet" / "Scripts" / "python.exe"
     fake_exe.parent.mkdir(parents=True)
     fake_exe.touch()
     monkeypatch.setattr(sys, "executable", str(fake_exe))
@@ -154,7 +154,7 @@ def test_is_uvx_tool_venv_false_for_normal_venv(
 
 def test_is_uvx_tool_venv_memoizes(_allow_real_uvx_detection, monkeypatch, tmp_path):
     """Result is cached after the first call."""
-    fake_exe = tmp_path / "uv" / "tools" / "wet-mcp" / "bin" / "python"
+    fake_exe = tmp_path / "uv" / "tools" / "wet" / "bin" / "python"
     fake_exe.parent.mkdir(parents=True)
     fake_exe.touch()
     monkeypatch.setattr(sys, "executable", str(fake_exe))
@@ -181,7 +181,7 @@ def test_is_uvx_tool_venv_memoizes(_allow_real_uvx_detection, monkeypatch, tmp_p
 def _force_uvx(monkeypatch, value: bool):
     """Force ``is_uvx_tool_venv`` to return ``value`` in every live binding.
 
-    ``test_server_timeout.py`` deletes and reimports ``wet_mcp.server``
+    ``test_server_timeout.py`` deletes and reimports ``wet.server``
     under heavy mocking, so two distinct copies of that module can coexist
     in ``sys.modules`` for the rest of the run. Patch every copy reachable
     from ``sys.modules`` (and ``transport_check``) and return the freshly
@@ -190,9 +190,9 @@ def _force_uvx(monkeypatch, value: bool):
     import sys
 
     monkeypatch.setattr(tc, "is_uvx_tool_venv", lambda: value)
-    if "wet_mcp.server" not in sys.modules:
-        import wet_mcp.server  # noqa: F401
-    srv = sys.modules["wet_mcp.server"]
+    if "wet.server" not in sys.modules:
+        import wet.server  # noqa: F401
+    srv = sys.modules["wet.server"]
     monkeypatch.setattr(srv, "is_uvx_tool_venv", lambda: value)
     return srv
 
@@ -230,7 +230,7 @@ async def test_search_actions_rejected_in_uvx_mode(monkeypatch, action):
     )
     assert "TAVILY_API_KEY" in text(result)
     assert "SEARXNG_URL=" in text(result)
-    assert "docker build --target stdio -t wet-mcp:local ." in text(result)
+    assert "docker build --target stdio -t wet:local ." in text(result)
 
 
 @pytest.mark.asyncio
@@ -294,7 +294,7 @@ async def test_search_proceeds_in_uvx_with_cloud_key(monkeypatch):
     with (
         patch.object(srv, "ensure_searxng", new_callable=AsyncMock) as mock_ensure,
         patch(
-            "wet_mcp.sources.search_strategies.find_similar", new_callable=AsyncMock
+            "wet.sources.search_strategies.find_similar", new_callable=AsyncMock
         ) as mock_similar,
     ):
         mock_ensure.return_value = "http://localhost:41592"
@@ -316,7 +316,7 @@ async def test_search_proceeds_in_uvx_with_external_searxng(monkeypatch):
 
     with (
         patch.object(srv, "ensure_searxng", new_callable=AsyncMock) as mock_ensure,
-        patch("wet_mcp.sources.searxng.search", new_callable=AsyncMock) as mock_search,
+        patch("wet.sources.searxng.search", new_callable=AsyncMock) as mock_search,
     ):
         mock_ensure.return_value = "https://searxng.example.com"
         mock_search.return_value = (
@@ -352,8 +352,8 @@ def test_uvx_searxng_blocked_error():
     assert "Error: action 'search' needs a search backend" in result
     assert "TAVILY_API_KEY" in result
     assert "SEARXNG_URL=" in result
-    assert "docker build --target stdio -t wet-mcp:local ." in result
-    assert "https://github.com/n24q02m/wet-mcp#setup" in result
+    assert "docker build --target stdio -t wet:local ." in result
+    assert "https://github.com/n24q02m/wet#setup" in result
 
 
 # ---------------------------------------------------------------------------
@@ -377,7 +377,7 @@ def test_uvx_searxng_blocked_error():
 def test_has_uvx_runnable_backend(monkeypatch, chain, env, expected):
     """Block/allow matrix from the E0.1 spec: cloud keys and an external
     SearXNG URL make a chain uvx-runnable; the local-only default does not."""
-    import wet_mcp.sources.search_backends as sb
+    import wet.sources.search_backends as sb
 
     for var in ("TAVILY_API_KEY", "BRAVE_API_KEY", "EXA_API_KEY", "SEARXNG_URL"):
         monkeypatch.delenv(var, raising=False)

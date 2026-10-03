@@ -13,7 +13,7 @@ import time
 
 def main():
     proc = subprocess.Popen(
-        [sys.executable, "-m", "wet_mcp"],
+        [sys.executable, "-m", "wet"],
         stdin=subprocess.PIPE,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,

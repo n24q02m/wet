@@ -65,10 +65,10 @@ def _stub_lifespan_heavy_init():
     rerank = MagicMock()
     rerank.check_available = _AvailableBothWays(True)
     with (
-        patch("wet_mcp.migrations.run_migrations_on_startup"),
-        patch("wet_mcp.sources.tier1_warmup.maybe_warm"),
-        patch("wet_mcp.embedder.init_backend", return_value=embed_backend),
-        patch("wet_mcp.reranker.init_reranker", return_value=rerank),
+        patch("wet.migrations.run_migrations_on_startup"),
+        patch("wet.sources.tier1_warmup.maybe_warm"),
+        patch("wet.embedder.init_backend", return_value=embed_backend),
+        patch("wet.reranker.init_reranker", return_value=rerank),
     ):
         yield
 
@@ -85,14 +85,14 @@ def _disable_uvx_tool_venv_detection(monkeypatch):
     """
     import sys
 
-    import wet_mcp.transport_check as tc
+    import wet.transport_check as tc
 
     monkeypatch.setattr(tc, "is_uvx_tool_venv", lambda: False)
-    # ``test_server_timeout.py`` re-imports ``wet_mcp.server`` under heavy
+    # ``test_server_timeout.py`` re-imports ``wet.server`` under heavy
     # mocking; patch every live copy registered in ``sys.modules`` so
     # subsequent tests still see ``False``.
     for mod_name, mod in list(sys.modules.items()):
-        if mod_name == "wet_mcp.server" and hasattr(mod, "is_uvx_tool_venv"):
+        if mod_name == "wet.server" and hasattr(mod, "is_uvx_tool_venv"):
             monkeypatch.setattr(mod, "is_uvx_tool_venv", lambda: False)
     yield
 
@@ -116,7 +116,7 @@ async def _reset_crawler_singleton():
     This ensures tests do not leak state between each other when the
     singleton browser pool is involved.
     """
-    import wet_mcp.sources.crawler as crawler_mod
+    import wet.sources.crawler as crawler_mod
 
     # Reset before test
     crawler_mod._crawler_instance = None
@@ -136,7 +136,7 @@ def mock_crawler_instance():
     """Create a mock AsyncWebCrawler instance for use with _get_crawler patch.
 
     Returns the mock instance directly.  Tests should patch
-    ``wet_mcp.sources.crawler._get_crawler`` to return this mock so that
+    ``wet.sources.crawler._get_crawler`` to return this mock so that
     the singleton browser pool is bypassed entirely.
 
     Example usage::
@@ -146,7 +146,7 @@ def mock_crawler_instance():
             mock_crawler_instance.arun = AsyncMock(return_value=mock_result)
 
             with patch(
-                "wet_mcp.sources.crawler._get_crawler",
+                "wet.sources.crawler._get_crawler",
                 new_callable=AsyncMock,
                 return_value=mock_crawler_instance,
             ):

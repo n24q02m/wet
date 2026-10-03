@@ -1,4 +1,4 @@
-"""``wet_mcp.docs_import`` — D1 SQL export → local docs.db rescue pipeline.
+"""``wet.docs_import`` — D1 SQL export → local docs.db rescue pipeline.
 
 Synthetic exports use the old PK shape the real D1 ``--export`` produces
 (plain CREATE TABLE + line INSERTs); the current-schema bootstrap in
@@ -14,7 +14,7 @@ from pathlib import Path
 
 import pytest
 
-from wet_mcp.docs_import import EXPECTED_LIBRARIES, EXPECTED_VERSIONS, import_docs
+from wet.docs_import import EXPECTED_LIBRARIES, EXPECTED_VERSIONS, import_docs
 
 # ---------------------------------------------------------------------------
 # synthetic D1 export builder
@@ -135,7 +135,7 @@ def test_import_force_replaces_target_and_sidecars(tmp_path):
     def run_import(**kw) -> subprocess.CompletedProcess:
         code = (
             "import json;from pathlib import Path;"
-            "from wet_mcp.docs_import import import_docs;"
+            "from wet.docs_import import import_docs;"
             f"r = import_docs(Path(r'{export}'), db_path=Path(r'{target}'),"
             f" expected_chunks=3, force={kw.get('force', False)});"
             "print(json.dumps({'chunks': r['chunks'],"
@@ -197,7 +197,7 @@ def test_import_skip_fts_leaves_index_unbuilt(tmp_path):
 
 
 def test_cli_docs_import_end_to_end(tmp_path, capsys):
-    from wet_mcp import cli
+    from wet import cli
 
     export = _write_export(tmp_path, n_chunks=3)
     target = tmp_path / "docs.db"

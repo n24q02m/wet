@@ -3,7 +3,7 @@
 Phase 1 migration (spec §4.2 + §5.5): wet's extract pipeline must consume
 ``hull_web.scraper.ScrapingAgent`` instead of instantiating Crawl4AI
 directly. Output is the structured smart-chunks dict from
-``wet_mcp.sources._smart_chunks``.
+``wet.sources._smart_chunks``.
 """
 
 from __future__ import annotations
@@ -61,12 +61,12 @@ def _build_fake_agent(scrape_return: str | None = None, scrape_side_effect=None)
 @pytest.mark.asyncio
 async def test_extract_calls_scraping_agent() -> None:
     """``extract`` MUST instantiate ScrapingAgent and call its scrape() coroutine."""
-    from wet_mcp.sources.crawler import extract
+    from wet.sources.crawler import extract
 
     fake_agent = _build_fake_agent(scrape_return="# Example\n\nhello world")
 
     with patch(
-        "wet_mcp.sources.crawler._get_scraping_agent",
+        "wet.sources.crawler._get_scraping_agent",
         new_callable=AsyncMock,
         return_value=fake_agent,
     ):
@@ -84,7 +84,7 @@ async def test_extract_calls_scraping_agent() -> None:
 @pytest.mark.asyncio
 async def test_extract_returns_smart_chunks_shape() -> None:
     """Each extract result must follow the 5-key smart-chunks shape."""
-    from wet_mcp.sources.crawler import extract
+    from wet.sources.crawler import extract
 
     fake_agent = _build_fake_agent(
         scrape_return=(
@@ -96,7 +96,7 @@ async def test_extract_returns_smart_chunks_shape() -> None:
     )
 
     with patch(
-        "wet_mcp.sources.crawler._get_scraping_agent",
+        "wet.sources.crawler._get_scraping_agent",
         new_callable=AsyncMock,
         return_value=fake_agent,
     ):
@@ -113,12 +113,12 @@ async def test_extract_returns_smart_chunks_shape() -> None:
 @pytest.mark.asyncio
 async def test_extract_unsafe_url_blocked_before_agent() -> None:
     """SSRF guard runs before ScrapingAgent is invoked."""
-    from wet_mcp.sources.crawler import extract
+    from wet.sources.crawler import extract
 
     fake_agent = _build_fake_agent(scrape_return="should not run")
 
     with patch(
-        "wet_mcp.sources.crawler._get_scraping_agent",
+        "wet.sources.crawler._get_scraping_agent",
         new_callable=AsyncMock,
         return_value=fake_agent,
     ):
@@ -132,14 +132,14 @@ async def test_extract_unsafe_url_blocked_before_agent() -> None:
 @pytest.mark.asyncio
 async def test_extract_agent_error_surfaces_in_result() -> None:
     """When ScrapingAgent raises, extract emits a per-URL error entry."""
-    from wet_mcp.sources.crawler import extract
+    from wet.sources.crawler import extract
 
     fake_agent = _build_fake_agent(
         scrape_side_effect=RuntimeError("strategy chain exhausted")
     )
 
     with patch(
-        "wet_mcp.sources.crawler._get_scraping_agent",
+        "wet.sources.crawler._get_scraping_agent",
         new_callable=AsyncMock,
         return_value=fake_agent,
     ):
@@ -154,17 +154,17 @@ async def test_extract_actual_agent_blocks_before_strategy_when_robots_enabled()
     None
 ):
     """The real ScrapingAgent must enforce its RobotsCache before any strategy."""
-    from wet_mcp.sources.crawler import extract
+    from wet.sources.crawler import extract
 
     agent, strategy = _build_actual_scraping_agent(respect_robots=True)
 
     with (
         patch(
-            "wet_mcp.sources.crawler._get_scraping_agent",
+            "wet.sources.crawler._get_scraping_agent",
             new_callable=AsyncMock,
             return_value=agent,
         ),
-        patch("wet_mcp.sources.crawler.is_safe_url", return_value=True),
+        patch("wet.sources.crawler.is_safe_url", return_value=True),
     ):
         result_json = await extract(["https://example.com/page"])
 
@@ -176,17 +176,17 @@ async def test_extract_actual_agent_blocks_before_strategy_when_robots_enabled()
 @pytest.mark.asyncio
 async def test_extract_actual_agent_reaches_strategy_when_robots_disabled() -> None:
     """The legacy disabled mode still executes the configured strategy."""
-    from wet_mcp.sources.crawler import extract
+    from wet.sources.crawler import extract
 
     agent, strategy = _build_actual_scraping_agent(respect_robots=False)
 
     with (
         patch(
-            "wet_mcp.sources.crawler._get_scraping_agent",
+            "wet.sources.crawler._get_scraping_agent",
             new_callable=AsyncMock,
             return_value=agent,
         ),
-        patch("wet_mcp.sources.crawler.is_safe_url", return_value=True),
+        patch("wet.sources.crawler.is_safe_url", return_value=True),
     ):
         result_json = await extract(["https://example.com/page"])
 
@@ -199,18 +199,18 @@ async def test_extract_actual_agent_reaches_strategy_when_robots_disabled() -> N
 @pytest.mark.asyncio
 async def test_extract_document_url_uses_markitdown_bypass() -> None:
     """PDF/DOCX URLs must skip ScrapingAgent and route through markitdown helper."""
-    from wet_mcp.sources.crawler import extract
+    from wet.sources.crawler import extract
 
     fake_agent = _build_fake_agent(scrape_return="should not run")
 
     with (
         patch(
-            "wet_mcp.sources.crawler._get_scraping_agent",
+            "wet.sources.crawler._get_scraping_agent",
             new_callable=AsyncMock,
             return_value=fake_agent,
         ),
         patch(
-            "wet_mcp.sources.crawler._extract_with_markitdown",
+            "wet.sources.crawler._extract_with_markitdown",
             new_callable=AsyncMock,
             return_value={"url": "https://example.com/r.pdf", "content": "PDF text"},
         ) as mock_md,

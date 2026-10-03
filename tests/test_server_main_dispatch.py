@@ -1,6 +1,6 @@
 """Tests for the de-hosted server entry points: build_http_app / run_server_blocking / main.
 
-There is ONE way to run wet-mcp now (spec §3): a single HTTP process with the
+There is ONE way to run wet now (spec §3): a single HTTP process with the
 MCP endpoint at ``http://host:port/mcp``, authenticated per
 ``~/.wet/config.toml`` ([server] auth = no-auth | token | multi). The old
 stdio-default / ``--http`` / mcp-core ``run_http_server`` dispatch matrix and
@@ -13,7 +13,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 from hull_core.config.settings import HullSettings, ServerSettings
 
-from wet_mcp import server as srv
+from wet import server as srv
 
 
 def _hs(auth: str = "no-auth", host: str = "127.0.0.1", port: int = 8802):
@@ -43,7 +43,7 @@ class TestBuildHttpApp:
 
     def test_default_settings_loaded_from_instance_config(self, tmp_path, monkeypatch):
         monkeypatch.setattr(
-            "wet_mcp.runtime.hull_settings",
+            "wet.runtime.hull_settings",
             lambda: _hull_settings(tmp_path),
         )
         app = srv.build_http_app(None)
@@ -79,7 +79,7 @@ class TestRunServerBlocking:
     def test_no_auth_non_loopback_bind_refused(self, monkeypatch):
         """An unauthenticated listener must never leave localhost."""
         monkeypatch.setattr(
-            "wet_mcp.runtime.hull_settings", lambda: _hs(auth="no-auth")
+            "wet.runtime.hull_settings", lambda: _hs(auth="no-auth")
         )
 
         with pytest.raises(srv.ServerConfigError, match="no-auth"):
@@ -87,7 +87,7 @@ class TestRunServerBlocking:
 
     def test_serves_uvicorn_on_requested_bind(self, monkeypatch, tmp_path):
         hs = _hs(auth="no-auth", host="127.0.0.1", port=8803)
-        monkeypatch.setattr("wet_mcp.runtime.hull_settings", lambda: hs)
+        monkeypatch.setattr("wet.runtime.hull_settings", lambda: hs)
 
         lock_cm = MagicMock()
         lock_obj = MagicMock()
@@ -98,7 +98,7 @@ class TestRunServerBlocking:
         with (
             patch("hull_core.lifecycle.lock.LifecycleLock", lock_cm),
             patch(
-                "wet_mcp.server.build_http_app", return_value=MagicMock()
+                "wet.server.build_http_app", return_value=MagicMock()
             ) as mock_app,
             patch("uvicorn.run") as mock_uvicorn,
         ):
@@ -114,7 +114,7 @@ class TestRunServerBlocking:
     def test_token_auth_allows_non_loopback(self, monkeypatch):
         """A shared bind requires token/multi auth — and is then allowed."""
         hs = _hs(auth="token", host="0.0.0.0", port=8804)
-        monkeypatch.setattr("wet_mcp.runtime.hull_settings", lambda: hs)
+        monkeypatch.setattr("wet.runtime.hull_settings", lambda: hs)
 
         lock_obj = MagicMock()
         lock_obj.__enter__.return_value = lock_obj
@@ -123,7 +123,7 @@ class TestRunServerBlocking:
 
         with (
             patch("hull_core.lifecycle.lock.LifecycleLock", lock_factory),
-            patch("wet_mcp.server.build_http_app", return_value=MagicMock()),
+            patch("wet.server.build_http_app", return_value=MagicMock()),
             patch("uvicorn.run") as mock_uvicorn,
         ):
             srv.run_server_blocking(host="0.0.0.0", port=8804)
@@ -135,7 +135,7 @@ class TestRunServerBlocking:
     def test_defaults_come_from_instance_config(self, monkeypatch):
         """host/port None -> [server].host/port from ~/.wet/config.toml."""
         hs = _hs(auth="no-auth", host="127.0.0.1", port=9310)
-        monkeypatch.setattr("wet_mcp.runtime.hull_settings", lambda: hs)
+        monkeypatch.setattr("wet.runtime.hull_settings", lambda: hs)
 
         lock_obj = MagicMock()
         lock_obj.__enter__.return_value = lock_obj
@@ -144,7 +144,7 @@ class TestRunServerBlocking:
 
         with (
             patch("hull_core.lifecycle.lock.LifecycleLock", lock_factory),
-            patch("wet_mcp.server.build_http_app", return_value=MagicMock()),
+            patch("wet.server.build_http_app", return_value=MagicMock()),
             patch("uvicorn.run") as mock_uvicorn,
         ):
             srv.run_server_blocking()
@@ -181,7 +181,7 @@ class TestMainDispatch:
     def test_no_env_defers_to_instance_config(self, monkeypatch):
         monkeypatch.delenv("WET_HOST", raising=False)
         monkeypatch.delenv("WET_PORT", raising=False)
-        with patch("wet_mcp.server.run_server_blocking") as mock_serve:
+        with patch("wet.server.run_server_blocking") as mock_serve:
             srv.main()
 
         mock_serve.assert_called_once_with(host=None, port=None)
@@ -189,7 +189,7 @@ class TestMainDispatch:
     def test_wet_host_and_wet_port_override_bind(self, monkeypatch):
         monkeypatch.setenv("WET_HOST", "0.0.0.0")
         monkeypatch.setenv("WET_PORT", "8080")
-        with patch("wet_mcp.server.run_server_blocking") as mock_serve:
+        with patch("wet.server.run_server_blocking") as mock_serve:
             srv.main()
 
         mock_serve.assert_called_once_with(host="0.0.0.0", port=8080)
@@ -197,7 +197,7 @@ class TestMainDispatch:
     def test_wet_port_only_pins_port(self, monkeypatch):
         monkeypatch.delenv("WET_HOST", raising=False)
         monkeypatch.setenv("WET_PORT", "9090")
-        with patch("wet_mcp.server.run_server_blocking") as mock_serve:
+        with patch("wet.server.run_server_blocking") as mock_serve:
             srv.main()
 
         mock_serve.assert_called_once_with(host=None, port=9090)
@@ -205,7 +205,7 @@ class TestMainDispatch:
     def test_invalid_wet_port_fails_loudly(self, monkeypatch):
         """A typo'd WET_PORT aborts startup instead of silently auto-porting."""
         monkeypatch.setenv("WET_PORT", "not-a-port")
-        with patch("wet_mcp.server.run_server_blocking") as mock_serve:
+        with patch("wet.server.run_server_blocking") as mock_serve:
             with pytest.raises(ValueError, match="not-a-port"):
                 srv.main()
 

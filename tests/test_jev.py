@@ -22,8 +22,8 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 from structured import payload
 
-from wet_mcp import search_metrics
-from wet_mcp.jev import parse_score, results_sufficient
+from wet import search_metrics
+from wet.jev import parse_score, results_sufficient
 
 # ---------------------------------------------------------------------------
 # Parser contract (raise on non-numeric, never silent 0.5)
@@ -57,8 +57,8 @@ def test_parse_score_raises_on_non_numeric():
 
 
 def _patch_cell(monkeypatch, *, configured=True, text=None, error=None):
-    """Patch the ``jev_score`` cell in wet_mcp.runtime; records chat kwargs."""
-    from wet_mcp import runtime
+    """Patch the ``jev_score`` cell in wet.runtime; records chat kwargs."""
+    from wet import runtime
 
     seen: dict = {}
 
@@ -121,7 +121,7 @@ async def test_results_sufficient_fail_open_on_non_numeric(monkeypatch):
 
 def _stub_docs_db(monkeypatch, scores=(0.1, 0.1)):
     """Poor, thin results so the hardcoded HyDE trigger fires."""
-    from wet_mcp import server
+    from wet import server
 
     db = MagicMock()
     db.get_library.return_value = {"id": "lib1", "discovery_version": 10**6}
@@ -134,7 +134,7 @@ def _stub_docs_db(monkeypatch, scores=(0.1, 0.1)):
 
 
 def _stub_embed(monkeypatch):
-    from wet_mcp import embedder as embedder_mod
+    from wet import embedder as embedder_mod
 
     class _FakeBackend:
         async def embed_single(self, text, dimensions=None):
@@ -145,13 +145,13 @@ def _stub_embed(monkeypatch):
 
 def _stub_hyde(monkeypatch, return_value=None):
     return unittest.mock.patch(
-        "wet_mcp.sources.search_strategies.generate_hyde_query",
+        "wet.sources.search_strategies.generate_hyde_query",
         AsyncMock(return_value=return_value),
     )
 
 
 async def _cached_index_payload(monkeypatch):
-    from wet_mcp import server
+    from wet import server
 
     return await server._search_cached_index("fastapi", "routing", None, 10)
 
@@ -215,7 +215,7 @@ def _chain_mock(responses):
 
 
 async def _call_search(**overrides):
-    from wet_mcp.server import search
+    from wet.server import search
 
     return await search(action="search", query="python tutorial", **overrides)
 
@@ -229,9 +229,9 @@ async def test_refine_stops_early_when_jev_sufficient(monkeypatch):
     fake, calls = _chain_mock([_WEAK, _HIT])
     _patch_cell(monkeypatch, text="0.9")
     with (
-        unittest.mock.patch("wet_mcp.sources.search_backends.run_search_chain", fake),
+        unittest.mock.patch("wet.sources.search_backends.run_search_chain", fake),
         unittest.mock.patch(
-            "wet_mcp.sources.search_strategies.rewrite_query",
+            "wet.sources.search_strategies.rewrite_query",
             AsyncMock(side_effect=["better python tutorial"]),
         ) as rewrite,
     ):
@@ -247,9 +247,9 @@ async def test_refine_proceeds_with_receipt_when_jev_insufficient(monkeypatch):
     fake, calls = _chain_mock([_WEAK, _HIT])
     _patch_cell(monkeypatch, text="0.2")
     with (
-        unittest.mock.patch("wet_mcp.sources.search_backends.run_search_chain", fake),
+        unittest.mock.patch("wet.sources.search_backends.run_search_chain", fake),
         unittest.mock.patch(
-            "wet_mcp.sources.search_strategies.rewrite_query",
+            "wet.sources.search_strategies.rewrite_query",
             AsyncMock(side_effect=["better python tutorial"]),
         ) as rewrite,
     ):
@@ -270,10 +270,10 @@ async def test_refine_fail_open_matches_baseline_exactly(monkeypatch):
         _patch_cell(monkeypatch, configured=configured, error=error)
         with (
             unittest.mock.patch(
-                "wet_mcp.sources.search_backends.run_search_chain", fake
+                "wet.sources.search_backends.run_search_chain", fake
             ),
             unittest.mock.patch(
-                "wet_mcp.sources.search_strategies.rewrite_query",
+                "wet.sources.search_strategies.rewrite_query",
                 AsyncMock(side_effect=["better python tutorial"]),
             ) as rewrite,
         ):
@@ -291,7 +291,7 @@ async def test_refine_untouched_without_refine_flag(monkeypatch):
     monkeypatch.setenv("SEARCH_BACKENDS", "tavily")
     fake, calls = _chain_mock([_WEAK])
     _patch_cell(monkeypatch, text="0.9")
-    with unittest.mock.patch("wet_mcp.sources.search_backends.run_search_chain", fake):
+    with unittest.mock.patch("wet.sources.search_backends.run_search_chain", fake):
         out = payload(await _call_search())
 
     assert len(calls) == 1

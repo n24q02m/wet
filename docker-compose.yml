@@ -1,5 +1,5 @@
 # docker-compose.yml — self-contained always-on HTTP deployment.
-# The image's only entrypoint is the blocking HTTP server (python -m wet_mcp);
+# The image's only entrypoint is the blocking HTTP server (python -m wet);
 # bind host/port come from the instance config (~/.wet/config.toml →
 # [server] host/port), NOT from env. The config file below is bind-mounted
 # read-only into the config dir, with auth = "token" so the non-loopback
@@ -10,9 +10,9 @@
 # instance over, copy docs.db and subs/ into the volume before first start —
 # see README "Self-host usage".
 services:
-  wet-mcp:
+  wet:
     build: .
-    image: wet-mcp:local
+    image: wet:local
     restart: unless-stopped
     ports:
       # Publish on loopback only; override the host port with WET_PORT.

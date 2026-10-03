@@ -3,7 +3,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from wet_mcp.sources.crawler import _extract_with_markitdown, _is_document_url, extract
+from wet.sources.crawler import _extract_with_markitdown, _is_document_url, extract
 
 
 @pytest.mark.parametrize(
@@ -37,7 +37,7 @@ async def test_extract_with_markitdown_success():
     mock_result.text_content = "Converted Markdown Content"
 
     with (
-        patch("wet_mcp.sources.crawler._safe_httpx_client", return_value=mock_client),
+        patch("wet.sources.crawler._safe_httpx_client", return_value=mock_client),
         patch("markitdown.MarkItDown"),
         patch("asyncio.to_thread", new_callable=AsyncMock) as mock_thread,
     ):
@@ -59,7 +59,7 @@ async def test_extract_with_markitdown_http_error():
     mock_client.get.side_effect = Exception("HTTP Error")
     mock_client.__aenter__.return_value = mock_client
 
-    with patch("wet_mcp.sources.crawler._safe_httpx_client", return_value=mock_client):
+    with patch("wet.sources.crawler._safe_httpx_client", return_value=mock_client):
         result = await _extract_with_markitdown(url)
 
         assert "error" in result
@@ -97,12 +97,12 @@ async def test_extract_document_via_process_url(mock_crawler_instance):
     }
 
     with (
-        patch("wet_mcp.sources.crawler._is_document_url", return_value=True),
+        patch("wet.sources.crawler._is_document_url", return_value=True),
         patch(
-            "wet_mcp.sources.crawler._extract_with_markitdown", new_callable=AsyncMock
+            "wet.sources.crawler._extract_with_markitdown", new_callable=AsyncMock
         ) as mock_md,
         patch(
-            "wet_mcp.sources.crawler._get_crawler", return_value=mock_crawler_instance
+            "wet.sources.crawler._get_crawler", return_value=mock_crawler_instance
         ),
     ):
         mock_md.return_value = mock_doc_result
@@ -137,10 +137,10 @@ async def test_extract_mixed_urls():
 
     with (
         patch(
-            "wet_mcp.sources.crawler._extract_with_markitdown", new_callable=AsyncMock
+            "wet.sources.crawler._extract_with_markitdown", new_callable=AsyncMock
         ) as mock_md,
         patch(
-            "wet_mcp.sources.crawler._get_scraping_agent",
+            "wet.sources.crawler._get_scraping_agent",
             new_callable=AsyncMock,
             return_value=fake_agent,
         ),

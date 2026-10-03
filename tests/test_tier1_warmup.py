@@ -13,49 +13,49 @@ import pytest
 # Bootstrap (idempotent — see test_docs_resolve.py).
 _src_root = Path(__file__).resolve().parent.parent / "src"
 
-if "wet_mcp" not in sys.modules:
-    _pkg = types.ModuleType("wet_mcp")
-    _pkg.__path__ = [str(_src_root / "wet_mcp")]
-    sys.modules["wet_mcp"] = _pkg
+if "wet" not in sys.modules:
+    _pkg = types.ModuleType("wet")
+    _pkg.__path__ = [str(_src_root / "wet")]
+    sys.modules["wet"] = _pkg
 
-if "wet_mcp.sources" not in sys.modules:
-    _sources_pkg = types.ModuleType("wet_mcp.sources")
-    _sources_pkg.__path__ = [str(_src_root / "wet_mcp" / "sources")]
-    sys.modules["wet_mcp.sources"] = _sources_pkg
+if "wet.sources" not in sys.modules:
+    _sources_pkg = types.ModuleType("wet.sources")
+    _sources_pkg.__path__ = [str(_src_root / "wet" / "sources")]
+    sys.modules["wet.sources"] = _sources_pkg
 
-if "wet_mcp.sources.docs" not in sys.modules:
-    _docs_file = _src_root / "wet_mcp" / "sources" / "docs.py"
+if "wet.sources.docs" not in sys.modules:
+    _docs_file = _src_root / "wet" / "sources" / "docs.py"
     _docs_spec = importlib.util.spec_from_file_location(
-        "wet_mcp.sources.docs", _docs_file
+        "wet.sources.docs", _docs_file
     )
     assert _docs_spec is not None
     _docs_mod = importlib.util.module_from_spec(_docs_spec)
-    sys.modules["wet_mcp.sources.docs"] = _docs_mod
+    sys.modules["wet.sources.docs"] = _docs_mod
     _docs_spec.loader.exec_module(_docs_mod)
 else:
-    _docs_mod = sys.modules["wet_mcp.sources.docs"]
+    _docs_mod = sys.modules["wet.sources.docs"]
 
-if "wet_mcp.db" not in sys.modules:
-    _db_file = _src_root / "wet_mcp" / "db.py"
-    _db_spec = importlib.util.spec_from_file_location("wet_mcp.db", _db_file)
+if "wet.db" not in sys.modules:
+    _db_file = _src_root / "wet" / "db.py"
+    _db_spec = importlib.util.spec_from_file_location("wet.db", _db_file)
     assert _db_spec is not None
     _db_mod = importlib.util.module_from_spec(_db_spec)
-    sys.modules["wet_mcp.db"] = _db_mod
+    sys.modules["wet.db"] = _db_mod
     _db_spec.loader.exec_module(_db_mod)
 else:
-    _db_mod = sys.modules["wet_mcp.db"]
+    _db_mod = sys.modules["wet.db"]
 
-if "wet_mcp.sources.tier1_warmup" not in sys.modules:
-    _tw_file = _src_root / "wet_mcp" / "sources" / "tier1_warmup.py"
+if "wet.sources.tier1_warmup" not in sys.modules:
+    _tw_file = _src_root / "wet" / "sources" / "tier1_warmup.py"
     _tw_spec = importlib.util.spec_from_file_location(
-        "wet_mcp.sources.tier1_warmup", _tw_file
+        "wet.sources.tier1_warmup", _tw_file
     )
     assert _tw_spec is not None
     _tw_mod = importlib.util.module_from_spec(_tw_spec)
-    sys.modules["wet_mcp.sources.tier1_warmup"] = _tw_mod
+    sys.modules["wet.sources.tier1_warmup"] = _tw_mod
     _tw_spec.loader.exec_module(_tw_mod)
 else:
-    _tw_mod = sys.modules["wet_mcp.sources.tier1_warmup"]
+    _tw_mod = sys.modules["wet.sources.tier1_warmup"]
 
 DocsDB = _db_mod.DocsDB
 maybe_warm = _tw_mod.maybe_warm

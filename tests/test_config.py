@@ -1,7 +1,7 @@
-"""Tests for wet_mcp.config (de-host: slim, env-driven operational knobs).
+"""Tests for wet.config (de-host: slim, env-driven operational knobs).
 
 The instance config (auth mode, bind, per-task provider cells) lives in
-``~/.wet/config.toml`` and is loaded via :mod:`wet_mcp.runtime` (hull-core);
+``~/.wet/config.toml`` and is loaded via :mod:`wet.runtime` (hull-core);
 this module only tests the operational ``Settings`` that remains here:
 search/browser/crawler/cache knobs, path helpers, and the local-ONNX
 availability toggles.
@@ -14,7 +14,7 @@ from unittest.mock import patch
 import pytest
 from pydantic_settings.sources import EnvSettingsSource
 
-from wet_mcp.config import Settings
+from wet.config import Settings
 
 
 def _settings_env_names() -> set[str]:
@@ -124,7 +124,7 @@ def test_robots_policy_reads_environment(monkeypatch):
 
 def _patch_local_onnx(available: bool):
     """Patch the image-side check used by local_embed/rerank_available."""
-    return patch("wet_mcp.config.local_onnx_installed", return_value=available)
+    return patch("wet.config.local_onnx_installed", return_value=available)
 
 
 def test_embedding_unavailable_when_local_disabled_even_if_installed():
@@ -285,7 +285,7 @@ def test_get_db_path_default():
 
 def test_detect_gpu_no_onnxruntime():
     """_detect_gpu returns False when onnxruntime is not available."""
-    from wet_mcp.config import _detect_gpu
+    from wet.config import _detect_gpu
 
     with mock.patch.dict("sys.modules", {"onnxruntime": None}):
         assert _detect_gpu() is False
@@ -293,7 +293,7 @@ def test_detect_gpu_no_onnxruntime():
 
 def test_detect_gpu_with_cuda():
     """_detect_gpu returns True when CUDAExecutionProvider is available."""
-    from wet_mcp.config import _detect_gpu
+    from wet.config import _detect_gpu
 
     ort_mock = mock.MagicMock()
     ort_mock.get_available_providers.return_value = [
@@ -306,7 +306,7 @@ def test_detect_gpu_with_cuda():
 
 def test_detect_gpu_cpu_only():
     """_detect_gpu returns False with CPU-only providers."""
-    from wet_mcp.config import _detect_gpu
+    from wet.config import _detect_gpu
 
     ort_mock = mock.MagicMock()
     ort_mock.get_available_providers.return_value = ["CPUExecutionProvider"]
@@ -316,7 +316,7 @@ def test_detect_gpu_cpu_only():
 
 def test_has_gguf_support_missing():
     """_has_gguf_support returns False when llama_cpp is not installed."""
-    from wet_mcp.config import _has_gguf_support
+    from wet.config import _has_gguf_support
 
     with mock.patch("importlib.util.find_spec", return_value=None):
         assert _has_gguf_support() is False
@@ -324,7 +324,7 @@ def test_has_gguf_support_missing():
 
 def test_has_gguf_support_available():
     """_has_gguf_support returns True when llama_cpp is installed."""
-    from wet_mcp.config import _has_gguf_support
+    from wet.config import _has_gguf_support
 
     with mock.patch("importlib.util.find_spec", return_value=mock.MagicMock()):
         assert _has_gguf_support() is True
@@ -332,19 +332,19 @@ def test_has_gguf_support_available():
 
 def test_resolve_local_model_onnx_fallback():
     """_resolve_local_model returns ONNX model when no GPU or no GGUF support."""
-    from wet_mcp.config import _resolve_local_model
+    from wet.config import _resolve_local_model
 
-    with mock.patch("wet_mcp.config._detect_gpu", return_value=False):
+    with mock.patch("wet.config._detect_gpu", return_value=False):
         assert _resolve_local_model("onnx-model", "gguf-model") == "onnx-model"
 
 
 def test_resolve_local_model_gguf():
     """_resolve_local_model returns GGUF model when GPU and llama-cpp available."""
-    from wet_mcp.config import _resolve_local_model
+    from wet.config import _resolve_local_model
 
     with (
-        mock.patch("wet_mcp.config._detect_gpu", return_value=True),
-        mock.patch("wet_mcp.config._has_gguf_support", return_value=True),
+        mock.patch("wet.config._detect_gpu", return_value=True),
+        mock.patch("wet.config._has_gguf_support", return_value=True),
     ):
         assert _resolve_local_model("onnx-model", "gguf-model") == "gguf-model"
 
@@ -353,7 +353,7 @@ def test_resolve_local_embedding_model():
     """resolve_local_embedding_model delegates to _resolve_local_model."""
     settings = Settings()
     with mock.patch(
-        "wet_mcp.config._resolve_local_model", return_value="test-model"
+        "wet.config._resolve_local_model", return_value="test-model"
     ) as m:
         result = settings.resolve_local_embedding_model()
         assert result == "test-model"
@@ -364,7 +364,7 @@ def test_resolve_local_rerank_model():
     """resolve_local_rerank_model delegates to _resolve_local_model."""
     settings = Settings()
     with mock.patch(
-        "wet_mcp.config._resolve_local_model", return_value="test-rerank"
+        "wet.config._resolve_local_model", return_value="test-rerank"
     ) as m:
         result = settings.resolve_local_rerank_model()
         assert result == "test-rerank"

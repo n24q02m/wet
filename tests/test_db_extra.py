@@ -2,7 +2,7 @@ from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock, patch
 
-import wet_mcp.db as db
+import wet.db as db
 
 
 def test_db_quality_edge_cases():

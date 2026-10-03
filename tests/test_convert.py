@@ -2,7 +2,7 @@
 
 import json
 
-from wet_mcp.sources.crawler import convert_local_files
+from wet.sources.crawler import convert_local_files
 
 
 async def test_convert_local_files_txt(tmp_path):

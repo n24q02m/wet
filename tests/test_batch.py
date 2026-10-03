@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from wet_mcp.sources.crawler import DomainRateLimiter, batch_extract
+from wet.sources.crawler import DomainRateLimiter, batch_extract
 
 
 @pytest.mark.asyncio
@@ -38,7 +38,7 @@ async def test_batch_extract_success():
     ]
 
     with patch(
-        "wet_mcp.sources.crawler.extract", new_callable=AsyncMock
+        "wet.sources.crawler.extract", new_callable=AsyncMock
     ) as mock_extract:
         mock_extract.side_effect = mock_pages
 
@@ -67,7 +67,7 @@ async def test_batch_extract_partial_failure():
         return json.dumps([{"url": url, "title": "OK", "content": "OK"}])
 
     with patch(
-        "wet_mcp.sources.crawler.extract", new_callable=AsyncMock
+        "wet.sources.crawler.extract", new_callable=AsyncMock
     ) as mock_extract:
         mock_extract.side_effect = mock_extract_fn
 

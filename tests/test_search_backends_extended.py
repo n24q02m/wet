@@ -10,7 +10,7 @@ import json
 import unittest.mock
 from urllib.parse import urlsplit
 
-from wet_mcp.sources.search_backends import (
+from wet.sources.search_backends import (
     DuckDuckGoBackend,
     FirecrawlBackend,
     KagiBackend,

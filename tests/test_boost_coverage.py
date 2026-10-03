@@ -35,10 +35,10 @@ class TestLLMACompletion:
 
     async def test_cell_content_roundtrip(self):
         """acompletion returns the cell client's content in ChatResult shape."""
-        from wet_mcp.llm import acompletion
+        from wet.llm import acompletion
 
         with patch(
-            "wet_mcp.llm._chat_provider_client", return_value=self._client("Hello")
+            "wet.llm._chat_provider_client", return_value=self._client("Hello")
         ):
             result = await acompletion(
                 model="ignored-anyway",
@@ -48,10 +48,10 @@ class TestLLMACompletion:
 
     async def test_model_arg_ignored_cell_owns_model(self):
         """model/api_base/api_key args are accepted but ignored verbatim."""
-        from wet_mcp.llm import acompletion
+        from wet.llm import acompletion
 
         client = self._client("Hello from the cell")
-        with patch("wet_mcp.llm._chat_provider_client", return_value=client):
+        with patch("wet.llm._chat_provider_client", return_value=client):
             result = await acompletion(
                 model="xai/grok-4-1-fast-reasoning",
                 messages=[{"role": "user", "content": "Hi"}],
@@ -63,10 +63,10 @@ class TestLLMACompletion:
 
     async def test_extra_kwargs_forwarded(self):
         """Extra provider options pass through to the cell client."""
-        from wet_mcp.llm import acompletion
+        from wet.llm import acompletion
 
         client = self._client("ok")
-        with patch("wet_mcp.llm._chat_provider_client", return_value=client):
+        with patch("wet.llm._chat_provider_client", return_value=client):
             await acompletion(
                 messages=[{"role": "user", "content": "Hi"}],
                 top_p=0.9,
@@ -76,12 +76,12 @@ class TestLLMACompletion:
 
     async def test_fallbacks_accepted_but_no_chain(self):
         """fallbacks is accepted-and-ignored: one cell, exactly one attempt."""
-        from wet_mcp.llm import acompletion
+        from wet.llm import acompletion
 
         client = MagicMock()
         client.chat = AsyncMock(side_effect=Exception("cell down"))
         with (
-            patch("wet_mcp.llm._chat_provider_client", return_value=client),
+            patch("wet.llm._chat_provider_client", return_value=client),
             pytest.raises(Exception, match="cell down"),
         ):
             await acompletion(
@@ -96,14 +96,14 @@ class TestServerResearchAction:
 
     async def test_research_missing_query(self):
         """Research requires query."""
-        from wet_mcp.server import search
+        from wet.server import search
 
         result = await search(action="research")
         assert "Error: query is required" in text(result)
 
     async def test_research_success(self):
         """Research action delegates to _do_research."""
-        from wet_mcp.server import search
+        from wet.server import search
 
         mock_results = json.dumps(
             {
@@ -121,18 +121,18 @@ class TestServerResearchAction:
 
         with (
             patch(
-                "wet_mcp.server.ensure_searxng",
+                "wet.server.ensure_searxng",
                 new_callable=AsyncMock,
                 return_value="http://localhost:8080",
             ),
             patch(
-                "wet_mcp.sources.search_backends.run_search_chain",
+                "wet.sources.search_backends.run_search_chain",
                 new_callable=AsyncMock,
                 return_value=mock_results,
             ),
-            patch("wet_mcp.server._web_cache", None),
+            patch("wet.server._web_cache", None),
             patch(
-                "wet_mcp.server._rerank_results",
+                "wet.server._rerank_results",
                 new_callable=AsyncMock,
                 return_value=[
                     {
@@ -150,28 +150,28 @@ class TestServerResearchAction:
 
     async def test_docs_missing_library(self):
         """Docs requires library."""
-        from wet_mcp.server import search
+        from wet.server import search
 
         result = await search(action="docs", query="routing")
         assert "Error: library is required" in text(result)
 
     async def test_docs_missing_query(self):
         """Docs requires query."""
-        from wet_mcp.server import search
+        from wet.server import search
 
         result = await search(action="docs", library="fastapi")
         assert "Error: query is required" in text(result)
 
     async def test_search_typo_suggestion(self):
         """Typo in action gets suggestion."""
-        from wet_mcp.server import search
+        from wet.server import search
 
         result = await search(action="serch")
         assert "Did you mean" in text(result)
 
     async def test_extract_typo_suggestion(self):
         """Typo in extract action gets suggestion."""
-        from wet_mcp.server import extract
+        from wet.server import extract
 
         result = await extract(action="exract")
         assert "Did you mean" in text(result)
@@ -182,10 +182,10 @@ class TestServerHelpers:
 
     async def test_embed_no_backend(self):
         """_embed returns None when no backend."""
-        from wet_mcp.server import _embed
+        from wet.server import _embed
 
         with patch(
-            "wet_mcp.embedder.resolve_embed_backend_for_request", return_value=None
+            "wet.embedder.resolve_embed_backend_for_request", return_value=None
         ):
             result = await _embed("test text")
             assert result is None
@@ -194,14 +194,14 @@ class TestServerHelpers:
         """_embed returns None on a transient error (keyword-only degrade)."""
         from hull_core.providers.openai_spec import ProviderError
 
-        from wet_mcp.server import _embed
+        from wet.server import _embed
 
         mock_backend = MagicMock()
         mock_backend.embed_single.side_effect = ProviderError(
             status=429, detail="rate limit exceeded"
         )
         with patch(
-            "wet_mcp.embedder.resolve_embed_backend_for_request",
+            "wet.embedder.resolve_embed_backend_for_request",
             return_value=mock_backend,
         ):
             result = await _embed("test text")
@@ -209,10 +209,10 @@ class TestServerHelpers:
 
     async def test_embed_batch_no_backend(self):
         """_embed_batch returns None when no backend."""
-        from wet_mcp.server import _embed_batch
+        from wet.server import _embed_batch
 
         with patch(
-            "wet_mcp.embedder.resolve_embed_backend_for_request", return_value=None
+            "wet.embedder.resolve_embed_backend_for_request", return_value=None
         ):
             result = await _embed_batch(["text1", "text2"])
             assert result is None
@@ -221,14 +221,14 @@ class TestServerHelpers:
         """_embed_batch returns None on a transient error (degrade this call)."""
         from hull_core.providers.openai_spec import ProviderError
 
-        from wet_mcp.server import _embed_batch
+        from wet.server import _embed_batch
 
         mock_backend = MagicMock()
         mock_backend.embed_texts.side_effect = ProviderError(
             status=429, detail="rate limit exceeded"
         )
         with patch(
-            "wet_mcp.embedder.resolve_embed_backend_for_request",
+            "wet.embedder.resolve_embed_backend_for_request",
             return_value=mock_backend,
         ):
             result = await _embed_batch(["text1"])
@@ -236,22 +236,22 @@ class TestServerHelpers:
 
     async def test_rerank_no_reranker(self):
         """_rerank_results returns truncated results when no reranker."""
-        from wet_mcp.server import _rerank_results
+        from wet.server import _rerank_results
 
         results = [{"content": f"r{i}"} for i in range(5)]
         with patch(
-            "wet_mcp.reranker.resolve_rerank_backend_for_request", return_value=None
+            "wet.reranker.resolve_rerank_backend_for_request", return_value=None
         ):
             reranked = await _rerank_results("query", results, top_n=3)
             assert len(reranked) == 3
 
     async def test_rerank_fewer_than_topn(self):
         """_rerank_results returns all when fewer than top_n."""
-        from wet_mcp.server import _rerank_results
+        from wet.server import _rerank_results
 
         results = [{"content": "r1"}, {"content": "r2"}]
         with patch(
-            "wet_mcp.reranker.resolve_rerank_backend_for_request",
+            "wet.reranker.resolve_rerank_backend_for_request",
             return_value=MagicMock(),
         ):
             reranked = await _rerank_results("query", results, top_n=5)
@@ -259,14 +259,14 @@ class TestServerHelpers:
 
     async def test_rerank_success(self):
         """_rerank_results reorders by score."""
-        from wet_mcp.server import _rerank_results
+        from wet.server import _rerank_results
 
         results = [{"content": "r0"}, {"content": "r1"}, {"content": "r2"}]
         mock_reranker = MagicMock()
         mock_reranker.rerank.return_value = [(2, 0.95), (0, 0.80)]
 
         with patch(
-            "wet_mcp.reranker.resolve_rerank_backend_for_request",
+            "wet.reranker.resolve_rerank_backend_for_request",
             return_value=mock_reranker,
         ):
             reranked = await _rerank_results("query", results, top_n=2)
@@ -276,14 +276,14 @@ class TestServerHelpers:
 
     async def test_rerank_failure_fallback(self):
         """_rerank_results falls back on error."""
-        from wet_mcp.server import _rerank_results
+        from wet.server import _rerank_results
 
         results = [{"content": f"r{i}"} for i in range(5)]
         mock_reranker = MagicMock()
         mock_reranker.rerank.side_effect = Exception("rerank error")
 
         with patch(
-            "wet_mcp.reranker.resolve_rerank_backend_for_request",
+            "wet.reranker.resolve_rerank_backend_for_request",
             return_value=mock_reranker,
         ):
             reranked = await _rerank_results("query", results, top_n=3)
@@ -291,12 +291,12 @@ class TestServerHelpers:
 
     async def test_with_timeout_no_timeout(self):
         """_with_timeout with timeout=0 runs normally."""
-        from wet_mcp.server import _with_timeout
+        from wet.server import _with_timeout
 
         async def fake_coro():
             return "result"
 
-        with patch("wet_mcp.server.settings") as mock_settings:
+        with patch("wet.server.settings") as mock_settings:
             mock_settings.tool_timeout = 0
             result = await _with_timeout(fake_coro(), "test")
             assert result == "result"
@@ -307,14 +307,14 @@ class TestServerDetectGhToken:
 
     def test_no_gh_cli(self):
         """Returns None when gh CLI not installed."""
-        from wet_mcp.server import _detect_gh_token
+        from wet.server import _detect_gh_token
 
         with patch("shutil.which", return_value=None):
             assert _detect_gh_token() is None
 
     def test_gh_cli_returns_token(self):
         """Returns token from gh auth token."""
-        from wet_mcp.server import _detect_gh_token
+        from wet.server import _detect_gh_token
 
         mock_result = MagicMock()
         mock_result.returncode = 0
@@ -328,7 +328,7 @@ class TestServerDetectGhToken:
 
     def test_gh_cli_fails(self):
         """Returns None when gh auth token fails."""
-        from wet_mcp.server import _detect_gh_token
+        from wet.server import _detect_gh_token
 
         mock_result = MagicMock()
         mock_result.returncode = 1
@@ -342,7 +342,7 @@ class TestServerDetectGhToken:
 
     def test_gh_cli_empty_token(self):
         """Returns None when gh returns empty token."""
-        from wet_mcp.server import _detect_gh_token
+        from wet.server import _detect_gh_token
 
         mock_result = MagicMock()
         mock_result.returncode = 0
@@ -356,7 +356,7 @@ class TestServerDetectGhToken:
 
     def test_gh_cli_exception(self):
         """Returns None on exception."""
-        from wet_mcp.server import _detect_gh_token
+        from wet.server import _detect_gh_token
 
         with (
             patch("shutil.which", return_value="/usr/bin/gh"),
@@ -599,8 +599,8 @@ class TestSearxngInstall:
                 "hull_web.search.runner._get_pip_command",
                 return_value=["pip", "install"],
             ),
-            patch("wet_mcp.setup.patch_searxng_version"),
-            patch("wet_mcp.setup.patch_searxng_windows"),
+            patch("wet.setup.patch_searxng_version"),
+            patch("wet.setup.patch_searxng_windows"),
         ):
             assert _install_searxng() is True
 
@@ -692,7 +692,7 @@ class TestSetupTool:
 
     def test_clear_model_cache_exists(self, tmp_path):
         """Clears existing cache directory."""
-        from wet_mcp.setup_tool import clear_model_cache
+        from wet.setup_tool import clear_model_cache
 
         cache_dir = tmp_path / "models--test--model"
         cache_dir.mkdir(parents=True)
@@ -705,7 +705,7 @@ class TestSetupTool:
 
     def test_clear_model_cache_not_exists(self, tmp_path):
         """Returns None when no cache."""
-        from wet_mcp.setup_tool import clear_model_cache
+        from wet.setup_tool import clear_model_cache
 
         with patch.dict(os.environ, {"FASTRETRIEVAL_CACHE_PATH": str(tmp_path)}):
             result = clear_model_cache("nonexistent/model")
@@ -717,7 +717,7 @@ class TestSetup:
 
     def test_needs_setup_false(self, tmp_path):
         """Returns False when marker exists."""
-        from wet_mcp import setup
+        from wet import setup
 
         old = setup.SETUP_MARKER
         setup.SETUP_MARKER = tmp_path / ".setup-complete"
@@ -727,7 +727,7 @@ class TestSetup:
 
     def test_needs_setup_true(self, tmp_path):
         """Returns True when marker missing."""
-        from wet_mcp import setup
+        from wet import setup
 
         old = setup.SETUP_MARKER
         setup.SETUP_MARKER = tmp_path / ".setup-complete"
@@ -736,7 +736,7 @@ class TestSetup:
 
     def test_find_searx_package_dir_found(self):
         """Returns path when searx found."""
-        from wet_mcp.setup import _find_searx_package_dir
+        from wet.setup import _find_searx_package_dir
 
         mock_spec = MagicMock()
         mock_spec.submodule_search_locations = ["/path/to/searx"]
@@ -746,7 +746,7 @@ class TestSetup:
 
     def test_find_searx_package_dir_not_found(self):
         """Returns None when searx not found."""
-        from wet_mcp.setup import _find_searx_package_dir
+        from wet.setup import _find_searx_package_dir
 
         with patch("importlib.util.find_spec", return_value=None):
             result = _find_searx_package_dir()
@@ -754,7 +754,7 @@ class TestSetup:
 
     def test_find_searx_package_dir_error(self):
         """Returns None on exception."""
-        from wet_mcp.setup import _find_searx_package_dir
+        from wet.setup import _find_searx_package_dir
 
         with patch("importlib.util.find_spec", side_effect=Exception("error")):
             result = _find_searx_package_dir()
@@ -762,13 +762,13 @@ class TestSetup:
 
     def test_patch_searxng_version_creates_file(self, tmp_path):
         """Creates version_frozen.py when missing."""
-        from wet_mcp.setup import patch_searxng_version
+        from wet.setup import patch_searxng_version
 
         searx_dir = tmp_path / "searx"
         searx_dir.mkdir()
         vf = searx_dir / "version_frozen.py"
 
-        with patch("wet_mcp.setup._find_searx_package_dir", return_value=searx_dir):
+        with patch("wet.setup._find_searx_package_dir", return_value=searx_dir):
             patch_searxng_version()
             assert vf.exists()
             content = vf.read_text()
@@ -776,22 +776,22 @@ class TestSetup:
 
     def test_patch_searxng_version_already_exists(self, tmp_path):
         """Does not overwrite existing version_frozen.py."""
-        from wet_mcp.setup import patch_searxng_version
+        from wet.setup import patch_searxng_version
 
         searx_dir = tmp_path / "searx"
         searx_dir.mkdir()
         vf = searx_dir / "version_frozen.py"
         vf.write_text("existing content")
 
-        with patch("wet_mcp.setup._find_searx_package_dir", return_value=searx_dir):
+        with patch("wet.setup._find_searx_package_dir", return_value=searx_dir):
             patch_searxng_version()
             assert vf.read_text() == "existing content"
 
     def test_patch_searxng_version_no_dir(self):
         """No-op when searx dir not found."""
-        from wet_mcp.setup import patch_searxng_version
+        from wet.setup import patch_searxng_version
 
-        with patch("wet_mcp.setup._find_searx_package_dir", return_value=None):
+        with patch("wet.setup._find_searx_package_dir", return_value=None):
             patch_searxng_version()  # Should not raise
 
 
@@ -800,14 +800,14 @@ class TestRandomizedPortFinder:
 
     def test_finds_available_port(self):
         """Should find an available port in range."""
-        from wet_mcp.searxng_runner import _find_available_port
+        from wet.searxng_runner import _find_available_port
 
         port = _find_available_port(40000, max_tries=100)
         assert 40000 <= port < 40100
 
     def test_raises_when_no_port_available(self):
         """Raises RuntimeError when all ports are occupied."""
-        from wet_mcp.searxng_runner import _find_available_port
+        from wet.searxng_runner import _find_available_port
 
         with patch("socket.socket") as mock_socket:
             mock_sock = MagicMock()

@@ -6,7 +6,7 @@ the 2-minor-version deprecation grace period started in Phase 1 commit
 
 - analyze returns the unknown-action error string with a migration hint.
 - analyze is NOT in the valid_actions list.
-- analyze does NOT invoke wet_mcp.llm.analyze_media (no warning, no work).
+- analyze does NOT invoke wet.llm.analyze_media (no warning, no work).
 - list + download still work (no regression from the removal).
 - The docs page no longer advertises analyze as available.
 """
@@ -21,7 +21,7 @@ import pytest
 from mcp.types import CallToolResult
 from structured import payload, text
 
-from wet_mcp.server import media
+from wet.server import media
 
 
 @pytest.mark.asyncio
@@ -37,7 +37,7 @@ async def test_media_analyze_returns_unknown_action_error() -> None:
 async def test_media_analyze_does_not_invoke_analyze_media() -> None:
     """Removed action must NOT touch the LLM pipeline."""
     mocked = AsyncMock(return_value="should not run")
-    with patch("wet_mcp.llm.analyze_media", mocked):
+    with patch("wet.llm.analyze_media", mocked):
         result = await media(action="analyze", url="/tmp/x.jpg")
         mocked.assert_not_called()
         assert "Unknown action" in text(result)
@@ -46,7 +46,7 @@ async def test_media_analyze_does_not_invoke_analyze_media() -> None:
 @pytest.mark.asyncio
 async def test_media_analyze_emits_no_deprecation_warning() -> None:
     """Removal: there is no longer a deprecation warning to emit."""
-    with patch("wet_mcp.server.logger") as mock_logger:
+    with patch("wet.server.logger") as mock_logger:
         await media(action="analyze")
         # Removal path goes through the unknown-action branch, not the
         # deprecation handler that previously emitted logger.warning.
@@ -58,7 +58,7 @@ async def test_media_analyze_emits_no_deprecation_warning() -> None:
 
 def test_media_help_no_analyze_section() -> None:
     """The docs page must not advertise analyze as an available action."""
-    docs_path = Path(__file__).parent.parent / "src" / "wet_mcp" / "docs" / "media.md"
+    docs_path = Path(__file__).parent.parent / "src" / "wet" / "docs" / "media.md"
     text = docs_path.read_text(encoding="utf-8")
     # The action must not appear as a top-level "### analyze" with the
     # active phrasing. The "(REMOVED in v2.0.0)" header is allowed and
@@ -84,7 +84,7 @@ def test_media_dispatcher_valid_actions_excludes_analyze() -> None:
 async def test_media_list_still_works_after_removal() -> None:
     """Backward compat: list keeps its existing contract."""
     with patch(
-        "wet_mcp.server.list_media",
+        "wet.server.list_media",
         new_callable=AsyncMock,
         return_value='{"images": [{"src": "https://x/y.jpg"}]}',
     ):
@@ -99,9 +99,9 @@ async def test_media_download_still_works_after_removal(tmp_path) -> None:
     download_dir.mkdir()
 
     with (
-        patch("wet_mcp.server.settings.download_dir", str(download_dir)),
+        patch("wet.server.settings.download_dir", str(download_dir)),
         patch(
-            "wet_mcp.sources.crawler.download_media",
+            "wet.sources.crawler.download_media",
             new_callable=AsyncMock,
             return_value='[{"url": "https://x/y.jpg", "path": "/tmp/y.jpg"}]',
         ),
@@ -125,7 +125,7 @@ async def test_media_unknown_action_default_message() -> None:
 
 # Sanity import.
 def test_module_imports() -> None:
-    from wet_mcp import server  # noqa: F401
+    from wet import server  # noqa: F401
 
 
 if __name__ == "__main__":

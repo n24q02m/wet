@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from wet_mcp.sources import agent_orchestrator as ao
+from wet.sources import agent_orchestrator as ao
 
 
 @pytest.fixture(autouse=True)
@@ -68,15 +68,15 @@ async def test_agent_uses_later_search_backend_and_keeps_provenance(
     )
     with (
         patch(
-            "wet_mcp.sources.search_backends.search_backends_from_env",
+            "wet.sources.search_backends.search_backends_from_env",
             return_value=[first, second],
         ),
         patch(
-            "wet_mcp.sources.searxng.search",
+            "wet.sources.searxng.search",
             new=AsyncMock(side_effect=AssertionError("direct SearXNG call")),
         ),
         patch(
-            "wet_mcp.sources.crawler.extract",
+            "wet.sources.crawler.extract",
             new=AsyncMock(
                 return_value=_make_extract_payload("https://example.com/hit")
             ),
@@ -122,15 +122,15 @@ async def test_agent_uses_later_search_backend_after_error(_gemini_env) -> None:
     )
     with (
         patch(
-            "wet_mcp.sources.search_backends.search_backends_from_env",
+            "wet.sources.search_backends.search_backends_from_env",
             return_value=[first, second],
         ),
         patch(
-            "wet_mcp.sources.searxng.search",
+            "wet.sources.searxng.search",
             new=AsyncMock(side_effect=AssertionError("direct SearXNG call")),
         ),
         patch(
-            "wet_mcp.sources.crawler.extract",
+            "wet.sources.crawler.extract",
             new=AsyncMock(
                 return_value=_make_extract_payload("https://example.com/hit")
             ),
@@ -158,11 +158,11 @@ async def test_agent_all_empty_search_keeps_no_results_contract(_gemini_env):
     )
     with (
         patch(
-            "wet_mcp.sources.search_backends.search_backends_from_env",
+            "wet.sources.search_backends.search_backends_from_env",
             return_value=[first, second],
         ),
         patch(
-            "wet_mcp.sources.searxng.search",
+            "wet.sources.searxng.search",
             new=AsyncMock(side_effect=AssertionError("direct SearXNG call")),
         ),
     ):
@@ -184,11 +184,11 @@ async def test_agent_all_failed_search_is_hard_failure(_gemini_env):
     second.search = AsyncMock(side_effect=RuntimeError("second backend down"))
     with (
         patch(
-            "wet_mcp.sources.search_backends.search_backends_from_env",
+            "wet.sources.search_backends.search_backends_from_env",
             return_value=[first, second],
         ),
         patch(
-            "wet_mcp.sources.searxng.search",
+            "wet.sources.searxng.search",
             new=AsyncMock(side_effect=AssertionError("direct SearXNG call")),
         ),
     ):
@@ -226,15 +226,15 @@ async def test_agent_uses_later_search_backend_after_malformed_results(_gemini_e
     )
     with (
         patch(
-            "wet_mcp.sources.search_backends.search_backends_from_env",
+            "wet.sources.search_backends.search_backends_from_env",
             return_value=[first, second],
         ),
         patch(
-            "wet_mcp.sources.searxng.search",
+            "wet.sources.searxng.search",
             new=AsyncMock(side_effect=AssertionError("direct SearXNG call")),
         ),
         patch(
-            "wet_mcp.sources.crawler.extract",
+            "wet.sources.crawler.extract",
             new=AsyncMock(
                 return_value=_make_extract_payload("https://example.com/hit")
             ),
@@ -280,15 +280,15 @@ async def test_agent_preserves_multi_result_order_and_search_title_fallback(
     )
     with (
         patch(
-            "wet_mcp.sources.search_backends.search_backends_from_env",
+            "wet.sources.search_backends.search_backends_from_env",
             return_value=[first],
         ),
         patch(
-            "wet_mcp.sources.searxng.search",
+            "wet.sources.searxng.search",
             new=AsyncMock(side_effect=AssertionError("direct SearXNG call")),
         ),
         patch(
-            "wet_mcp.sources.crawler.extract",
+            "wet.sources.crawler.extract",
             new=AsyncMock(
                 side_effect=[
                     _make_extract_payload(first_url, "First body"),
@@ -341,7 +341,7 @@ async def test_agent_search_error_envelope_is_hard_failure(_gemini_env) -> None:
             create=True,
         ),
         patch(
-            "wet_mcp.sources.searxng.search",
+            "wet.sources.searxng.search",
             new=AsyncMock(return_value=error_payload),
         ),
     ):
@@ -359,7 +359,7 @@ async def test_agent_invalid_search_payload_is_hard_failure(_gemini_env) -> None
             create=True,
         ),
         patch(
-            "wet_mcp.sources.searxng.search",
+            "wet.sources.searxng.search",
             new=AsyncMock(return_value="not json"),
         ),
     ):
@@ -378,7 +378,7 @@ async def test_agent_legitimate_empty_search_keeps_no_results_contract(_gemini_e
             create=True,
         ),
         patch(
-            "wet_mcp.sources.searxng.search",
+            "wet.sources.searxng.search",
             new=AsyncMock(return_value=empty_payload),
         ),
     ):
@@ -431,14 +431,14 @@ async def test_pipeline_search_then_extract_then_synthesize(_gemini_env) -> None
             return_value=_make_search_payload(urls),
         ),
         patch(
-            "wet_mcp.sources.crawler.extract",
+            "wet.sources.crawler.extract",
             new_callable=AsyncMock,
             side_effect=lambda urls=(), **_kw: _make_extract_payload(
                 (urls or ["https://x"])[0]
             ),
         ),
         patch(
-            "wet_mcp.sources.agent_orchestrator._llm_synthesize",
+            "wet.sources.agent_orchestrator._llm_synthesize",
             new_callable=AsyncMock,
             return_value="# Synthesis\n\nFact [1] another [2]. ## Sources\n- [1]\n- [2]",
         ),
@@ -531,12 +531,12 @@ async def test_synthesis_failure_returns_error_string(_gemini_env) -> None:
             return_value=_make_search_payload(urls),
         ),
         patch(
-            "wet_mcp.sources.crawler.extract",
+            "wet.sources.crawler.extract",
             new_callable=AsyncMock,
             return_value=_make_extract_payload(urls[0]),
         ),
         patch(
-            "wet_mcp.sources.agent_orchestrator._llm_synthesize",
+            "wet.sources.agent_orchestrator._llm_synthesize",
             new_callable=AsyncMock,
             side_effect=RuntimeError("api 500"),
         ),
@@ -557,12 +557,12 @@ async def test_extract_error_propagates_to_per_url_metadata(_gemini_env) -> None
             return_value=_make_search_payload(urls),
         ),
         patch(
-            "wet_mcp.sources.crawler.extract",
+            "wet.sources.crawler.extract",
             new_callable=AsyncMock,
             side_effect=RuntimeError("boom"),
         ),
         patch(
-            "wet_mcp.sources.agent_orchestrator._llm_synthesize",
+            "wet.sources.agent_orchestrator._llm_synthesize",
             new_callable=AsyncMock,
             return_value="ok",
         ),
