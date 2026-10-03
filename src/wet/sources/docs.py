@@ -2522,11 +2522,11 @@ def _process_rst_heading(i: int, line: str, lines: list[str], out: list[str]) ->
     if i > 0 and out:
         prev_stripped = out[-1].strip()
         # The previous line is an overline for this heading if it is one
-        # character repeated, and that character is an RST heading rule. A
-        # single-element set is how "one character repeated" is tested here.
+        # character repeated, and that character is an RST heading rule.
+        # Tested via string multiplication to avoid set allocation.
         if (
             prev_stripped
-            and len(set(prev_stripped)) == 1
+            and prev_stripped[0] * len(prev_stripped) == prev_stripped
             and prev_stripped[0] in _RST_HEADING_CHARS
         ):
             out[-1] = ""
@@ -2632,12 +2632,12 @@ def _rst_to_markdown(content: str) -> str:
         if i + 1 < len(lines) and line_stripped:
             next_stripped = lines[i + 1].strip()
             # An RST underline is one character repeated to at least the width
-            # of the title, and that character is an RST heading rule. A
-            # single-element set is how "one character repeated" is tested here.
+            # of the title, and that character is an RST heading rule.
+            # Tested via string multiplication to avoid set allocation.
             if (
                 len(next_stripped) >= len(line_stripped)
                 and next_stripped
-                and len(set(next_stripped)) == 1
+                and next_stripped[0] * len(next_stripped) == next_stripped
                 and next_stripped[0] in _RST_HEADING_CHARS
             ):
                 i = _process_rst_heading(i, line, lines, out)

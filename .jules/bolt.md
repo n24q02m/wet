@@ -99,3 +99,7 @@ closed pull request.
 ## 2025-02-14 - Slice large strings before lstrip
 **Learning:** When validating the prefix of a very large string (e.g., an entire HTTP response) after whitespace removal, avoid calling `.strip()` or `.lstrip()` on the whole string as it allocates a massive copy if leading whitespace is present.
 **Action:** Slice a small prefix first (e.g., `content[:100].lstrip().startswith(...)`) to minimize memory allocation overhead.
+
+## 2026-08-16 - Optimize repeated character checks
+**Learning:** Checking if a string consists of a single repeated character via `len(set(string)) == 1` incurs significant overhead in Python due to set allocation and element hashing. Using string multiplication (`string[0] * len(string) == string`) avoids this allocation and leverages highly optimized C-level comparisons.
+**Action:** Replace set-based single-character checks with string multiplication when verifying repeated characters, especially in text-processing loops like RST heading underline detection.
