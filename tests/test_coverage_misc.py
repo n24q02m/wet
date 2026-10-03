@@ -1128,9 +1128,7 @@ class TestGetLlmConfigCellGating:
         unconfigured = MagicMock()
         unconfigured.configured = False
 
-        with patch(
-            "wet.runtime.model_cell", lambda task, settings=None: unconfigured
-        ):
+        with patch("wet.runtime.model_cell", lambda task, settings=None: unconfigured):
             config = get_llm_config()
 
         # Unconfigured cell -> no model (LLM feature off), empty key.

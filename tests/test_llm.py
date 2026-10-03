@@ -41,9 +41,7 @@ def _cell(model: str = "gemini-2.5-flash", configured: bool = True):
 @pytest.fixture
 def chat_cell(monkeypatch):
     """A configured [models.chat] cell for the duration of the test."""
-    monkeypatch.setattr(
-        "wet.runtime.model_cell", lambda task, settings=None: _cell()
-    )
+    monkeypatch.setattr("wet.runtime.model_cell", lambda task, settings=None: _cell())
     monkeypatch.setattr(
         "wet.runtime.cell_configured",
         lambda task, settings=None: task == "chat",

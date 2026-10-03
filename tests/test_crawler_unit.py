@@ -129,9 +129,7 @@ async def test_crawl_unsafe_url(mock_crawler_instance):
             new_callable=AsyncMock,
             return_value=mock_crawler_instance,
         ),
-        patch(
-            "wet.sources.crawler.is_safe_url", return_value=False
-        ) as mock_is_safe,
+        patch("wet.sources.crawler.is_safe_url", return_value=False) as mock_is_safe,
     ):
         result_json = await crawl(urls=["https://unsafe.com"])
 

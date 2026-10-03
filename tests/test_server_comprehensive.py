@@ -122,9 +122,7 @@ async def test_lifespan():
     with (
         patch("wet.server._PerSubCache"),
         patch("wet.server.make_docs_db", return_value=MagicMock()),
-        patch(
-            "wet.server.shutdown_crawler", new_callable=AsyncMock
-        ) as mock_shutdown,
+        patch("wet.server.shutdown_crawler", new_callable=AsyncMock) as mock_shutdown,
         patch("wet.server.stop_searxng") as mock_stop,
     ):
         async with server._lifespan(mock_fastmcp):
@@ -145,9 +143,7 @@ async def test_lifespan_skips_searxng_warmup_in_uvx_tool_venv():
     with (
         patch("wet.server._PerSubCache"),
         patch("wet.server.make_docs_db", return_value=MagicMock()),
-        patch(
-            "wet.server.shutdown_crawler", new_callable=AsyncMock
-        ) as mock_shutdown,
+        patch("wet.server.shutdown_crawler", new_callable=AsyncMock) as mock_shutdown,
         patch("wet.server.stop_searxng"),
         patch("wet.server.is_uvx_tool_venv", return_value=True),
         patch("wet.server._warmup_searxng", new_callable=AsyncMock) as mock_warmup,
@@ -214,9 +210,7 @@ async def test_init_reranker_backend():
 
 @pytest.mark.asyncio
 async def test_embed():
-    with patch(
-        "wet.embedder.resolve_embed_backend_for_request"
-    ) as mock_get_backend:
+    with patch("wet.embedder.resolve_embed_backend_for_request") as mock_get_backend:
         mock_backend = MagicMock()
         mock_backend.embed_single = AsyncMock(return_value=[0.1, 0.2])
         mock_get_backend.return_value = mock_backend
@@ -227,9 +221,7 @@ async def test_embed():
 
 @pytest.mark.asyncio
 async def test_embed_batch():
-    with patch(
-        "wet.embedder.resolve_embed_backend_for_request"
-    ) as mock_get_backend:
+    with patch("wet.embedder.resolve_embed_backend_for_request") as mock_get_backend:
         mock_backend = MagicMock()
         mock_backend.embed_texts = AsyncMock(return_value=[[0.1, 0.2]])
         mock_get_backend.return_value = mock_backend
@@ -240,9 +232,7 @@ async def test_embed_batch():
 
 @pytest.mark.asyncio
 async def test_rerank_results():
-    with patch(
-        "wet.reranker.resolve_rerank_backend_for_request"
-    ) as mock_get_reranker:
+    with patch("wet.reranker.resolve_rerank_backend_for_request") as mock_get_reranker:
         mock_reranker = MagicMock()
         mock_reranker.rerank.return_value = [(0, 0.9)]
         mock_get_reranker.return_value = mock_reranker
@@ -376,9 +366,7 @@ async def test_do_research():
 
 @pytest.mark.asyncio
 async def test_fetch_and_chunk_docs():
-    with patch(
-        "wet.sources.docs.try_llms_txt", new_callable=AsyncMock
-    ) as mock_llms:
+    with patch("wet.sources.docs.try_llms_txt", new_callable=AsyncMock) as mock_llms:
         mock_llms.return_value = "content"
         with patch("wet.sources.docs.chunk_llms_txt") as mock_chunk:
             mock_chunk.return_value = [{"content": "c"}] * 20
@@ -1567,9 +1555,7 @@ async def test_background_index_marks_library_indexed(tmp_path):
     server._docs_db = db
     try:
         with (
-            patch(
-                "wet.sources.docs._normalize_docs_url", return_value="http://docs"
-            ),
+            patch("wet.sources.docs._normalize_docs_url", return_value="http://docs"),
             patch(
                 "wet.server._fetch_and_chunk_docs",
                 new_callable=AsyncMock,

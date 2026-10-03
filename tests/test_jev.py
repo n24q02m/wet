@@ -269,9 +269,7 @@ async def test_refine_fail_open_matches_baseline_exactly(monkeypatch):
         fake, calls = _chain_mock([[], _HIT])
         _patch_cell(monkeypatch, configured=configured, error=error)
         with (
-            unittest.mock.patch(
-                "wet.sources.search_backends.run_search_chain", fake
-            ),
+            unittest.mock.patch("wet.sources.search_backends.run_search_chain", fake),
             unittest.mock.patch(
                 "wet.sources.search_strategies.rewrite_query",
                 AsyncMock(side_effect=["better python tutorial"]),

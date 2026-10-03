@@ -1290,9 +1290,7 @@ async def test_background_index_alt_url_fetch_timeout():
 
     with (
         patch("wet.sources.docs._normalize_docs_url", return_value="http://docs.x"),
-        patch(
-            "wet.server._fetch_and_chunk_docs", new_callable=AsyncMock
-        ) as mock_fetch,
+        patch("wet.server._fetch_and_chunk_docs", new_callable=AsyncMock) as mock_fetch,
         patch(
             "wet.server.ensure_searxng",
             new_callable=AsyncMock,

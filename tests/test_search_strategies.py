@@ -55,9 +55,7 @@ async def test_expand_query_success():
 
 async def test_expand_query_local_mode_fallback():
     """Local mode (no LLM) returns only original query."""
-    with patch(
-        "wet.sources.search_strategies.has_llm_provider", return_value=False
-    ):
+    with patch("wet.sources.search_strategies.has_llm_provider", return_value=False):
         result = await expand_query("python scraping")
 
         assert result == ["python scraping"]
@@ -296,9 +294,7 @@ async def test_extract_keywords_local_mode():
     """Local mode returns title as keywords."""
     from wet.sources.search_strategies import _extract_keywords
 
-    with patch(
-        "wet.sources.search_strategies.has_llm_provider", return_value=False
-    ):
+    with patch("wet.sources.search_strategies.has_llm_provider", return_value=False):
         result = await _extract_keywords("some content", "My Title")
         assert result == "My Title"
 
@@ -307,9 +303,7 @@ async def test_extract_keywords_local_no_title():
     """Local mode with no title returns content prefix."""
     from wet.sources.search_strategies import _extract_keywords
 
-    with patch(
-        "wet.sources.search_strategies.has_llm_provider", return_value=False
-    ):
+    with patch("wet.sources.search_strategies.has_llm_provider", return_value=False):
         result = await _extract_keywords("some content here", "")
         assert result == "some content here"
 
@@ -536,9 +530,7 @@ async def test_generate_hyde_query_success():
 
 async def test_generate_hyde_query_local_mode():
     """Local mode (no LLM) returns None."""
-    with patch(
-        "wet.sources.search_strategies.has_llm_provider", return_value=False
-    ):
+    with patch("wet.sources.search_strategies.has_llm_provider", return_value=False):
         result = await generate_hyde_query("some query", "some-lib")
 
         assert result is None

@@ -97,9 +97,7 @@ def _fake_local_backend(monkeypatch, vectors=None):
 
 async def test_reembed_pending_when_no_backend_resolves(store, monkeypatch):
     _, db_path = store
-    monkeypatch.setattr(
-        "wet.embedder.resolve_embed_backend_for_request", lambda: None
-    )
+    monkeypatch.setattr("wet.embedder.resolve_embed_backend_for_request", lambda: None)
 
     result = await reembed(db_path=db_path)
 

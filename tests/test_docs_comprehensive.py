@@ -225,9 +225,7 @@ async def test_try_llms_txt_edge_cases():
 
 @pytest.mark.asyncio
 async def test_fetch_docs_pages():
-    with patch(
-        "wet.sources.crawler.extract", new_callable=AsyncMock
-    ) as mock_extract:
+    with patch("wet.sources.crawler.extract", new_callable=AsyncMock) as mock_extract:
         mock_extract.return_value = json.dumps(
             [
                 {
@@ -385,9 +383,7 @@ async def test_try_objects_inv_success():
 
 @pytest.mark.asyncio
 async def test_fetch_docs_pages_thorough():
-    with patch(
-        "wet.sources.crawler.extract", new_callable=AsyncMock
-    ) as mock_extract:
+    with patch("wet.sources.crawler.extract", new_callable=AsyncMock) as mock_extract:
         mock_extract.side_effect = [
             json.dumps(
                 [
@@ -620,9 +616,7 @@ async def test_fetch_docs_pages_reads_smart_chunks_shape():
     top-level ``title``. Reading the document keys alone silently dropped
     every scraped page, so the Tier 1 index produced zero chunks.
     """
-    with patch(
-        "wet.sources.crawler.extract", new_callable=AsyncMock
-    ) as mock_extract:
+    with patch("wet.sources.crawler.extract", new_callable=AsyncMock) as mock_extract:
         mock_extract.return_value = json.dumps(
             [
                 {

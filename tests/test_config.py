@@ -352,9 +352,7 @@ def test_resolve_local_model_gguf():
 def test_resolve_local_embedding_model():
     """resolve_local_embedding_model delegates to _resolve_local_model."""
     settings = Settings()
-    with mock.patch(
-        "wet.config._resolve_local_model", return_value="test-model"
-    ) as m:
+    with mock.patch("wet.config._resolve_local_model", return_value="test-model") as m:
         result = settings.resolve_local_embedding_model()
         assert result == "test-model"
         m.assert_called_once()
@@ -363,9 +361,7 @@ def test_resolve_local_embedding_model():
 def test_resolve_local_rerank_model():
     """resolve_local_rerank_model delegates to _resolve_local_model."""
     settings = Settings()
-    with mock.patch(
-        "wet.config._resolve_local_model", return_value="test-rerank"
-    ) as m:
+    with mock.patch("wet.config._resolve_local_model", return_value="test-rerank") as m:
         result = settings.resolve_local_rerank_model()
         assert result == "test-rerank"
         m.assert_called_once()

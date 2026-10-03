@@ -37,9 +37,7 @@ async def test_batch_extract_success():
         for i in range(3)
     ]
 
-    with patch(
-        "wet.sources.crawler.extract", new_callable=AsyncMock
-    ) as mock_extract:
+    with patch("wet.sources.crawler.extract", new_callable=AsyncMock) as mock_extract:
         mock_extract.side_effect = mock_pages
 
         result = await batch_extract(
@@ -66,9 +64,7 @@ async def test_batch_extract_partial_failure():
             return json.dumps([{"url": url, "error": "Connection refused"}])
         return json.dumps([{"url": url, "title": "OK", "content": "OK"}])
 
-    with patch(
-        "wet.sources.crawler.extract", new_callable=AsyncMock
-    ) as mock_extract:
+    with patch("wet.sources.crawler.extract", new_callable=AsyncMock) as mock_extract:
         mock_extract.side_effect = mock_extract_fn
 
         result = await batch_extract(

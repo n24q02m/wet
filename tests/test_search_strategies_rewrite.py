@@ -72,9 +72,7 @@ async def test_rewrite_prompt_carries_query_reason_and_avoid_list():
 
 
 async def test_rewrite_none_without_provider():
-    with patch(
-        "wet.sources.search_strategies.has_llm_provider", return_value=False
-    ):
+    with patch("wet.sources.search_strategies.has_llm_provider", return_value=False):
         assert await rewrite_query("q", avoid=["x"]) is None
 
 

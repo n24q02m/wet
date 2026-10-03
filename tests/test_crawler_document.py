@@ -101,9 +101,7 @@ async def test_extract_document_via_process_url(mock_crawler_instance):
         patch(
             "wet.sources.crawler._extract_with_markitdown", new_callable=AsyncMock
         ) as mock_md,
-        patch(
-            "wet.sources.crawler._get_crawler", return_value=mock_crawler_instance
-        ),
+        patch("wet.sources.crawler._get_crawler", return_value=mock_crawler_instance),
     ):
         mock_md.return_value = mock_doc_result
 

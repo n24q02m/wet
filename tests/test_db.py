@@ -40,9 +40,7 @@ if "wet.sources" not in sys.modules:
 # Load docs module (lightweight — no crawl4ai dependency)
 if "wet.sources.docs" not in sys.modules:
     _docs_file = _src_root / "wet" / "sources" / "docs.py"
-    _docs_spec = importlib.util.spec_from_file_location(
-        "wet.sources.docs", _docs_file
-    )
+    _docs_spec = importlib.util.spec_from_file_location("wet.sources.docs", _docs_file)
     assert _docs_spec is not None
     _docs_mod = importlib.util.module_from_spec(_docs_spec)
     sys.modules["wet.sources.docs"] = _docs_mod

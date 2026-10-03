@@ -790,9 +790,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     sub = parser.add_subparsers(dest="command", metavar="<command>")
 
-    p_server = sub.add_parser(
-        "server", help="start/stop/status the wet HTTP server"
-    )
+    p_server = sub.add_parser("server", help="start/stop/status the wet HTTP server")
     server_sub = p_server.add_subparsers(dest="server_action", required=True)
 
     p_start = server_sub.add_parser(

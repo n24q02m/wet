@@ -37,9 +37,7 @@ class TestLLMACompletion:
         """acompletion returns the cell client's content in ChatResult shape."""
         from wet.llm import acompletion
 
-        with patch(
-            "wet.llm._chat_provider_client", return_value=self._client("Hello")
-        ):
+        with patch("wet.llm._chat_provider_client", return_value=self._client("Hello")):
             result = await acompletion(
                 model="ignored-anyway",
                 messages=[{"role": "user", "content": "Hi"}],
@@ -184,9 +182,7 @@ class TestServerHelpers:
         """_embed returns None when no backend."""
         from wet.server import _embed
 
-        with patch(
-            "wet.embedder.resolve_embed_backend_for_request", return_value=None
-        ):
+        with patch("wet.embedder.resolve_embed_backend_for_request", return_value=None):
             result = await _embed("test text")
             assert result is None
 
@@ -211,9 +207,7 @@ class TestServerHelpers:
         """_embed_batch returns None when no backend."""
         from wet.server import _embed_batch
 
-        with patch(
-            "wet.embedder.resolve_embed_backend_for_request", return_value=None
-        ):
+        with patch("wet.embedder.resolve_embed_backend_for_request", return_value=None):
             result = await _embed_batch(["text1", "text2"])
             assert result is None
 

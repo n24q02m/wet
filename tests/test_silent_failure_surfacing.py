@@ -367,9 +367,7 @@ async def test_background_index_embedding_timeout_is_reported():
     server._docs_db = docs_db
     try:
         with (
-            patch(
-                "wet.sources.docs._normalize_docs_url", return_value="http://docs"
-            ),
+            patch("wet.sources.docs._normalize_docs_url", return_value="http://docs"),
             patch.object(
                 server,
                 "_fetch_and_chunk_docs",

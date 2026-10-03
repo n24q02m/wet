@@ -357,9 +357,7 @@ def test_config_set_bool_writes_bare_toml_bool(config_dir):
 def test_config_set_hash_key_value_is_echoed(capsys, config_dir):
     """A scrypt *_hash is not the secret; echoing it IS the operator workflow."""
     _init_config(config_dir)
-    with patch(
-        "wet.runtime.wet_config_path", return_value=config_dir / "config.toml"
-    ):
+    with patch("wet.runtime.wet_config_path", return_value=config_dir / "config.toml"):
         assert (
             cli.main(["config", "set", "models.embed.api_key_hash", "scrypt$abc"]) == 0
         )
@@ -367,9 +365,7 @@ def test_config_set_hash_key_value_is_echoed(capsys, config_dir):
 
 
 def test_config_set_without_file_fails_with_hint(capsys, config_dir):
-    with patch(
-        "wet.runtime.wet_config_path", return_value=config_dir / "config.toml"
-    ):
+    with patch("wet.runtime.wet_config_path", return_value=config_dir / "config.toml"):
         rc = cli.main(["config", "set", "server.port", "1234"])
     assert rc == 1
     assert "no config at" in capsys.readouterr().err
@@ -377,9 +373,7 @@ def test_config_set_without_file_fails_with_hint(capsys, config_dir):
 
 def test_config_set_rejects_non_dotted_key(capsys, config_dir):
     _init_config(config_dir)
-    with patch(
-        "wet.runtime.wet_config_path", return_value=config_dir / "config.toml"
-    ):
+    with patch("wet.runtime.wet_config_path", return_value=config_dir / "config.toml"):
         rc = cli.main(["config", "set", "port", "1234"])
     assert rc == 1
     assert "dotted" in capsys.readouterr().err

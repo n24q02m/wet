@@ -62,9 +62,7 @@ def test_cloud_backend_never_loads_local_onnx(monkeypatch):
                 "wet.runtime.cell_configured",
                 lambda task, settings=None: task == "embed",
             ),
-            patch(
-                "wet.runtime.provider_client", lambda task, settings=None: client
-            ),
+            patch("wet.runtime.provider_client", lambda task, settings=None: client),
         ):
             backend = init_backend("cloud")
 

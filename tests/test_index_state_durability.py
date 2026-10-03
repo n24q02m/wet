@@ -258,9 +258,7 @@ async def test_successful_reindex_still_replaces_the_old_chunks(
         "_fetch_and_chunk_docs",
         AsyncMock(return_value=(_chunks(2, prefix="fresh"), 2)),
     )
-    monkeypatch.setattr(
-        "wet.embedder.resolve_embed_backend_for_request", lambda: None
-    )
+    monkeypatch.setattr("wet.embedder.resolve_embed_backend_for_request", lambda: None)
 
     await _run_indexer(lib_id, ver_id)
 

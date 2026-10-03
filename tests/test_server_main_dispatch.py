@@ -78,9 +78,7 @@ class TestBuildHttpApp:
 class TestRunServerBlocking:
     def test_no_auth_non_loopback_bind_refused(self, monkeypatch):
         """An unauthenticated listener must never leave localhost."""
-        monkeypatch.setattr(
-            "wet.runtime.hull_settings", lambda: _hs(auth="no-auth")
-        )
+        monkeypatch.setattr("wet.runtime.hull_settings", lambda: _hs(auth="no-auth"))
 
         with pytest.raises(srv.ServerConfigError, match="no-auth"):
             srv.run_server_blocking(host="0.0.0.0", port=8802)
@@ -97,9 +95,7 @@ class TestRunServerBlocking:
 
         with (
             patch("hull_core.lifecycle.lock.LifecycleLock", lock_cm),
-            patch(
-                "wet.server.build_http_app", return_value=MagicMock()
-            ) as mock_app,
+            patch("wet.server.build_http_app", return_value=MagicMock()) as mock_app,
             patch("uvicorn.run") as mock_uvicorn,
         ):
             srv.run_server_blocking(host="127.0.0.1", port=8803)

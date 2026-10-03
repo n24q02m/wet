@@ -165,9 +165,7 @@ async def test_diff_multiple_urls_wraps_in_results(real_cache):
     async def fake_extract(urls, format, stealth):
         return _extract_json(urls[0], f"content for {urls[0]}")
 
-    with patch(
-        "wet.server._extract", new_callable=AsyncMock, side_effect=fake_extract
-    ):
+    with patch("wet.server._extract", new_callable=AsyncMock, side_effect=fake_extract):
         result = await extract(action="diff", urls=["https://a.com", "https://b.com"])
 
     data = payload(result)
