@@ -3,11 +3,11 @@ import unittest.mock
 
 import pytest
 
-from wet_mcp.config import settings
-from wet_mcp.sources import rerank as rerank_mod
-from wet_mcp.sources import search_backends
-from wet_mcp.sources.rerank import CohereReranker, maybe_rerank, reranker_from_env
-from wet_mcp.sources.search_backends import OpenRouterBackend, _make_backend
+from wet.config import settings
+from wet.sources import rerank as rerank_mod
+from wet.sources import search_backends
+from wet.sources.rerank import CohereReranker, maybe_rerank, reranker_from_env
+from wet.sources.search_backends import OpenRouterBackend, _make_backend
 
 
 async def test_openrouter_maps_url_citation_annotations():

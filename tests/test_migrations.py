@@ -22,7 +22,7 @@ from alembic import command
 from alembic.config import Config
 from alembic.script import ScriptDirectory
 
-from wet_mcp.migrations import (
+from wet.migrations import (
     _ALEMBIC_INI_PATH,
     _ALEMBIC_SCRIPT_LOCATION,
     _read_alembic_version,
@@ -428,7 +428,7 @@ def test_db_add_chunks_writes_summary_columns_when_present(tmp_path: Path) -> No
     conn.commit()
     conn.close()
 
-    from wet_mcp.db import DocsDB
+    from wet.db import DocsDB
 
     db = DocsDB(db_path=db_path)
     chunks = [

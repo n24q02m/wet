@@ -18,17 +18,17 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-import wet_mcp.embedder as embedder_mod
-import wet_mcp.reranker as reranker_mod
-from wet_mcp import server as srv
-from wet_mcp.embedder import (
+import wet.embedder as embedder_mod
+import wet.reranker as reranker_mod
+from wet import server as srv
+from wet.embedder import (
     CloudEmbeddingBackend,
     LocalEmbeddingBackend,
     init_backend,
     resolve_embed_backend_for_request,
 )
-from wet_mcp.llm import has_llm_provider
-from wet_mcp.reranker import (
+from wet.llm import has_llm_provider
+from wet.reranker import (
     CloudReranker,
     LocalReranker,
     init_reranker,
@@ -66,21 +66,21 @@ def _reset_singletons():
 class TestLlmGate:
     def test_gate_true_when_chat_cell_configured(self, monkeypatch):
         monkeypatch.setattr(
-            "wet_mcp.runtime.cell_configured",
+            "wet.runtime.cell_configured",
             lambda task, settings=None: task == "chat",
         )
         assert has_llm_provider() is True
 
     def test_gate_false_when_chat_cell_unconfigured(self, monkeypatch):
         monkeypatch.setattr(
-            "wet_mcp.runtime.cell_configured", lambda task, settings=None: False
+            "wet.runtime.cell_configured", lambda task, settings=None: False
         )
         assert has_llm_provider() is False
 
     def test_gate_ignores_embed_and_rerank_cells(self, monkeypatch):
         """Only [models.chat] turns LLM features on."""
         monkeypatch.setattr(
-            "wet_mcp.runtime.cell_configured",
+            "wet.runtime.cell_configured",
             lambda task, settings=None: task in ("embed", "rerank"),
         )
         assert has_llm_provider() is False
@@ -89,7 +89,7 @@ class TestLlmGate:
         """Env keys must not flip the gate: cells are the only source."""
         monkeypatch.setenv("OPENAI_API_KEY", "sk-something")
         monkeypatch.setattr(
-            "wet_mcp.runtime.cell_configured", lambda task, settings=None: False
+            "wet.runtime.cell_configured", lambda task, settings=None: False
         )
         assert has_llm_provider() is False
 
@@ -109,11 +109,11 @@ class TestCloudCellFactory:
     def test_embed_factory_wraps_cell_client(self, monkeypatch):
         client = _cell_client("voyage-4-lite")
         monkeypatch.setattr(
-            "wet_mcp.runtime.cell_configured",
+            "wet.runtime.cell_configured",
             lambda task, settings=None: task == "embed",
         )
         monkeypatch.setattr(
-            "wet_mcp.runtime.provider_client", lambda task, settings=None: client
+            "wet.runtime.provider_client", lambda task, settings=None: client
         )
 
         backend = init_backend("cloud")
@@ -124,11 +124,11 @@ class TestCloudCellFactory:
     def test_rerank_factory_wraps_cell_client(self, monkeypatch):
         client = _cell_client("voyage-2.5-lite")
         monkeypatch.setattr(
-            "wet_mcp.runtime.cell_configured",
+            "wet.runtime.cell_configured",
             lambda task, settings=None: task == "rerank",
         )
         monkeypatch.setattr(
-            "wet_mcp.runtime.provider_client", lambda task, settings=None: client
+            "wet.runtime.provider_client", lambda task, settings=None: client
         )
 
         reranker = init_reranker("cloud")
@@ -138,7 +138,7 @@ class TestCloudCellFactory:
 
     def test_unconfigured_cells_raise_instead_of_silent_local(self, monkeypatch):
         monkeypatch.setattr(
-            "wet_mcp.runtime.cell_configured", lambda task, settings=None: False
+            "wet.runtime.cell_configured", lambda task, settings=None: False
         )
         with pytest.raises(RuntimeError, match="embed.*not configured|not configured"):
             init_backend("cloud")
@@ -169,7 +169,7 @@ class TestPerRequestEmbedBackend:
         assert embedder_mod._backend is None
 
     def test_disabled_local_leg_returns_none(self, monkeypatch):
-        from wet_mcp.config import settings
+        from wet.config import settings
 
         monkeypatch.setattr(settings, "disable_local_embed", True)
         assert resolve_embed_backend_for_request() is None
@@ -191,7 +191,7 @@ class TestPerRequestRerankBackend:
         assert reranker_mod._backend is None
 
     def test_disabled_rerank_returns_none(self, monkeypatch):
-        from wet_mcp.config import settings
+        from wet.config import settings
 
         monkeypatch.setattr(settings, "rerank_enabled", False)
         assert resolve_rerank_backend_for_request() is None
@@ -207,7 +207,7 @@ class TestEmbedDispatchWiring:
         backend = MagicMock()
         backend.embed_single = AsyncMock(return_value=[0.1, 0.2])
         monkeypatch.setattr(
-            "wet_mcp.embedder.resolve_embed_backend_for_request", lambda: backend
+            "wet.embedder.resolve_embed_backend_for_request", lambda: backend
         )
 
         result = await srv._embed("hello")
@@ -217,7 +217,7 @@ class TestEmbedDispatchWiring:
 
     async def test_embed_without_backend_returns_none(self, monkeypatch):
         monkeypatch.setattr(
-            "wet_mcp.embedder.resolve_embed_backend_for_request", lambda: None
+            "wet.embedder.resolve_embed_backend_for_request", lambda: None
         )
         assert await srv._embed("hello") is None
 
@@ -234,7 +234,7 @@ class TestRerankDispatchWiring:
         reranker = MagicMock(spec=CloudReranker)
         reranker.rerank = AsyncMock(return_value=[(1, 0.9), (0, 0.1)])
         monkeypatch.setattr(
-            "wet_mcp.reranker.resolve_rerank_backend_for_request", lambda: reranker
+            "wet.reranker.resolve_rerank_backend_for_request", lambda: reranker
         )
 
         results = self._results(3)
@@ -253,7 +253,7 @@ class TestRerankDispatchWiring:
         # Return a plain (non-awaitable) ranking — a threadpool result.
         reranker.rerank.return_value = [(2, 0.8), (0, 0.4)]
         monkeypatch.setattr(
-            "wet_mcp.reranker.resolve_rerank_backend_for_request", lambda: reranker
+            "wet.reranker.resolve_rerank_backend_for_request", lambda: reranker
         )
 
         reranked = await srv._rerank_results("query", self._results(3), top_n=2)
@@ -270,7 +270,7 @@ class TestRerankDispatchWiring:
         reranker = MagicMock(spec=LocalReranker)
         reranker.rerank.return_value = [(1, 0.95), (0, 0.10)]
         monkeypatch.setattr(
-            "wet_mcp.reranker.resolve_rerank_backend_for_request", lambda: reranker
+            "wet.reranker.resolve_rerank_backend_for_request", lambda: reranker
         )
 
         results = self._results(2)
@@ -286,7 +286,7 @@ class TestRerankDispatchWiring:
         reranker = MagicMock(spec=LocalReranker)
         reranker.rerank.side_effect = RuntimeError("boom")
         monkeypatch.setattr(
-            "wet_mcp.reranker.resolve_rerank_backend_for_request", lambda: reranker
+            "wet.reranker.resolve_rerank_backend_for_request", lambda: reranker
         )
 
         results = self._results(3)
@@ -299,7 +299,7 @@ class TestRerankDispatchWiring:
 
     async def test_no_reranker_keeps_source_order(self, monkeypatch):
         monkeypatch.setattr(
-            "wet_mcp.reranker.resolve_rerank_backend_for_request", lambda: None
+            "wet.reranker.resolve_rerank_backend_for_request", lambda: None
         )
 
         results = self._results(3)

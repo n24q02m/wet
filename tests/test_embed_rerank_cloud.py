@@ -3,7 +3,7 @@
 Providers are no longer per-request env keys resolving into a
 ``Settings.embedding_chain()``; the cloud gate is the ``[models.embed]``
 cell's api_key (``~/.wet/config.toml``, host-injected via ``HULL_EMBED_API_KEY``)
-and the factory is :func:`wet_mcp.embedder.init_backend`. These tests pin the
+and the factory is :func:`wet.embedder.init_backend`. These tests pin the
 de-hosted gating seams; the factory's full behaviour is covered in
 ``tests/test_embedder.py`` / ``tests/test_reranker.py``.
 """
@@ -16,8 +16,8 @@ import unittest.mock
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
-import wet_mcp.embedder as embedder_mod
-from wet_mcp.embedder import CloudEmbeddingBackend, init_backend
+import wet.embedder as embedder_mod
+from wet.embedder import CloudEmbeddingBackend, init_backend
 
 
 def test_embed_cell_key_gating_follows_host_cell_key(monkeypatch):
@@ -27,7 +27,7 @@ def test_embed_cell_key_gating_follows_host_cell_key(monkeypatch):
     config table), so a cell that is unconfigured on disk still resolves as
     configured when the host exports the key at start.
     """
-    from wet_mcp.runtime import cell_configured, model_cell, reset_settings_cache
+    from wet.runtime import cell_configured, model_cell, reset_settings_cache
 
     monkeypatch.delenv("HULL_EMBED_API_KEY", raising=False)
     reset_settings_cache()
@@ -59,12 +59,10 @@ def test_cloud_backend_never_loads_local_onnx(monkeypatch):
     try:
         with (
             patch(
-                "wet_mcp.runtime.cell_configured",
+                "wet.runtime.cell_configured",
                 lambda task, settings=None: task == "embed",
             ),
-            patch(
-                "wet_mcp.runtime.provider_client", lambda task, settings=None: client
-            ),
+            patch("wet.runtime.provider_client", lambda task, settings=None: client),
         ):
             backend = init_backend("cloud")
 
@@ -76,7 +74,7 @@ def test_cloud_backend_never_loads_local_onnx(monkeypatch):
 
 
 def test_local_onnx_presence_treats_broken_module_specs_as_unavailable(monkeypatch):
-    from wet_mcp.config import local_onnx_installed
+    from wet.config import local_onnx_installed
 
     for error in (ValueError("__spec__ is unset"), ImportError()):
         find_spec = unittest.mock.Mock(side_effect=error)

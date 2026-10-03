@@ -6,7 +6,7 @@ argument-hint: "<research question>"
 
 # research-topic
 
-Drive wet-mcp's `extract(action="agent")` to answer a research question
+Drive wet's `extract(action="agent")` to answer a research question
 end to end: one search round + concurrent extracts of the top hits + a
 single LLM synthesis pass that preserves numbered `[N]` citations
 matching the returned sources.

@@ -85,7 +85,7 @@ localStorage preserved). Caps:
 - LRU eviction: at most 5 concurrent live sessions; opening a 6th evicts
   the oldest.
 
-Sessions are NOT shared across processes. A wet-mcp restart loses all
+Sessions are NOT shared across processes. A wet restart loses all
 active sessions.
 
 ## Optional screenshot
@@ -99,7 +99,7 @@ active sessions.
 }
 ```
 
-Saves a PNG of the post-interaction page under `~/.wet-mcp/interact/`.
+Saves a PNG of the post-interaction page under `~/.wet/interact/`.
 The filename is a stable 16-char SHA prefix derived from `(url, actions)`
 so identical re-runs collide on the same path. The response includes
 `screenshot_path`; failures emit `screenshot_error` and do NOT abort
@@ -111,7 +111,7 @@ the call (the snapshot Markdown still returns).
 {
   "url": "https://example.com/dashboard",
   "snapshot_markdown": "# Dashboard\n\n...",
-  "screenshot_path": "/home/user/.wet-mcp/interact/<sha>.png"
+  "screenshot_path": "/home/user/.wet/interact/<sha>.png"
 }
 ```
 
@@ -130,7 +130,7 @@ follow up with:
   `InteractOps.evaluate` for snapshot capture.
 - Network requests still follow wet's SSRF guards; the same private/
   link-local/loopback denylist applies.
-- Screenshots are written to `~/.wet-mcp/interact/`; deleting or
+- Screenshots are written to `~/.wet/interact/`; deleting or
   rotating them is the operator's responsibility (no auto-cleanup
   beyond the SHA-keyed collision behaviour).
 - `description`-based selectors are best-effort; if your flow depends

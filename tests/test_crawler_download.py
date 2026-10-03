@@ -4,7 +4,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import httpx
 import pytest
 
-from wet_mcp.sources.crawler import download_media
+from wet.sources.crawler import download_media
 
 
 @pytest.mark.asyncio
@@ -33,7 +33,7 @@ async def test_download_media_success(tmp_path):
     url = "http://example.com/file.txt"
     output_dir = str(tmp_path)
 
-    with patch("wet_mcp.sources.crawler._safe_httpx_client", mock_client_cls):
+    with patch("wet.sources.crawler._safe_httpx_client", mock_client_cls):
         result_json = await download_media([url], output_dir)
 
     results = json.loads(result_json)
@@ -72,7 +72,7 @@ async def test_download_media_uses_ssrf_safe_transport(tmp_path):
     mock_client_instance.__aexit__.return_value = None
     mock_client_factory = MagicMock(return_value=mock_client_instance)
 
-    with patch("wet_mcp.sources.crawler._safe_httpx_client", mock_client_factory):
+    with patch("wet.sources.crawler._safe_httpx_client", mock_client_factory):
         await download_media(["http://example.com/file.txt"], str(tmp_path))
 
     assert "transport" not in mock_client_factory.call_args.kwargs
@@ -101,7 +101,7 @@ async def test_download_media_protocol_relative(tmp_path):
     url = "//example.com/image.jpg"
     output_dir = str(tmp_path)
 
-    with patch("wet_mcp.sources.crawler._safe_httpx_client", mock_client_cls):
+    with patch("wet.sources.crawler._safe_httpx_client", mock_client_cls):
         result_json = await download_media([url], output_dir)
 
     results = json.loads(result_json)
@@ -144,7 +144,7 @@ async def test_download_media_http_error(tmp_path):
 
     url = "http://example.com/missing.txt"
 
-    with patch("wet_mcp.sources.crawler._safe_httpx_client", mock_client_cls):
+    with patch("wet.sources.crawler._safe_httpx_client", mock_client_cls):
         result_json = await download_media([url], str(tmp_path))
 
     results = json.loads(result_json)
@@ -187,7 +187,7 @@ async def test_download_media_file_write_error(tmp_path):
     # The 'filepath' is a concrete Path object (PosixPath or WindowsPath).
     # Patching 'pathlib.Path.write_bytes' works for all instances.
 
-    with patch("wet_mcp.sources.crawler._safe_httpx_client", mock_client_cls):
+    with patch("wet.sources.crawler._safe_httpx_client", mock_client_cls):
         with patch(
             "pathlib.Path.write_bytes", side_effect=PermissionError("Access denied")
         ):

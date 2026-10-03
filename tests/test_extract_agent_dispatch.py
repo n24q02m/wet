@@ -8,7 +8,7 @@ import pytest
 from mcp.types import CallToolResult
 from structured import payload, text
 
-from wet_mcp.server import extract
+from wet.server import extract
 
 
 @pytest.mark.asyncio
@@ -28,7 +28,7 @@ async def test_agent_action_routes_to_orchestrator_and_serialises_dict() -> None
         ],
     }
     with patch(
-        "wet_mcp.sources.agent_orchestrator.run_agent",
+        "wet.sources.agent_orchestrator.run_agent",
         new_callable=AsyncMock,
         return_value=fake_result,
     ):
@@ -46,7 +46,7 @@ async def test_agent_action_routes_to_orchestrator_and_serialises_dict() -> None
 @pytest.mark.asyncio
 async def test_agent_action_passes_through_error_string() -> None:
     with patch(
-        "wet_mcp.sources.agent_orchestrator.run_agent",
+        "wet.sources.agent_orchestrator.run_agent",
         new_callable=AsyncMock,
         return_value="Error: no LLM provider detected. ...",
     ):

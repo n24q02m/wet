@@ -4,7 +4,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import httpx
 import pytest
 
-from wet_mcp.sources.docs import (
+from wet.sources.docs import (
     _discover_from_crates,
     _discover_from_github_search,
     _discover_from_go,
@@ -37,7 +37,7 @@ from wet_mcp.sources.docs import (
 
 @pytest.mark.asyncio
 async def test_all_registries():
-    with patch("wet_mcp.sources.docs._safe_httpx_client") as MockClient:
+    with patch("wet.sources.docs._safe_httpx_client") as MockClient:
         mock_instance = AsyncMock()
         MockClient.return_value.__aenter__.return_value = mock_instance
 
@@ -119,13 +119,13 @@ async def test_all_registries():
 
 
 @pytest.mark.asyncio
-@patch("wet_mcp.sources.docs._get_github_homepage")
-@patch("wet_mcp.sources.docs._probe_docs_url")
+@patch("wet.sources.docs._get_github_homepage")
+@patch("wet.sources.docs._probe_docs_url")
 async def test_discover_library(mock_probe, mock_get_gh):
     mock_probe.return_value = "https://docs.test"
     mock_get_gh.return_value = "http://gh"
 
-    with patch("wet_mcp.sources.docs._safe_httpx_client") as MockClient:
+    with patch("wet.sources.docs._safe_httpx_client") as MockClient:
         mock_instance = AsyncMock()
         MockClient.return_value.__aenter__.return_value = mock_instance
 
@@ -145,7 +145,7 @@ async def test_discover_library(mock_probe, mock_get_gh):
 
 @pytest.mark.asyncio
 async def test_probe_docs_url():
-    with patch("wet_mcp.sources.docs._safe_httpx_client") as MockClient:
+    with patch("wet.sources.docs._safe_httpx_client") as MockClient:
         mock_instance = AsyncMock()
         MockClient.return_value.__aenter__.return_value = mock_instance
 
@@ -163,7 +163,7 @@ async def test_probe_docs_url():
 @pytest.mark.asyncio
 async def test_try_llms_txt():
     # Fix existing test to use the safe httpx client and return sufficient text
-    with patch("wet_mcp.sources.docs._safe_httpx_client") as MockClient:
+    with patch("wet.sources.docs._safe_httpx_client") as MockClient:
         mock_instance = AsyncMock()
         MockClient.return_value.__aenter__.return_value = mock_instance
 
@@ -181,7 +181,7 @@ async def test_try_llms_txt_edge_cases():
     # Empty url
     assert await try_llms_txt("") is None
 
-    with patch("wet_mcp.sources.docs._safe_httpx_client") as MockClient:
+    with patch("wet.sources.docs._safe_httpx_client") as MockClient:
         mock_instance = AsyncMock()
         MockClient.return_value.__aenter__.return_value = mock_instance
 
@@ -206,7 +206,7 @@ async def test_try_llms_txt_edge_cases():
         assert await try_llms_txt("https://docs.test") is None
 
         # Test toc only (for llms.txt)
-        with patch("wet_mcp.sources.docs._is_toc_only", return_value=True):
+        with patch("wet.sources.docs._is_toc_only", return_value=True):
             mock_response_toc = MagicMock()
             mock_response_toc.status_code = 200
             mock_response_toc.text = "TOC links" + "A" * 200
@@ -225,9 +225,7 @@ async def test_try_llms_txt_edge_cases():
 
 @pytest.mark.asyncio
 async def test_fetch_docs_pages():
-    with patch(
-        "wet_mcp.sources.crawler.extract", new_callable=AsyncMock
-    ) as mock_extract:
+    with patch("wet.sources.crawler.extract", new_callable=AsyncMock) as mock_extract:
         mock_extract.return_value = json.dumps(
             [
                 {
@@ -240,12 +238,12 @@ async def test_fetch_docs_pages():
         )
 
         with patch(
-            "wet_mcp.sources.docs._try_sitemap", new_callable=AsyncMock
+            "wet.sources.docs._try_sitemap", new_callable=AsyncMock
         ) as mock_sitemap:
             mock_sitemap.return_value = ["http://docs.test/page3"]
 
             with patch(
-                "wet_mcp.sources.docs._try_objects_inv", new_callable=AsyncMock
+                "wet.sources.docs._try_objects_inv", new_callable=AsyncMock
             ) as mock_objects:
                 mock_objects.return_value = []
 
@@ -260,7 +258,7 @@ def test_sync_functions():
 
 @pytest.mark.asyncio
 async def test_try_github_raw_docs_success():
-    with patch("wet_mcp.sources.docs._safe_httpx_client") as MockClient:
+    with patch("wet.sources.docs._safe_httpx_client") as MockClient:
         mock_instance = AsyncMock()
         MockClient.return_value.__aenter__.return_value = mock_instance
 
@@ -305,7 +303,7 @@ async def test_try_github_raw_docs_success():
 
 @pytest.mark.asyncio
 async def test_try_github_raw_docs_failure():
-    with patch("wet_mcp.sources.docs._safe_httpx_client") as MockClient:
+    with patch("wet.sources.docs._safe_httpx_client") as MockClient:
         mock_instance = AsyncMock()
         MockClient.return_value.__aenter__.return_value = mock_instance
 
@@ -319,7 +317,7 @@ async def test_try_github_raw_docs_failure():
 
 @pytest.mark.asyncio
 async def test_try_sitemap_success():
-    with patch("wet_mcp.sources.docs._safe_httpx_client") as MockClient:
+    with patch("wet.sources.docs._safe_httpx_client") as MockClient:
         mock_instance = AsyncMock()
         MockClient.return_value.__aenter__.return_value = mock_instance
 
@@ -339,7 +337,7 @@ async def test_try_sitemap_success():
 
 @pytest.mark.asyncio
 async def test_try_sitemap_index():
-    with patch("wet_mcp.sources.docs._safe_httpx_client") as MockClient:
+    with patch("wet.sources.docs._safe_httpx_client") as MockClient:
         mock_instance = AsyncMock()
         MockClient.return_value.__aenter__.return_value = mock_instance
 
@@ -361,7 +359,7 @@ async def test_try_sitemap_index():
 
 @pytest.mark.asyncio
 async def test_try_objects_inv_success():
-    with patch("wet_mcp.sources.docs._safe_httpx_client") as MockClient:
+    with patch("wet.sources.docs._safe_httpx_client") as MockClient:
         mock_instance = AsyncMock()
         MockClient.return_value.__aenter__.return_value = mock_instance
 
@@ -385,9 +383,7 @@ async def test_try_objects_inv_success():
 
 @pytest.mark.asyncio
 async def test_fetch_docs_pages_thorough():
-    with patch(
-        "wet_mcp.sources.crawler.extract", new_callable=AsyncMock
-    ) as mock_extract:
+    with patch("wet.sources.crawler.extract", new_callable=AsyncMock) as mock_extract:
         mock_extract.side_effect = [
             json.dumps(
                 [
@@ -418,12 +414,12 @@ async def test_fetch_docs_pages_thorough():
         ]
 
         with patch(
-            "wet_mcp.sources.docs._try_sitemap", new_callable=AsyncMock
+            "wet.sources.docs._try_sitemap", new_callable=AsyncMock
         ) as mock_sitemap:
             mock_sitemap.return_value = []
 
             with patch(
-                "wet_mcp.sources.docs._try_objects_inv", new_callable=AsyncMock
+                "wet.sources.docs._try_objects_inv", new_callable=AsyncMock
             ) as mock_objects:
                 mock_objects.return_value = []
 
@@ -519,7 +515,7 @@ def test_is_i18n_url():
 
 @pytest.mark.asyncio
 async def test_fetch_github_readme():
-    with patch("wet_mcp.sources.docs._safe_httpx_client") as MockClient:
+    with patch("wet.sources.docs._safe_httpx_client") as MockClient:
         mock_instance = AsyncMock()
         MockClient.return_value.__aenter__.return_value = mock_instance
 
@@ -535,7 +531,7 @@ async def test_fetch_github_readme():
 
 @pytest.mark.asyncio
 async def test_probe_docs_url_readthedocs():
-    with patch("wet_mcp.sources.docs._safe_httpx_client") as MockClient:
+    with patch("wet.sources.docs._safe_httpx_client") as MockClient:
         mock_instance = AsyncMock()
         MockClient.return_value.__aenter__.return_value = mock_instance
 
@@ -568,7 +564,7 @@ async def test_probe_docs_url_readthedocs():
 
 @pytest.mark.asyncio
 async def test_probe_docs_url_subdomain():
-    with patch("wet_mcp.sources.docs._safe_httpx_client") as MockClient:
+    with patch("wet.sources.docs._safe_httpx_client") as MockClient:
         mock_instance = AsyncMock()
         MockClient.return_value.__aenter__.return_value = mock_instance
 
@@ -620,9 +616,7 @@ async def test_fetch_docs_pages_reads_smart_chunks_shape():
     top-level ``title``. Reading the document keys alone silently dropped
     every scraped page, so the Tier 1 index produced zero chunks.
     """
-    with patch(
-        "wet_mcp.sources.crawler.extract", new_callable=AsyncMock
-    ) as mock_extract:
+    with patch("wet.sources.crawler.extract", new_callable=AsyncMock) as mock_extract:
         mock_extract.return_value = json.dumps(
             [
                 {
@@ -637,10 +631,10 @@ async def test_fetch_docs_pages_reads_smart_chunks_shape():
         )
         with (
             patch(
-                "wet_mcp.sources.docs._try_sitemap", new_callable=AsyncMock
+                "wet.sources.docs._try_sitemap", new_callable=AsyncMock
             ) as mock_sitemap,
             patch(
-                "wet_mcp.sources.docs._try_objects_inv", new_callable=AsyncMock
+                "wet.sources.docs._try_objects_inv", new_callable=AsyncMock
             ) as mock_objects,
         ):
             mock_sitemap.return_value = []

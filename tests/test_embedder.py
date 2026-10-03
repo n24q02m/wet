@@ -1,4 +1,4 @@
-"""Tests for src/wet_mcp/embedder.py — dual-backend embedding over hull cells.
+"""Tests for src/wet/embedder.py — dual-backend embedding over hull cells.
 
 Covers CloudEmbeddingBackend (the [models.embed] cell's OpenAI-spec client),
 batch splitting, retry logic, LocalEmbeddingBackend (local ONNX), the
@@ -10,8 +10,8 @@ from unittest.mock import AsyncMock, MagicMock, call, patch
 
 import pytest
 
-import wet_mcp.embedder as embedder_mod
-from wet_mcp.embedder import (
+import wet.embedder as embedder_mod
+from wet.embedder import (
     CloudEmbeddingBackend,
     LocalEmbeddingBackend,
     _is_retryable,
@@ -227,7 +227,7 @@ class TestBatchSplitting:
 
 
 class TestRetryLogic:
-    @patch("wet_mcp.embedder.asyncio.sleep", new_callable=AsyncMock)
+    @patch("wet.embedder.asyncio.sleep", new_callable=AsyncMock)
     async def test_retries_on_rate_limit(self, mock_sleep):
         """Retries on rate limit errors with exponential backoff."""
         client = _cell_client()
@@ -239,7 +239,7 @@ class TestRetryLogic:
         assert result == [[0.1]]
         mock_sleep.assert_called_once_with(1.0)
 
-    @patch("wet_mcp.embedder.asyncio.sleep", new_callable=AsyncMock)
+    @patch("wet.embedder.asyncio.sleep", new_callable=AsyncMock)
     async def test_retries_on_server_error(self, mock_sleep):
         """Retries on 5xx server errors."""
         client = _cell_client()
@@ -253,7 +253,7 @@ class TestRetryLogic:
 
         assert result == [[0.2]]
 
-    @patch("wet_mcp.embedder.asyncio.sleep", new_callable=AsyncMock)
+    @patch("wet.embedder.asyncio.sleep", new_callable=AsyncMock)
     async def test_no_retry_on_non_retryable(self, mock_sleep):
         """Non-retryable errors fail immediately without retry."""
         client = _cell_client()
@@ -265,7 +265,7 @@ class TestRetryLogic:
 
         mock_sleep.assert_not_called()
 
-    @patch("wet_mcp.embedder.asyncio.sleep", new_callable=AsyncMock)
+    @patch("wet.embedder.asyncio.sleep", new_callable=AsyncMock)
     async def test_exponential_backoff(self, mock_sleep):
         """Retry delays use exponential backoff."""
         client = _cell_client()
@@ -280,7 +280,7 @@ class TestRetryLogic:
 
         assert mock_sleep.call_args_list == [call(1.0), call(2.0)]
 
-    @patch("wet_mcp.embedder.asyncio.sleep", new_callable=AsyncMock)
+    @patch("wet.embedder.asyncio.sleep", new_callable=AsyncMock)
     async def test_max_retries_exhausted(self, mock_sleep):
         """Raises after all retries are exhausted."""
         client = _cell_client()
@@ -442,11 +442,11 @@ class TestBackendFactory:
         """init_backend('cloud') wraps the [models.embed] cell's client."""
         client = _cell_client("voyage-4-lite")
         monkeypatch.setattr(
-            "wet_mcp.runtime.cell_configured",
+            "wet.runtime.cell_configured",
             lambda task, settings=None: task == "embed",
         )
         monkeypatch.setattr(
-            "wet_mcp.runtime.provider_client", lambda task, settings=None: client
+            "wet.runtime.provider_client", lambda task, settings=None: client
         )
 
         backend = init_backend("cloud")
@@ -459,10 +459,10 @@ class TestBackendFactory:
         """The cell owns the model; a caller-supplied id is ignored."""
         client = _cell_client("cell-model")
         monkeypatch.setattr(
-            "wet_mcp.runtime.cell_configured", lambda task, settings=None: True
+            "wet.runtime.cell_configured", lambda task, settings=None: True
         )
         monkeypatch.setattr(
-            "wet_mcp.runtime.provider_client", lambda task, settings=None: client
+            "wet.runtime.provider_client", lambda task, settings=None: client
         )
 
         backend = init_backend("cloud", "someone-elses-model")
@@ -471,7 +471,7 @@ class TestBackendFactory:
     async def test_init_cloud_requires_configured_cell(self, monkeypatch):
         """Unconfigured [models.embed] cell -> loud RuntimeError."""
         monkeypatch.setattr(
-            "wet_mcp.runtime.cell_configured", lambda task, settings=None: False
+            "wet.runtime.cell_configured", lambda task, settings=None: False
         )
 
         with pytest.raises(RuntimeError, match="not configured"):
@@ -503,7 +503,7 @@ class TestResolveEmbedBackendForRequest:
         assert resolve_embed_backend_for_request() is backend
 
     async def test_unavailable_when_local_leg_disabled(self, monkeypatch):
-        from wet_mcp.config import settings
+        from wet.config import settings
 
         monkeypatch.setattr(settings, "disable_local_embed", True)
         assert resolve_embed_backend_for_request() is None
@@ -560,9 +560,9 @@ class TestCheckAvailableApiKeyValidation:
 class TestSharedLocalBackend:
     def test_shared_local_embed_backend_lazy(self):
         """_shared_local_embed_backend lazily creates and caches instance."""
-        from wet_mcp.embedder import _shared_local_embed_backend
+        from wet.embedder import _shared_local_embed_backend
 
-        with patch("wet_mcp.embedder.LocalEmbeddingBackend") as mock_cls:
+        with patch("wet.embedder.LocalEmbeddingBackend") as mock_cls:
             instance = MagicMock()
             mock_cls.return_value = instance
 

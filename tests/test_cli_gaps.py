@@ -18,7 +18,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from wet_mcp import cli
+from wet import cli
 
 # ---------------------------------------------------------------------------
 # helpers
@@ -186,10 +186,10 @@ def test_spawn_server_env_and_detach_flags(tmp_path, monkeypatch):
 
     proc = cli._spawn_server("0.0.0.0", 9155, explicit_host=True, explicit_port=True)
     assert proc.pid == 4321
-    assert seen["argv"] == [cli.sys.executable, "-m", "wet_mcp.server"]
+    assert seen["argv"] == [cli.sys.executable, "-m", "wet.server"]
     env = seen["env"]
     assert env["MCP_TRANSPORT"] == "http"
-    # The child (-m wet_mcp.server) reads WET_HOST/WET_PORT; MCP_HOST/MCP_PORT
+    # The child (-m wet.server) reads WET_HOST/WET_PORT; MCP_HOST/MCP_PORT
     # are dead names nothing consumes.
     assert env["WET_HOST"] == "0.0.0.0"
     assert env["WET_PORT"] == "9155"
@@ -218,7 +218,7 @@ def test_start_without_port_ignores_live_lock_on_other_port(
     monkeypatch.setattr(cli, "_pid_alive", lambda pid: True)
     fake = _FakeProc(pid=4322)
     monkeypatch.setattr(cli, "_spawn_server", lambda *a, **k: fake)
-    with patch("wet_mcp.runtime.hull_settings", return_value=_hs(port=9166)):
+    with patch("wet.runtime.hull_settings", return_value=_hs(port=9166)):
         rc = cli.main(["server", "start"])
 
     assert rc == 0
@@ -231,7 +231,7 @@ def test_start_with_stale_lock_still_spawns(locks_dir, monkeypatch, capsys):
     monkeypatch.setattr(cli, "_pid_alive", lambda pid: False)
     fake = _FakeProc(pid=4321)
     monkeypatch.setattr(cli, "_spawn_server", lambda *a, **k: fake)
-    with patch("wet_mcp.runtime.hull_settings", return_value=_hs(port=9161)):
+    with patch("wet.runtime.hull_settings", return_value=_hs(port=9161)):
         rc = cli.main(["server", "start", "--port", "9161"])
 
     assert rc == 0
@@ -242,9 +242,9 @@ def test_start_with_stale_lock_still_spawns(locks_dir, monkeypatch, capsys):
 def test_start_foreground_keyboard_interrupt_returns_130(monkeypatch):
     monkeypatch.setattr(cli, "_find_locks", lambda port: [])
     with (
-        patch("wet_mcp.runtime.hull_settings", return_value=_hs()),
+        patch("wet.runtime.hull_settings", return_value=_hs()),
         patch(
-            "wet_mcp.server.run_server_blocking",
+            "wet.server.run_server_blocking",
             side_effect=KeyboardInterrupt(),
         ),
     ):
@@ -254,10 +254,10 @@ def test_start_foreground_keyboard_interrupt_returns_130(monkeypatch):
 def test_start_foreground_fallback_spawns_and_waits(monkeypatch):
     """Without the blocking entry the CLI degrades to spawn-and-wait."""
     monkeypatch.setattr(cli, "_find_locks", lambda port: [])
-    monkeypatch.delattr("wet_mcp.server.run_server_blocking")
+    monkeypatch.delattr("wet.server.run_server_blocking")
     fake = _FakeProc(pid=99, wait_result=7)
     monkeypatch.setattr(cli, "_spawn_server", lambda *a, **k: fake)
-    with patch("wet_mcp.runtime.hull_settings", return_value=_hs(port=9162)):
+    with patch("wet.runtime.hull_settings", return_value=_hs(port=9162)):
         rc = cli.main(["server", "start", "--foreground", "--port", "9162"])
 
     assert rc == 7
@@ -265,10 +265,10 @@ def test_start_foreground_fallback_spawns_and_waits(monkeypatch):
 
 def test_start_foreground_fallback_interrupt_terminates_child(monkeypatch):
     monkeypatch.setattr(cli, "_find_locks", lambda port: [])
-    monkeypatch.delattr("wet_mcp.server.run_server_blocking")
+    monkeypatch.delattr("wet.server.run_server_blocking")
     fake = _FakeProc(pid=99, wait_error=KeyboardInterrupt())
     monkeypatch.setattr(cli, "_spawn_server", lambda *a, **k: fake)
-    with patch("wet_mcp.runtime.hull_settings", return_value=_hs(port=9163)):
+    with patch("wet.runtime.hull_settings", return_value=_hs(port=9163)):
         rc = cli.main(["server", "start", "--foreground", "--port", "9163"])
 
     assert rc == 130
@@ -327,8 +327,8 @@ def test_status_malformed_lock_reports_payload(locks_dir, monkeypatch, capsys):
 def config_dir(tmp_path, monkeypatch):
     d = tmp_path / "wet-home"
     d.mkdir()
-    monkeypatch.setattr("wet_mcp.runtime.wet_config_dir", lambda: d)
-    monkeypatch.setattr("wet_mcp.runtime.wet_config_path", lambda: d / "config.toml")
+    monkeypatch.setattr("wet.runtime.wet_config_dir", lambda: d)
+    monkeypatch.setattr("wet.runtime.wet_config_path", lambda: d / "config.toml")
     return d
 
 
@@ -339,7 +339,7 @@ def _init_config(config_dir) -> None:
 def test_config_get_prints_boolean_as_toml_bare_word(config_dir, capsys):
     _init_config(config_dir)
     path = config_dir / "config.toml"
-    with patch("wet_mcp.runtime.wet_config_path", return_value=path):
+    with patch("wet.runtime.wet_config_path", return_value=path):
         assert cli.main(["config", "set", "server.debug", "true"]) == 0
         assert cli.main(["config", "get", "server.debug"]) == 0
     assert capsys.readouterr().out.strip().endswith("true")
@@ -348,7 +348,7 @@ def test_config_get_prints_boolean_as_toml_bare_word(config_dir, capsys):
 def test_config_set_bool_writes_bare_toml_bool(config_dir):
     _init_config(config_dir)
     path = config_dir / "config.toml"
-    with patch("wet_mcp.runtime.wet_config_path", return_value=path):
+    with patch("wet.runtime.wet_config_path", return_value=path):
         assert cli.main(["config", "set", "server.debug", "true"]) == 0
     data = tomllib.loads(path.read_text(encoding="utf-8"))
     assert data["server"]["debug"] is True
@@ -357,9 +357,7 @@ def test_config_set_bool_writes_bare_toml_bool(config_dir):
 def test_config_set_hash_key_value_is_echoed(capsys, config_dir):
     """A scrypt *_hash is not the secret; echoing it IS the operator workflow."""
     _init_config(config_dir)
-    with patch(
-        "wet_mcp.runtime.wet_config_path", return_value=config_dir / "config.toml"
-    ):
+    with patch("wet.runtime.wet_config_path", return_value=config_dir / "config.toml"):
         assert (
             cli.main(["config", "set", "models.embed.api_key_hash", "scrypt$abc"]) == 0
         )
@@ -367,9 +365,7 @@ def test_config_set_hash_key_value_is_echoed(capsys, config_dir):
 
 
 def test_config_set_without_file_fails_with_hint(capsys, config_dir):
-    with patch(
-        "wet_mcp.runtime.wet_config_path", return_value=config_dir / "config.toml"
-    ):
+    with patch("wet.runtime.wet_config_path", return_value=config_dir / "config.toml"):
         rc = cli.main(["config", "set", "server.port", "1234"])
     assert rc == 1
     assert "no config at" in capsys.readouterr().err
@@ -377,9 +373,7 @@ def test_config_set_without_file_fails_with_hint(capsys, config_dir):
 
 def test_config_set_rejects_non_dotted_key(capsys, config_dir):
     _init_config(config_dir)
-    with patch(
-        "wet_mcp.runtime.wet_config_path", return_value=config_dir / "config.toml"
-    ):
+    with patch("wet.runtime.wet_config_path", return_value=config_dir / "config.toml"):
         rc = cli.main(["config", "set", "port", "1234"])
     assert rc == 1
     assert "dotted" in capsys.readouterr().err
@@ -407,7 +401,7 @@ def test_docs_import_success_prints_receipt(capsys):
         "db_path": "/x/docs.db",
         "elapsed_s": 1.5,
     }
-    with patch("wet_mcp.docs_import.import_docs", return_value=result) as mock:
+    with patch("wet.docs_import.import_docs", return_value=result) as mock:
         rc = cli.main(["docs", "import", "export.sql", "--db", "/x/docs.db"])
 
     assert rc == 0
@@ -426,7 +420,7 @@ def test_docs_import_skipped_fts_prints_placeholder(capsys):
         "db_path": "/x/docs.db",
         "elapsed_s": 0.2,
     }
-    with patch("wet_mcp.docs_import.import_docs", return_value=result):
+    with patch("wet.docs_import.import_docs", return_value=result):
         rc = cli.main(["docs", "import", "export.sql", "--skip-fts"])
 
     assert rc == 0
@@ -435,7 +429,7 @@ def test_docs_import_skipped_fts_prints_placeholder(capsys):
 
 def test_docs_import_failure_returns_one(capsys):
     with patch(
-        "wet_mcp.docs_import.import_docs",
+        "wet.docs_import.import_docs",
         side_effect=RuntimeError("count mismatch"),
     ):
         rc = cli.main(["docs", "import", "export.sql"])
@@ -446,7 +440,7 @@ def test_docs_import_failure_returns_one(capsys):
 
 def test_docs_reembed_transport_error_returns_one(capsys):
     with patch(
-        "wet_mcp.docs_reembed.reembed",
+        "wet.docs_reembed.reembed",
         new_callable=AsyncMock,
         side_effect=RuntimeError("provider unreachable"),
     ):
@@ -470,7 +464,7 @@ def _init_ok(session_id="sid-1"):
                 "result": {
                     "protocolVersion": cli._MCP_PROTOCOL_VERSION,
                     "capabilities": {},
-                    "serverInfo": {"name": "wet-mcp"},
+                    "serverInfo": {"name": "wet"},
                 },
             }
         ).encode(),
@@ -783,7 +777,7 @@ class _FakeDocsDB:
 
 def test_reindex_library_without_version_skips_clearing(monkeypatch, capsys):
     fake = _FakeDocsDB()
-    monkeypatch.setattr("wet_mcp.db.DocsDB", lambda *a, **k: fake)
+    monkeypatch.setattr("wet.db.DocsDB", lambda *a, **k: fake)
     rc = cli.main(["docs", "reindex", "solo-lib"])
 
     assert rc == 0
@@ -799,7 +793,7 @@ def test_reindex_library_without_version_skips_clearing(monkeypatch, capsys):
 def test_results_blob_skips_non_dicts_and_falls_back():
     from typing import cast
 
-    from wet_mcp.jev import _results_blob
+    from wet.jev import _results_blob
 
     assert _results_blob([]) == "(no result text)"
     assert _results_blob(cast(list[dict], ["junk", 42])) == "(no result text)"

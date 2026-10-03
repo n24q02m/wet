@@ -1,10 +1,10 @@
-"""Unit tests for ``wet_mcp.sources._smart_chunks`` post-processor."""
+"""Unit tests for ``wet.sources._smart_chunks`` post-processor."""
 
 from __future__ import annotations
 
 import pytest
 
-from wet_mcp.sources._smart_chunks import smart_chunks
+from wet.sources._smart_chunks import smart_chunks
 
 
 @pytest.mark.asyncio
@@ -169,7 +169,7 @@ async def test_jsonld_regex_fallback_when_bs4_missing(monkeypatch) -> None:
     """If BeautifulSoup is unavailable, the regex parser still finds JSON-LD blocks."""
     import builtins
 
-    from wet_mcp.sources import _smart_chunks as sc
+    from wet.sources import _smart_chunks as sc
 
     real_import = builtins.__import__
 
@@ -194,7 +194,7 @@ async def test_jsonld_regex_fallback_when_bs4_missing(monkeypatch) -> None:
 @pytest.mark.asyncio
 async def test_html_to_markdown_falls_back_on_markitdown_failure(monkeypatch) -> None:
     """When markitdown raises mid-conversion, the bridge degrades to strip-tags."""
-    from wet_mcp.sources import _smart_chunks as sc
+    from wet.sources import _smart_chunks as sc
 
     class BadMarkItDown:
         def convert_stream(self, *_, **__):
@@ -217,7 +217,7 @@ async def test_html_to_markdown_falls_back_when_markitdown_missing(monkeypatch) 
     """When markitdown is not installed, fall back to strip-tags too."""
     import builtins
 
-    from wet_mcp.sources import _smart_chunks as sc
+    from wet.sources import _smart_chunks as sc
 
     real_import = builtins.__import__
 
@@ -237,7 +237,7 @@ async def test_jsonld_array_with_invalid_entries_via_regex(monkeypatch) -> None:
     """Regex fallback skips invalid JSON arrays cleanly without raising."""
     import builtins
 
-    from wet_mcp.sources import _smart_chunks as sc
+    from wet.sources import _smart_chunks as sc
 
     real_import = builtins.__import__
 

@@ -64,7 +64,7 @@ def test_dependency_specs_and_lock_use_stable_fastretrieval():
 
 
 async def test_local_embedding_uses_fastretrieval_output_contract(monkeypatch):
-    from wet_mcp.embedder import LocalEmbeddingBackend
+    from wet.embedder import LocalEmbeddingBackend
 
     calls: dict[str, object] = {}
 
@@ -84,7 +84,7 @@ async def test_local_embedding_uses_fastretrieval_output_contract(monkeypatch):
 
 
 def test_local_reranker_uses_fastretrieval_score_contract(monkeypatch):
-    from wet_mcp.reranker import LocalReranker
+    from wet.reranker import LocalReranker
 
     class FakeCrossEncoder:
         def rerank(self, query, documents):
@@ -102,7 +102,7 @@ def test_local_reranker_uses_fastretrieval_score_contract(monkeypatch):
 
 
 def test_legacy_qwen_cache_variable_does_not_select_cache(tmp_path, monkeypatch):
-    from wet_mcp.setup_tool import clear_model_cache
+    from wet.setup_tool import clear_model_cache
 
     legacy_dir = tmp_path / "legacy"
     active_dir = tmp_path / "xdg" / "fastretrieval"

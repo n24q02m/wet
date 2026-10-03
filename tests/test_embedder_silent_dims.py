@@ -21,7 +21,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from hull_core.providers.openai_spec import ProviderError
 
-from wet_mcp.embedder import MAX_RETRIES, CloudEmbeddingBackend, _is_retryable
+from wet.embedder import MAX_RETRIES, CloudEmbeddingBackend, _is_retryable
 
 # The exact provider body cohere returns for an unsupported output_dimension,
 # as the hull client surfaces it inside ProviderError.

@@ -11,8 +11,8 @@ chain that resolves to nothing falls back to native unless
 
 from __future__ import annotations
 
-from wet_mcp.config import Settings, settings
-from wet_mcp.sources.crawler import _build_headless_strategies, _build_scraping_agent
+from wet.config import Settings, settings
+from wet.sources.crawler import _build_headless_strategies, _build_scraping_agent
 
 # ---------------------------------------------------------------------------
 # browser_backend_chain (config)

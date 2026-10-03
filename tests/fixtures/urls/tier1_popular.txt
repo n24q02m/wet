@@ -21,7 +21,7 @@ https://docs.python.org/3/library/asyncio.html
 https://fastapi.tiangolo.com/
 https://docs.pydantic.dev/latest/
 https://news.ycombinator.com/
-https://github.com/n24q02m/wet-mcp
+https://github.com/n24q02m/wet
 https://github.com/python/cpython
 https://pypi.org/project/httpx/
 https://pypi.org/project/fastmcp/

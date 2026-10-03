@@ -1,15 +1,15 @@
-# So sanh wet-mcp vs Context7 vs Tavily
+# So sanh wet vs Context7 vs Tavily
 
 ## Phuong phap
 
 30 thu vien **KHONG** co trong benchmark (1200 cases), da duoc kiem tra qua 3 cong cu:
-- **wet-mcp**: Goi truc tiep `discover_library()` noi bo
+- **wet**: Goi truc tiep `discover_library()` noi bo
 - **Context7**: Goi MCP tool `resolve-library-id`
 - **Tavily**: Goi MCP tool `tavily_search`
 
 ## Ket qua tong hop
 
-| Metric | wet-mcp | Context7 | Tavily |
+| Metric | wet | Context7 | Tavily |
 |--------|---------|----------|--------|
 | Tim thay | 27/30 | 25/30 | 30/30 |
 | Ti le | 90.0% | 83.3% | 100.0% |
@@ -54,7 +54,7 @@
 
 ### Diem manh cua tung tool:
 
-1. **wet-mcp** (90%): Tim chinh xac URL docs CHINH THUC cua thu vien
+1. **wet** (90%): Tim chinh xac URL docs CHINH THUC cua thu vien
    - Uu diem: Multi-registry (npm, PyPI, crates.io, pkg.go.dev, NuGet, Maven, Hex, Packagist, PubDev, RubyGems)
    - Nhuoc diem: Phu thuoc vao registry metadata, miss khi package ko co tren registry
 
@@ -79,7 +79,7 @@
 ## Ket luan
 
 Cho use case **docs-mcp-server** (tim official docs URL de scrape):
-- **wet-mcp** la lua chon tot nhat (90%, tra dung official URL)
+- **wet** la lua chon tot nhat (90%, tra dung official URL)
 - **Context7** bo sung tot cho code snippets
 - **Tavily** dung nhu fallback cuoi cung
 

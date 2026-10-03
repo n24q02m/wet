@@ -1,4 +1,4 @@
-"""Full/real live MCP protocol tests for wet-mcp (HTTP transport).
+"""Full/real live MCP protocol tests for wet (HTTP transport).
 
 De-host: the server is spawned as the blocking HTTP process and driven through
 the streamable-HTTP MCP protocol. Local ONNX mode (no provider cells) unless a
@@ -70,7 +70,7 @@ def _spawn_server(tmp_path: Path, *, rerank_enabled: bool = True):
     log_path = tmp_path / "server.log"
     log_fh = open(log_path, "ab")
     proc = subprocess.Popen(
-        [sys.executable, "-m", "wet_mcp.server"],
+        [sys.executable, "-m", "wet.server"],
         env=env,
         stdout=log_fh,
         stderr=log_fh,
@@ -116,7 +116,7 @@ async def _finish(proc, gen) -> None:
 
 @pytest.fixture
 async def mcp_session(tmp_path):
-    """Start a real wet-mcp HTTP server, yield ClientSession (tmp data dirs)."""
+    """Start a real wet HTTP server, yield ClientSession (tmp data dirs)."""
     proc, port = _spawn_server(tmp_path)
     gen = _connect(port)
     try:

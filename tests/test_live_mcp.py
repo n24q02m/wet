@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Phase 5 Live Comprehensive Test for wet-mcp.
+Phase 5 Live Comprehensive Test for wet.
 
 Spawns the server as a subprocess via MCP SDK Client (StdioClientTransport),
 communicates over JSON-RPC stdio protocol, and tests ALL tools x actions.
@@ -65,7 +65,7 @@ async def run_tests():
 
     server_params = StdioServerParameters(
         command="uv",
-        args=["run", "wet-mcp"],
+        args=["run", "wet"],
         env={
             **os.environ,
             "LOG_LEVEL": "WARNING",

@@ -1,6 +1,6 @@
 """Tests for SearXNG runner wrapper (delegates to web-core).
 
-Tests the wet-mcp wrapper layer that bridges settings to web-core's API.
+Tests the wet wrapper layer that bridges settings to web-core's API.
 Internal SearXNG process management is tested in web-core's test suite.
 """
 
@@ -8,12 +8,12 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from wet_mcp.searxng_runner import ensure_searxng, stop_searxng
+from wet.searxng_runner import ensure_searxng, stop_searxng
 
 
 @pytest.fixture
 def mock_settings():
-    with patch("wet_mcp.searxng_runner.settings") as mock:
+    with patch("wet.searxng_runner.settings") as mock:
         mock.wet_auto_searxng = True
         mock.disable_local_search = False
         mock.searxng_url = "http://external:8080"
@@ -30,7 +30,7 @@ def mock_settings():
 def mock_wc_ensure():
     """Mock web-core's ensure_searxng at the delegation boundary."""
     with patch(
-        "wet_mcp.searxng_runner._wc_runner.ensure_searxng",
+        "wet.searxng_runner._wc_runner.ensure_searxng",
         new_callable=AsyncMock,
     ) as mock:
         yield mock
@@ -77,19 +77,19 @@ async def test_ensure_searxng_passes_configured_port(mock_settings, mock_wc_ensu
 
 def test_stop_searxng_delegates():
     """stop_searxng should call web-core's shutdown_searxng."""
-    with patch("wet_mcp.searxng_runner.shutdown_searxng") as mock_shutdown:
+    with patch("wet.searxng_runner.shutdown_searxng") as mock_shutdown:
         stop_searxng()
         mock_shutdown.assert_called_once()
 
 
 def test_patched_installer_calls_patches():
-    """Verify monkey-patched installer applies wet-mcp patches after install."""
+    """Verify monkey-patched installer applies wet patches after install."""
     with (
-        patch("wet_mcp.searxng_runner._wc_original_install", return_value=True),
-        patch("wet_mcp.setup.patch_searxng_version") as mock_version,
-        patch("wet_mcp.setup.patch_searxng_windows") as mock_windows,
+        patch("wet.searxng_runner._wc_original_install", return_value=True),
+        patch("wet.setup.patch_searxng_version") as mock_version,
+        patch("wet.setup.patch_searxng_windows") as mock_windows,
     ):
-        from wet_mcp.searxng_runner import _patched_install_searxng
+        from wet.searxng_runner import _patched_install_searxng
 
         result = _patched_install_searxng()
 
@@ -101,11 +101,11 @@ def test_patched_installer_calls_patches():
 def test_patched_installer_skips_patches_on_failure():
     """If web-core install fails, patches are not applied."""
     with (
-        patch("wet_mcp.searxng_runner._wc_original_install", return_value=False),
-        patch("wet_mcp.setup.patch_searxng_version") as mock_version,
-        patch("wet_mcp.setup.patch_searxng_windows") as mock_windows,
+        patch("wet.searxng_runner._wc_original_install", return_value=False),
+        patch("wet.setup.patch_searxng_version") as mock_version,
+        patch("wet.setup.patch_searxng_windows") as mock_windows,
     ):
-        from wet_mcp.searxng_runner import _patched_install_searxng
+        from wet.searxng_runner import _patched_install_searxng
 
         result = _patched_install_searxng()
 

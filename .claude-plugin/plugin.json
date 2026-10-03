@@ -1,5 +1,5 @@
 {
-  "name": "wet-mcp",
+  "name": "wet",
   "description": "Open-source MCP server for AI agents: web search, content extraction, and library docs.",
   "version": "3.19.0-beta.1",
   "userConfig": {

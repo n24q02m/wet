@@ -1,6 +1,6 @@
 """Tests for _with_timeout helper in server.py.
 
-De-host: the old fixture re-imported ``wet_mcp.server`` under a wall of
+De-host: the old fixture re-imported ``wet.server`` under a wall of
 ``sys.modules`` mocks because the module pulled in the CF/auth stack at
 import time. That stack is gone and the module imports cleanly, so these
 tests run against the real module and just set the runtime knob they
@@ -15,15 +15,15 @@ import pytest
 @pytest.fixture
 def server_module():
     """The real server module (it imports cleanly in the de-hosted image)."""
-    import wet_mcp.server
+    import wet.server
 
-    return wet_mcp.server
+    return wet.server
 
 
 @pytest.fixture
 def tool_timeout(monkeypatch):
     """Settable stand-in for the operational ``tool_timeout`` knob."""
-    from wet_mcp.config import settings
+    from wet.config import settings
 
     monkeypatch.setattr(settings, "tool_timeout", 120)
     return settings

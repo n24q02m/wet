@@ -1,4 +1,4 @@
-"""Tests for src/wet_mcp/sources/docs.py — Docs discovery and chunking.
+"""Tests for src/wet/sources/docs.py — Docs discovery and chunking.
 
 Covers chunk_markdown splitting, heading hierarchy, oversized content,
 chunk_llms_txt, discover_library with mocked registries, try_llms_txt,
@@ -9,7 +9,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from wet_mcp.sources.docs import (
+from wet.sources.docs import (
     ChunkContext,
     _is_blocked_content,
     _rst_to_markdown,
@@ -239,7 +239,7 @@ class TestDiscoverLibrary:
         mock_client.__aenter__.return_value = mock_client
         mock_client.__aexit__.return_value = None
 
-        with patch("wet_mcp.sources.docs._safe_httpx_client", return_value=mock_client):
+        with patch("wet.sources.docs._safe_httpx_client", return_value=mock_client):
             result = await discover_library("react")
 
         assert result is not None
@@ -286,7 +286,7 @@ class TestDiscoverLibrary:
         mock_client.__aenter__.return_value = mock_client
         mock_client.__aexit__.return_value = None
 
-        with patch("wet_mcp.sources.docs._safe_httpx_client", return_value=mock_client):
+        with patch("wet.sources.docs._safe_httpx_client", return_value=mock_client):
             result = await discover_library("fastapi")
 
         assert result is not None
@@ -304,7 +304,7 @@ class TestDiscoverLibrary:
         mock_client.__aenter__.return_value = mock_client
         mock_client.__aexit__.return_value = None
 
-        with patch("wet_mcp.sources.docs._safe_httpx_client", return_value=mock_client):
+        with patch("wet.sources.docs._safe_httpx_client", return_value=mock_client):
             result = await discover_library("nonexistent-library-xyz")
 
         assert result is None
@@ -330,7 +330,7 @@ class TestTryLlmsTxt:
         mock_client.__aenter__.return_value = mock_client
         mock_client.__aexit__.return_value = None
 
-        with patch("wet_mcp.sources.docs._safe_httpx_client", return_value=mock_client):
+        with patch("wet.sources.docs._safe_httpx_client", return_value=mock_client):
             result = await try_llms_txt("https://example.com/docs")
 
         assert result == long_content
@@ -347,7 +347,7 @@ class TestTryLlmsTxt:
         mock_client.__aenter__.return_value = mock_client
         mock_client.__aexit__.return_value = None
 
-        with patch("wet_mcp.sources.docs._safe_httpx_client", return_value=mock_client):
+        with patch("wet.sources.docs._safe_httpx_client", return_value=mock_client):
             result = await try_llms_txt("https://example.com")
 
         assert result is None
@@ -364,7 +364,7 @@ class TestTryLlmsTxt:
         mock_client.__aenter__.return_value = mock_client
         mock_client.__aexit__.return_value = None
 
-        with patch("wet_mcp.sources.docs._safe_httpx_client", return_value=mock_client):
+        with patch("wet.sources.docs._safe_httpx_client", return_value=mock_client):
             result = await try_llms_txt("https://example.com")
 
         assert result is None
@@ -386,7 +386,7 @@ class TestTryLlmsTxt:
         mock_client.__aenter__.return_value = mock_client
         mock_client.__aexit__.return_value = None
 
-        with patch("wet_mcp.sources.docs._safe_httpx_client", return_value=mock_client):
+        with patch("wet.sources.docs._safe_httpx_client", return_value=mock_client):
             result = await try_llms_txt("https://example.com")
 
         assert result is None

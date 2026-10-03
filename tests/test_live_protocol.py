@@ -1,6 +1,6 @@
-"""Pytest-based live MCP protocol tests for wet-mcp (HTTP transport).
+"""Pytest-based live MCP protocol tests for wet (HTTP transport).
 
-De-host: there is ONE transport — the HTTP server (``python -m wet_mcp.server``,
+De-host: there is ONE transport — the HTTP server (``python -m wet.server``,
 bind from WET_HOST/WET_PORT, auth per ``~/.wet/config.toml``). The fixture
 below spawns that real server against a tmp instance home + a stub SearXNG and
 exercises all tools through the streamable-HTTP MCP protocol. Offline tests run
@@ -141,7 +141,7 @@ def _wait_until_up(port: int, timeout: float = 60.0) -> None:
             return  # any HTTP response (incl. 4xx) means the listener is up
         except httpx.HTTPError:
             time.sleep(0.25)
-    raise RuntimeError(f"wet-mcp server on port {port} never came up")
+    raise RuntimeError(f"wet server on port {port} never came up")
 
 
 # ---------------------------------------------------------------------------
@@ -151,13 +151,13 @@ def _wait_until_up(port: int, timeout: float = 60.0) -> None:
 
 @pytest.fixture
 async def mcp_session(searxng_server: str, tmp_path):
-    """Start a real local-only wet-mcp HTTP server; yield an MCP session."""
+    """Start a real local-only wet HTTP server; yield an MCP session."""
     env, _state = _server_env(tmp_path, searxng_server)
     port = int(env["WET_PORT"])
     log_path = tmp_path / "server.log"
     with open(log_path, "ab") as log_fh:
         proc = subprocess.Popen(
-            [sys.executable, "-m", "wet_mcp.server"],
+            [sys.executable, "-m", "wet.server"],
             env=env,
             stdout=log_fh,
             stderr=log_fh,

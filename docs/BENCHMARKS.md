@@ -1,4 +1,4 @@
-# wet-mcp Benchmarks
+# wet Benchmarks
 
 > v2.0.0: `extract.agent` + `extract.interact` shipped (BREAKING).
 

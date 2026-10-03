@@ -10,8 +10,8 @@ import pytest
 from mcp.types import CallToolResult
 from structured import text
 
-from wet_mcp.sources import _browser_sessions as bs
-from wet_mcp.sources import interact_orchestrator as io
+from wet.sources import _browser_sessions as bs
+from wet.sources import interact_orchestrator as io
 
 
 @pytest.fixture
@@ -145,7 +145,7 @@ async def test_screenshot_writes_png_and_returns_path(
 ):
     # Redirect screenshot dir to tmp_path/downloads/interact via settings.
     monkeypatch.setattr(
-        "wet_mcp.sources.interact_orchestrator.settings.download_dir",
+        "wet.sources.interact_orchestrator.settings.download_dir",
         str(tmp_path / "downloads"),
     )
     (tmp_path / "downloads").mkdir()
@@ -184,7 +184,7 @@ async def test_action_with_neither_selector_nor_description_errors(_fake_browser
 
 @pytest.mark.asyncio
 async def test_extract_interact_action_routes_to_orchestrator(_fake_browser):
-    from wet_mcp.server import extract
+    from wet.server import extract
 
     result = await extract(
         action="interact",
@@ -199,7 +199,7 @@ async def test_extract_interact_action_routes_to_orchestrator(_fake_browser):
 
 @pytest.mark.asyncio
 async def test_extract_interact_action_missing_url_returns_error():
-    from wet_mcp.server import extract
+    from wet.server import extract
 
     result = await extract(
         action="interact", actions=[{"type": "click", "selector": "#x"}]
@@ -210,7 +210,7 @@ async def test_extract_interact_action_missing_url_returns_error():
 
 @pytest.mark.asyncio
 async def test_extract_interact_action_missing_actions_returns_error():
-    from wet_mcp.server import extract
+    from wet.server import extract
 
     result = await extract(action="interact", url="https://x")
     assert isinstance(result, CallToolResult)
@@ -219,7 +219,7 @@ async def test_extract_interact_action_missing_actions_returns_error():
 
 @pytest.mark.asyncio
 async def test_extract_unknown_action_lists_interact_in_help():
-    from wet_mcp.server import extract
+    from wet.server import extract
 
     result = await extract(action="bogus_99")
     assert isinstance(result, CallToolResult)

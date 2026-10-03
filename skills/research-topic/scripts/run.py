@@ -48,7 +48,7 @@ async def main(argv: list[str] | None = None) -> int:
     _emit_progress("starting", f"query={args.query!r} max_urls={args.max_urls}")
 
     # Lazy import so the script imports cheaply when -h is used.
-    from wet_mcp.sources.agent_orchestrator import run_agent
+    from wet.sources.agent_orchestrator import run_agent
 
     _emit_progress("searching + extracting + synthesising")
     result = await run_agent(

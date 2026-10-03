@@ -3,7 +3,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 from loguru import logger
 
-from wet_mcp.setup_tool import _validate_cloud_models
+from wet.setup_tool import _validate_cloud_models
 
 
 async def test_validate_cloud_models_logging(caplog):
@@ -20,14 +20,14 @@ async def test_validate_cloud_models_logging(caplog):
     mock_cell.model = "test-model"
 
     with (
-        patch("wet_mcp.runtime.cell_configured", return_value=True),
-        patch("wet_mcp.runtime.model_cell", return_value=mock_cell),
+        patch("wet.runtime.cell_configured", return_value=True),
+        patch("wet.runtime.model_cell", return_value=mock_cell),
         patch(
-            "wet_mcp.embedder.init_backend",
+            "wet.embedder.init_backend",
             side_effect=Exception("Embedding initialization failed"),
         ),
         patch(
-            "wet_mcp.reranker.init_reranker",
+            "wet.reranker.init_reranker",
             side_effect=Exception("Reranker initialization failed"),
         ),
         caplog.at_level("DEBUG"),
@@ -61,11 +61,11 @@ async def test_validate_cloud_models_reranker_logging(caplog):
     mock_backend.check_available = AsyncMock(return_value=768)
 
     with (
-        patch("wet_mcp.runtime.cell_configured", return_value=True),
-        patch("wet_mcp.runtime.model_cell", return_value=mock_cell),
-        patch("wet_mcp.embedder.init_backend", return_value=mock_backend),
+        patch("wet.runtime.cell_configured", return_value=True),
+        patch("wet.runtime.model_cell", return_value=mock_cell),
+        patch("wet.embedder.init_backend", return_value=mock_backend),
         patch(
-            "wet_mcp.reranker.init_reranker",
+            "wet.reranker.init_reranker",
             side_effect=Exception("Reranker initialization failed"),
         ),
         caplog.at_level("DEBUG"),

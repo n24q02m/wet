@@ -1,4 +1,4 @@
-"""Tests for src/wet_mcp/db.py — DocsDB with FTS5 hybrid search.
+"""Tests for src/wet/db.py — DocsDB with FTS5 hybrid search.
 
 Covers library/version CRUD, FTS5 search scoring (phrase/AND/OR tiers),
 JSONL export/import, edge cases (Unicode, empty queries, special characters),
@@ -18,48 +18,46 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 # ---------------------------------------------------------------------------
-# Bootstrap: load wet_mcp.db directly from file without triggering the
+# Bootstrap: load wet.db directly from file without triggering the
 # package __init__.py (which imports crawl4ai -> numpy, a flaky dep).
 # We pre-register stub parent packages and the docs module so that
-# ``from wet_mcp.sources.docs import DISCOVERY_VERSION`` resolves cleanly.
+# ``from wet.sources.docs import DISCOVERY_VERSION`` resolves cleanly.
 # ---------------------------------------------------------------------------
 _src_root = Path(__file__).resolve().parent.parent / "src"
 
 # Reuse already-loaded modules so we don't invalidate patches in
 # sibling test files that bind names at import time.
-if "wet_mcp" not in sys.modules:
-    _pkg = types.ModuleType("wet_mcp")
-    _pkg.__path__ = [str(_src_root / "wet_mcp")]
-    sys.modules["wet_mcp"] = _pkg
+if "wet" not in sys.modules:
+    _pkg = types.ModuleType("wet")
+    _pkg.__path__ = [str(_src_root / "wet")]
+    sys.modules["wet"] = _pkg
 
-if "wet_mcp.sources" not in sys.modules:
-    _sources_pkg = types.ModuleType("wet_mcp.sources")
-    _sources_pkg.__path__ = [str(_src_root / "wet_mcp" / "sources")]
-    sys.modules["wet_mcp.sources"] = _sources_pkg
+if "wet.sources" not in sys.modules:
+    _sources_pkg = types.ModuleType("wet.sources")
+    _sources_pkg.__path__ = [str(_src_root / "wet" / "sources")]
+    sys.modules["wet.sources"] = _sources_pkg
 
 # Load docs module (lightweight — no crawl4ai dependency)
-if "wet_mcp.sources.docs" not in sys.modules:
-    _docs_file = _src_root / "wet_mcp" / "sources" / "docs.py"
-    _docs_spec = importlib.util.spec_from_file_location(
-        "wet_mcp.sources.docs", _docs_file
-    )
+if "wet.sources.docs" not in sys.modules:
+    _docs_file = _src_root / "wet" / "sources" / "docs.py"
+    _docs_spec = importlib.util.spec_from_file_location("wet.sources.docs", _docs_file)
     assert _docs_spec is not None
     _docs_mod = importlib.util.module_from_spec(_docs_spec)
-    sys.modules["wet_mcp.sources.docs"] = _docs_mod
+    sys.modules["wet.sources.docs"] = _docs_mod
     _docs_spec.loader.exec_module(_docs_mod)
 else:
-    _docs_mod = sys.modules["wet_mcp.sources.docs"]
+    _docs_mod = sys.modules["wet.sources.docs"]
 
 # Now load db module
-if "wet_mcp.db" not in sys.modules:
-    _db_file = _src_root / "wet_mcp" / "db.py"
-    _db_spec = importlib.util.spec_from_file_location("wet_mcp.db", _db_file)
+if "wet.db" not in sys.modules:
+    _db_file = _src_root / "wet" / "db.py"
+    _db_spec = importlib.util.spec_from_file_location("wet.db", _db_file)
     assert _db_spec is not None
     _db_mod = importlib.util.module_from_spec(_db_spec)
-    sys.modules["wet_mcp.db"] = _db_mod
+    sys.modules["wet.db"] = _db_mod
     _db_spec.loader.exec_module(_db_mod)
 else:
-    _db_mod = sys.modules["wet_mcp.db"]
+    _db_mod = sys.modules["wet.db"]
 
 DocsDB = _db_mod.DocsDB
 EmbeddingModelMismatch = _db_mod.EmbeddingModelMismatch

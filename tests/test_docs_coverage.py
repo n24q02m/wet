@@ -1,4 +1,4 @@
-"""Additional coverage tests for wet_mcp/sources/docs.py.
+"""Additional coverage tests for wet/sources/docs.py.
 
 Targets uncovered lines from the coverage report to push coverage from 72% to 95%+.
 Focuses on registry discovery functions, probe/helper functions, chunking edge cases,
@@ -12,7 +12,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import httpx
 import pytest
 
-from wet_mcp.sources.docs import (
+from wet.sources.docs import (
     _apply_version_to_url,
     _clean_doc_content,
     _discover_from_crates,
@@ -177,7 +177,7 @@ class TestDiscoverFromNpm:
             "repository": {"url": "https://github.com/owner/old-pkg"},
         }
         client = _make_mock_client({"registry.npmjs.org": resp})
-        with patch("wet_mcp.sources.docs._safe_httpx_client", return_value=client):
+        with patch("wet.sources.docs._safe_httpx_client", return_value=client):
             result = await _discover_from_npm("old-pkg")
         assert result is not None
         assert result["deprecated"] is True
@@ -193,7 +193,7 @@ class TestDiscoverFromNpm:
             "repository": "owner/my-pkg",  # shorthand string, not dict
         }
         client = _make_mock_client({"registry.npmjs.org": resp})
-        with patch("wet_mcp.sources.docs._safe_httpx_client", return_value=client):
+        with patch("wet.sources.docs._safe_httpx_client", return_value=client):
             result = await _discover_from_npm("my-pkg")
         assert result is not None
         assert result["repository"] == "https://github.com/owner/my-pkg"
@@ -203,7 +203,7 @@ class TestDiscoverFromNpm:
         resp = MagicMock()
         resp.status_code = 404
         client = _make_mock_client({"registry.npmjs.org": resp})
-        with patch("wet_mcp.sources.docs._safe_httpx_client", return_value=client):
+        with patch("wet.sources.docs._safe_httpx_client", return_value=client):
             result = await _discover_from_npm("nonexistent")
         assert result is None
 
@@ -211,7 +211,7 @@ class TestDiscoverFromNpm:
         """Returns None when request raises exception."""
         client = _make_mock_client()
         client.get = AsyncMock(side_effect=Exception("Network error"))
-        with patch("wet_mcp.sources.docs._safe_httpx_client", return_value=client):
+        with patch("wet.sources.docs._safe_httpx_client", return_value=client):
             result = await _discover_from_npm("broken")
         assert result is None
 
@@ -237,7 +237,7 @@ class TestDiscoverFromPypi:
             }
         }
         client = _make_mock_client({"pypi.org": resp})
-        with patch("wet_mcp.sources.docs._safe_httpx_client", return_value=client):
+        with patch("wet.sources.docs._safe_httpx_client", return_value=client):
             result = await _discover_from_pypi("some-pkg")
         assert result is not None
         assert "github.com" in result["repository"]
@@ -255,7 +255,7 @@ class TestDiscoverFromPypi:
             }
         }
         client = _make_mock_client({"pypi.org": resp})
-        with patch("wet_mcp.sources.docs._safe_httpx_client", return_value=client):
+        with patch("wet.sources.docs._safe_httpx_client", return_value=client):
             result = await _discover_from_pypi("pkg")
         assert result is not None
         assert result["repository"] == "https://github.com/owner/pkg"
@@ -264,7 +264,7 @@ class TestDiscoverFromPypi:
         """Returns None on exception."""
         client = _make_mock_client()
         client.get = AsyncMock(side_effect=Exception("Timeout"))
-        with patch("wet_mcp.sources.docs._safe_httpx_client", return_value=client):
+        with patch("wet.sources.docs._safe_httpx_client", return_value=client):
             result = await _discover_from_pypi("broken")
         assert result is None
 
@@ -290,7 +290,7 @@ class TestDiscoverFromCrates:
             }
         }
         client = _make_mock_client({"crates.io": resp})
-        with patch("wet_mcp.sources.docs._safe_httpx_client", return_value=client):
+        with patch("wet.sources.docs._safe_httpx_client", return_value=client):
             result = await _discover_from_crates("serde")
         assert result is not None
         assert result["homepage"] == "https://serde.rs"
@@ -310,7 +310,7 @@ class TestDiscoverFromCrates:
             }
         }
         client = _make_mock_client({"crates.io": resp})
-        with patch("wet_mcp.sources.docs._safe_httpx_client", return_value=client):
+        with patch("wet.sources.docs._safe_httpx_client", return_value=client):
             result = await _discover_from_crates("my-crate")
         assert result is not None
         # Should fall back to docs.rs
@@ -331,7 +331,7 @@ class TestDiscoverFromCrates:
             }
         }
         client = _make_mock_client({"crates.io": resp})
-        with patch("wet_mcp.sources.docs._safe_httpx_client", return_value=client):
+        with patch("wet.sources.docs._safe_httpx_client", return_value=client):
             result = await _discover_from_crates("tokio")
         assert result is not None
         assert result["homepage"] == "https://tokio.rs/docs"
@@ -341,7 +341,7 @@ class TestDiscoverFromCrates:
         """Returns None on exception."""
         client = _make_mock_client()
         client.get = AsyncMock(side_effect=Exception("Error"))
-        with patch("wet_mcp.sources.docs._safe_httpx_client", return_value=client):
+        with patch("wet.sources.docs._safe_httpx_client", return_value=client):
             result = await _discover_from_crates("broken")
         assert result is None
 
@@ -370,7 +370,7 @@ class TestDiscoverFromGo:
             ]
         }
         client = _make_mock_client({"api.github.com": resp})
-        with patch("wet_mcp.sources.docs._safe_httpx_client", return_value=client):
+        with patch("wet.sources.docs._safe_httpx_client", return_value=client):
             result = await _discover_from_go("echo")
         assert result is not None
         assert result["homepage"] == "https://echo.labstack.com"
@@ -394,7 +394,7 @@ class TestDiscoverFromGo:
             ]
         }
         client = _make_mock_client({"api.github.com": resp})
-        with patch("wet_mcp.sources.docs._safe_httpx_client", return_value=client):
+        with patch("wet.sources.docs._safe_httpx_client", return_value=client):
             result = await _discover_from_go("gorilla/mux")
         assert result is not None
         assert "pkg.go.dev" in result["homepage"]
@@ -405,7 +405,7 @@ class TestDiscoverFromGo:
         resp.status_code = 200
         resp.json.return_value = {"items": []}
         client = _make_mock_client({"api.github.com": resp})
-        with patch("wet_mcp.sources.docs._safe_httpx_client", return_value=client):
+        with patch("wet.sources.docs._safe_httpx_client", return_value=client):
             result = await _discover_from_go("nonexistent")
         assert result is None
 
@@ -427,7 +427,7 @@ class TestDiscoverFromGo:
             ]
         }
         client = _make_mock_client({"api.github.com": resp})
-        with patch("wet_mcp.sources.docs._safe_httpx_client", return_value=client):
+        with patch("wet.sources.docs._safe_httpx_client", return_value=client):
             result = await _discover_from_go("obscure")
         assert result is None
 
@@ -449,7 +449,7 @@ class TestDiscoverFromGo:
             ]
         }
         client = _make_mock_client({"api.github.com": resp})
-        with patch("wet_mcp.sources.docs._safe_httpx_client", return_value=client):
+        with patch("wet.sources.docs._safe_httpx_client", return_value=client):
             result = await _discover_from_go("echo")
         assert result is None
 
@@ -457,7 +457,7 @@ class TestDiscoverFromGo:
         """Returns None on exception."""
         client = _make_mock_client()
         client.get = AsyncMock(side_effect=Exception("Error"))
-        with patch("wet_mcp.sources.docs._safe_httpx_client", return_value=client):
+        with patch("wet.sources.docs._safe_httpx_client", return_value=client):
             result = await _discover_from_go("broken")
         assert result is None
 
@@ -482,7 +482,7 @@ class TestDiscoverFromHex:
             "downloads": {"all": 5000000},
         }
         client = _make_mock_client({"hex.pm": resp})
-        with patch("wet_mcp.sources.docs._safe_httpx_client", return_value=client):
+        with patch("wet.sources.docs._safe_httpx_client", return_value=client):
             result = await _discover_from_hex("phoenix")
         assert result is not None
         assert result["homepage"] == "https://hexdocs.pm/phoenix"
@@ -498,7 +498,7 @@ class TestDiscoverFromHex:
             "downloads": {"all": 100},
         }
         client = _make_mock_client({"hex.pm": resp})
-        with patch("wet_mcp.sources.docs._safe_httpx_client", return_value=client):
+        with patch("wet.sources.docs._safe_httpx_client", return_value=client):
             result = await _discover_from_hex("my_pkg")
         assert result is not None
         assert result["homepage"] == "https://hexdocs.pm/my_pkg"
@@ -507,7 +507,7 @@ class TestDiscoverFromHex:
         """Returns None on exception."""
         client = _make_mock_client()
         client.get = AsyncMock(side_effect=Exception("Error"))
-        with patch("wet_mcp.sources.docs._safe_httpx_client", return_value=client):
+        with patch("wet.sources.docs._safe_httpx_client", return_value=client):
             result = await _discover_from_hex("broken")
         assert result is None
 
@@ -534,7 +534,7 @@ class TestDiscoverFromPackagist:
             }
         }
         client = _make_mock_client({"repo.packagist.org": resp})
-        with patch("wet_mcp.sources.docs._safe_httpx_client", return_value=client):
+        with patch("wet.sources.docs._safe_httpx_client", return_value=client):
             result = await _discover_from_packagist("laravel/framework")
         assert result is not None
         assert result["homepage"] == "https://laravel.com"
@@ -546,7 +546,7 @@ class TestDiscoverFromPackagist:
         resp.status_code = 200
         resp.json.return_value = {"packages": {"vendor/pkg": []}}
         client = _make_mock_client({"repo.packagist.org": resp})
-        with patch("wet_mcp.sources.docs._safe_httpx_client", return_value=client):
+        with patch("wet.sources.docs._safe_httpx_client", return_value=client):
             result = await _discover_from_packagist("vendor/pkg")
         assert result is None
 
@@ -573,7 +573,7 @@ class TestDiscoverFromPackagist:
             ]
         }
         client = _make_mock_client({"packagist.org": resp})
-        with patch("wet_mcp.sources.docs._safe_httpx_client", return_value=client):
+        with patch("wet.sources.docs._safe_httpx_client", return_value=client):
             result = await _discover_from_packagist("guzzle")
         assert result is not None
         assert result["name"] == "vendor/guzzle"
@@ -594,7 +594,7 @@ class TestDiscoverFromPackagist:
             ]
         }
         client = _make_mock_client({"packagist.org": resp})
-        with patch("wet_mcp.sources.docs._safe_httpx_client", return_value=client):
+        with patch("wet.sources.docs._safe_httpx_client", return_value=client):
             result = await _discover_from_packagist("nomatch")
         assert result is not None
         assert result["name"] == "vendor/other"
@@ -605,7 +605,7 @@ class TestDiscoverFromPackagist:
         resp.status_code = 200
         resp.json.return_value = {"results": []}
         client = _make_mock_client({"packagist.org": resp})
-        with patch("wet_mcp.sources.docs._safe_httpx_client", return_value=client):
+        with patch("wet.sources.docs._safe_httpx_client", return_value=client):
             result = await _discover_from_packagist("nonexistent")
         assert result is None
 
@@ -613,7 +613,7 @@ class TestDiscoverFromPackagist:
         """Returns None on exception."""
         client = _make_mock_client()
         client.get = AsyncMock(side_effect=Exception("Error"))
-        with patch("wet_mcp.sources.docs._safe_httpx_client", return_value=client):
+        with patch("wet.sources.docs._safe_httpx_client", return_value=client):
             result = await _discover_from_packagist("broken")
         assert result is None
 
@@ -639,7 +639,7 @@ class TestDiscoverFromPubdev:
             }
         }
         client = _make_mock_client({"pub.dev": resp})
-        with patch("wet_mcp.sources.docs._safe_httpx_client", return_value=client):
+        with patch("wet.sources.docs._safe_httpx_client", return_value=client):
             result = await _discover_from_pubdev("flutter_bloc")
         assert result is not None
         assert result["homepage"] == "https://bloclibrary.dev"
@@ -657,7 +657,7 @@ class TestDiscoverFromPubdev:
             }
         }
         client = _make_mock_client({"pub.dev": resp})
-        with patch("wet_mcp.sources.docs._safe_httpx_client", return_value=client):
+        with patch("wet.sources.docs._safe_httpx_client", return_value=client):
             result = await _discover_from_pubdev("my_pkg")
         assert result is not None
         assert "pub.dev/documentation" in result["homepage"]
@@ -666,7 +666,7 @@ class TestDiscoverFromPubdev:
         """Returns None on exception."""
         client = _make_mock_client()
         client.get = AsyncMock(side_effect=Exception("Error"))
-        with patch("wet_mcp.sources.docs._safe_httpx_client", return_value=client):
+        with patch("wet.sources.docs._safe_httpx_client", return_value=client):
             result = await _discover_from_pubdev("broken")
         assert result is None
 
@@ -690,7 +690,7 @@ class TestDiscoverFromRubygems:
             "downloads": 500000000,
         }
         client = _make_mock_client({"rubygems.org": resp})
-        with patch("wet_mcp.sources.docs._safe_httpx_client", return_value=client):
+        with patch("wet.sources.docs._safe_httpx_client", return_value=client):
             result = await _discover_from_rubygems("rails")
         assert result is not None
         assert result["repository"] == "https://github.com/rails/rails"
@@ -709,7 +709,7 @@ class TestDiscoverFromRubygems:
             "downloads": 100000000,
         }
         client = _make_mock_client({"rubygems.org": resp})
-        with patch("wet_mcp.sources.docs._safe_httpx_client", return_value=client):
+        with patch("wet.sources.docs._safe_httpx_client", return_value=client):
             result = await _discover_from_rubygems("nokogiri")
         assert result is not None
         assert "github.com" in result["repository"]
@@ -718,7 +718,7 @@ class TestDiscoverFromRubygems:
         """Returns None on exception."""
         client = _make_mock_client()
         client.get = AsyncMock(side_effect=Exception("Error"))
-        with patch("wet_mcp.sources.docs._safe_httpx_client", return_value=client):
+        with patch("wet.sources.docs._safe_httpx_client", return_value=client):
             result = await _discover_from_rubygems("broken")
         assert result is None
 
@@ -749,7 +749,7 @@ class TestDiscoverFromNuget:
             ]
         }
         client = _make_mock_client({"api.nuget.org": resp})
-        with patch("wet_mcp.sources.docs._safe_httpx_client", return_value=client):
+        with patch("wet.sources.docs._safe_httpx_client", return_value=client):
             result = await _discover_from_nuget("Newtonsoft.Json")
         assert result is not None
         assert result["registry"] == "nuget"
@@ -786,7 +786,7 @@ class TestDiscoverFromNuget:
             return page_resp
 
         client.get = AsyncMock(side_effect=_route)
-        with patch("wet_mcp.sources.docs._safe_httpx_client", return_value=client):
+        with patch("wet.sources.docs._safe_httpx_client", return_value=client):
             result = await _discover_from_nuget("SomePkg")
         assert result is not None
         assert result["homepage"] == "https://example.com"
@@ -797,7 +797,7 @@ class TestDiscoverFromNuget:
         resp.status_code = 200
         resp.json.return_value = {"items": []}
         client = _make_mock_client({"api.nuget.org": resp})
-        with patch("wet_mcp.sources.docs._safe_httpx_client", return_value=client):
+        with patch("wet.sources.docs._safe_httpx_client", return_value=client):
             result = await _discover_from_nuget("nonexistent")
         assert result is None
 
@@ -807,7 +807,7 @@ class TestDiscoverFromNuget:
         resp.status_code = 200
         resp.json.return_value = {"items": [{}]}
         client = _make_mock_client({"api.nuget.org": resp})
-        with patch("wet_mcp.sources.docs._safe_httpx_client", return_value=client):
+        with patch("wet.sources.docs._safe_httpx_client", return_value=client):
             result = await _discover_from_nuget("empty-pkg")
         assert result is None
 
@@ -815,7 +815,7 @@ class TestDiscoverFromNuget:
         """Returns None on exception."""
         client = _make_mock_client()
         client.get = AsyncMock(side_effect=Exception("Error"))
-        with patch("wet_mcp.sources.docs._safe_httpx_client", return_value=client):
+        with patch("wet.sources.docs._safe_httpx_client", return_value=client):
             result = await _discover_from_nuget("broken")
         assert result is None
 
@@ -842,7 +842,7 @@ class TestDiscoverFromMaven:
             }
         }
         client = _make_mock_client({"search.maven.org": resp})
-        with patch("wet_mcp.sources.docs._safe_httpx_client", return_value=client):
+        with patch("wet.sources.docs._safe_httpx_client", return_value=client):
             result = await _discover_from_maven("com.google.inject:guice")
         assert result is not None
         assert result["name"] == "com.google.inject:guice"
@@ -861,7 +861,7 @@ class TestDiscoverFromMaven:
             }
         }
         client = _make_mock_client({"search.maven.org": resp})
-        with patch("wet_mcp.sources.docs._safe_httpx_client", return_value=client):
+        with patch("wet.sources.docs._safe_httpx_client", return_value=client):
             result = await _discover_from_maven("testlib")
         assert result is not None
         assert result["name"] == "com.test:testlib"
@@ -874,7 +874,7 @@ class TestDiscoverFromMaven:
             "response": {"docs": [{"g": "com.x", "a": "y", "latestVersion": "1.0"}]}
         }
         client = _make_mock_client({"search.maven.org": resp})
-        with patch("wet_mcp.sources.docs._safe_httpx_client", return_value=client):
+        with patch("wet.sources.docs._safe_httpx_client", return_value=client):
             result = await _discover_from_maven("nomatch")
         assert result is not None
 
@@ -884,7 +884,7 @@ class TestDiscoverFromMaven:
         resp.status_code = 200
         resp.json.return_value = {"response": {"docs": []}}
         client = _make_mock_client({"search.maven.org": resp})
-        with patch("wet_mcp.sources.docs._safe_httpx_client", return_value=client):
+        with patch("wet.sources.docs._safe_httpx_client", return_value=client):
             result = await _discover_from_maven("nonexistent")
         assert result is None
 
@@ -892,7 +892,7 @@ class TestDiscoverFromMaven:
         """Returns None on exception."""
         client = _make_mock_client()
         client.get = AsyncMock(side_effect=Exception("Error"))
-        with patch("wet_mcp.sources.docs._safe_httpx_client", return_value=client):
+        with patch("wet.sources.docs._safe_httpx_client", return_value=client):
             result = await _discover_from_maven("broken")
         assert result is None
 
@@ -926,7 +926,7 @@ class TestDiscoverFromGithubSearch:
             ]
         }
         client = _make_mock_client({"api.github.com": resp})
-        with patch("wet_mcp.sources.docs._safe_httpx_client", return_value=client):
+        with patch("wet.sources.docs._safe_httpx_client", return_value=client):
             result = await _discover_from_github_search("phoenix", "elixir")
         assert result is not None
         assert result["homepage"] == "https://phoenixframework.org"
@@ -950,7 +950,7 @@ class TestDiscoverFromGithubSearch:
             ]
         }
         client = _make_mock_client({"api.github.com": resp})
-        with patch("wet_mcp.sources.docs._safe_httpx_client", return_value=client):
+        with patch("wet.sources.docs._safe_httpx_client", return_value=client):
             result = await _discover_from_github_search("phoenix", "elixir")
         assert result is not None
 
@@ -972,7 +972,7 @@ class TestDiscoverFromGithubSearch:
             ]
         }
         client = _make_mock_client({"api.github.com": resp})
-        with patch("wet_mcp.sources.docs._safe_httpx_client", return_value=client):
+        with patch("wet.sources.docs._safe_httpx_client", return_value=client):
             result = await _discover_from_github_search("nokogiri", "ruby")
         assert result is not None
 
@@ -994,7 +994,7 @@ class TestDiscoverFromGithubSearch:
             ]
         }
         client = _make_mock_client({"api.github.com": resp})
-        with patch("wet_mcp.sources.docs._safe_httpx_client", return_value=client):
+        with patch("wet.sources.docs._safe_httpx_client", return_value=client):
             result = await _discover_from_github_search("testlib", "ruby")
         assert result is None
 
@@ -1003,7 +1003,7 @@ class TestDiscoverFromGithubSearch:
         resp = MagicMock()
         resp.status_code = 403
         client = _make_mock_client({"api.github.com": resp})
-        with patch("wet_mcp.sources.docs._safe_httpx_client", return_value=client):
+        with patch("wet.sources.docs._safe_httpx_client", return_value=client):
             result = await _discover_from_github_search("test", "ruby")
         assert result is None
 
@@ -1020,7 +1020,7 @@ class TestGetGithubHomepage:
         resp.status_code = 200
         resp.json.return_value = {"homepage": "https://vuejs.org"}
         client = _make_mock_client({"api.github.com": resp})
-        with patch("wet_mcp.sources.docs._safe_httpx_client", return_value=client):
+        with patch("wet.sources.docs._safe_httpx_client", return_value=client):
             result = await _get_github_homepage("https://github.com/vuejs/core")
         assert result == "https://vuejs.org"
 
@@ -1030,7 +1030,7 @@ class TestGetGithubHomepage:
         resp.status_code = 200
         resp.json.return_value = {"homepage": "https://github.com/owner/repo"}
         client = _make_mock_client({"api.github.com": resp})
-        with patch("wet_mcp.sources.docs._safe_httpx_client", return_value=client):
+        with patch("wet.sources.docs._safe_httpx_client", return_value=client):
             result = await _get_github_homepage("https://github.com/owner/repo")
         assert result is None
 
@@ -1040,7 +1040,7 @@ class TestGetGithubHomepage:
         resp.status_code = 200
         resp.json.return_value = {"homepage": "https://pypi.org/project/my-pkg/"}
         client = _make_mock_client({"api.github.com": resp})
-        with patch("wet_mcp.sources.docs._safe_httpx_client", return_value=client):
+        with patch("wet.sources.docs._safe_httpx_client", return_value=client):
             result = await _get_github_homepage("https://github.com/owner/repo")
         assert result is None
 
@@ -1054,7 +1054,7 @@ class TestGetGithubHomepage:
         resp = MagicMock()
         resp.status_code = 404
         client = _make_mock_client({"api.github.com": resp})
-        with patch("wet_mcp.sources.docs._safe_httpx_client", return_value=client):
+        with patch("wet.sources.docs._safe_httpx_client", return_value=client):
             result = await _get_github_homepage("https://github.com/owner/repo")
         assert result is None
 
@@ -1064,7 +1064,7 @@ class TestGetGithubHomepage:
         resp.status_code = 200
         resp.json.return_value = {"homepage": "https://my-docs.com"}
         client = _make_mock_client({"api.github.com": resp})
-        with patch("wet_mcp.sources.docs._safe_httpx_client", return_value=client):
+        with patch("wet.sources.docs._safe_httpx_client", return_value=client):
             result = await _get_github_homepage("git+https://github.com/owner/repo.git")
         assert result == "https://my-docs.com"
 
@@ -1072,7 +1072,7 @@ class TestGetGithubHomepage:
         """Returns None on exception."""
         client = _make_mock_client()
         client.get = AsyncMock(side_effect=Exception("Error"))
-        with patch("wet_mcp.sources.docs._safe_httpx_client", return_value=client):
+        with patch("wet.sources.docs._safe_httpx_client", return_value=client):
             result = await _get_github_homepage("https://github.com/owner/repo")
         assert result is None
 
@@ -1114,7 +1114,7 @@ class TestProbeDocsUrl:
             return resp
 
         client.get = AsyncMock(side_effect=_route)
-        with patch("wet_mcp.sources.docs._safe_httpx_client", return_value=client):
+        with patch("wet.sources.docs._safe_httpx_client", return_value=client):
             result = await _probe_docs_url(
                 "https://example.com/", "react", registry="npm"
             )
@@ -1139,7 +1139,7 @@ class TestProbeDocsUrl:
             return resp
 
         client.get = AsyncMock(side_effect=_route)
-        with patch("wet_mcp.sources.docs._safe_httpx_client", return_value=client):
+        with patch("wet.sources.docs._safe_httpx_client", return_value=client):
             result = await _probe_docs_url(
                 "https://example.com/", "test-lib", registry="pypi"
             )
@@ -1189,7 +1189,7 @@ class TestProbeDocsUrl:
             return original_resp
 
         client.get = AsyncMock(side_effect=_route)
-        with patch("wet_mcp.sources.docs._safe_httpx_client", return_value=client):
+        with patch("wet.sources.docs._safe_httpx_client", return_value=client):
             result = await _probe_docs_url(
                 "https://mypkg.org/", "mypkg", registry="pypi"
             )
@@ -1238,7 +1238,7 @@ class TestProbeDocsUrl:
             return original_resp
 
         client.get = AsyncMock(side_effect=_route)
-        with patch("wet_mcp.sources.docs._safe_httpx_client", return_value=client):
+        with patch("wet.sources.docs._safe_httpx_client", return_value=client):
             result = await _probe_docs_url(
                 "https://mypkg.org/", "mypkg", registry="pypi"
             )
@@ -1270,7 +1270,7 @@ class TestProbeDocsUrl:
             return original_resp
 
         client.get = AsyncMock(side_effect=_route)
-        with patch("wet_mcp.sources.docs._safe_httpx_client", return_value=client):
+        with patch("wet.sources.docs._safe_httpx_client", return_value=client):
             result = await _probe_docs_url(
                 "https://example.com/", "example", registry="npm"
             )
@@ -1386,7 +1386,7 @@ class TestTryLlmsTxtCoverage:
             return llms_resp
 
         client.get = AsyncMock(side_effect=_route)
-        with patch("wet_mcp.sources.docs._safe_httpx_client", return_value=client):
+        with patch("wet.sources.docs._safe_httpx_client", return_value=client):
             result = await try_llms_txt("https://example.com/docs")
         assert result is None
 
@@ -1394,7 +1394,7 @@ class TestTryLlmsTxtCoverage:
         """Returns None when fetch raises exception."""
         client = _make_mock_client()
         client.get = AsyncMock(side_effect=Exception("Network error"))
-        with patch("wet_mcp.sources.docs._safe_httpx_client", return_value=client):
+        with patch("wet.sources.docs._safe_httpx_client", return_value=client):
             result = await try_llms_txt("https://example.com")
         assert result is None
 
@@ -1649,7 +1649,7 @@ class TestFetchGithubReadmeCoverage:
             return r
 
         client.get = AsyncMock(side_effect=_route)
-        with patch("wet_mcp.sources.docs._safe_httpx_client", return_value=client):
+        with patch("wet.sources.docs._safe_httpx_client", return_value=client):
             result = await _fetch_github_readme("https://github.com/owner/repo")
         assert result is not None
         assert len(result) > 0
@@ -1659,7 +1659,7 @@ class TestFetchGithubReadmeCoverage:
         resp = MagicMock()
         resp.status_code = 404
         client = _make_mock_client({"raw.githubusercontent.com": resp})
-        with patch("wet_mcp.sources.docs._safe_httpx_client", return_value=client):
+        with patch("wet.sources.docs._safe_httpx_client", return_value=client):
             result = await _fetch_github_readme("https://github.com/owner/repo")
         assert result is None
 
@@ -1669,7 +1669,7 @@ class TestFetchGithubReadmeCoverage:
         resp.status_code = 200
         resp.text = "Short"
         client = _make_mock_client({"raw.githubusercontent.com": resp})
-        with patch("wet_mcp.sources.docs._safe_httpx_client", return_value=client):
+        with patch("wet.sources.docs._safe_httpx_client", return_value=client):
             result = await _fetch_github_readme("https://github.com/owner/repo")
         assert result is None
 
@@ -1677,7 +1677,7 @@ class TestFetchGithubReadmeCoverage:
         """Handles exceptions during fetch gracefully."""
         client = _make_mock_client()
         client.get = AsyncMock(side_effect=Exception("Network error"))
-        with patch("wet_mcp.sources.docs._safe_httpx_client", return_value=client):
+        with patch("wet.sources.docs._safe_httpx_client", return_value=client):
             result = await _fetch_github_readme("https://github.com/owner/repo")
         assert result is None
 
@@ -1719,7 +1719,7 @@ class TestTryGithubRawDocsCoverage:
             return tree_resp
 
         client.get = AsyncMock(side_effect=_route)
-        with patch("wet_mcp.sources.docs._safe_httpx_client", return_value=client):
+        with patch("wet.sources.docs._safe_httpx_client", return_value=client):
             result = await _try_github_raw_docs("https://github.com/owner/repo")
         assert result is None
 
@@ -1760,7 +1760,7 @@ class TestTryGithubRawDocsCoverage:
             return raw_resp
 
         client.get = AsyncMock(side_effect=_route)
-        with patch("wet_mcp.sources.docs._safe_httpx_client", return_value=client):
+        with patch("wet.sources.docs._safe_httpx_client", return_value=client):
             result = await _try_github_raw_docs("https://github.com/owner/repo")
         assert result is not None
         # .github files should not be in results
@@ -1804,7 +1804,7 @@ class TestTryGithubRawDocsCoverage:
             return raw_resp
 
         client.get = AsyncMock(side_effect=_route)
-        with patch("wet_mcp.sources.docs._safe_httpx_client", return_value=client):
+        with patch("wet.sources.docs._safe_httpx_client", return_value=client):
             result = await _try_github_raw_docs("https://github.com/owner/repo")
         assert result is not None
         urls = [p["url"] for p in result]
@@ -1844,7 +1844,7 @@ class TestTryGithubRawDocsCoverage:
             return raw_resp
 
         client.get = AsyncMock(side_effect=_route)
-        with patch("wet_mcp.sources.docs._safe_httpx_client", return_value=client):
+        with patch("wet.sources.docs._safe_httpx_client", return_value=client):
             result = await _try_github_raw_docs("https://github.com/owner/repo")
         assert result is None
 
@@ -1884,7 +1884,7 @@ class TestTryGithubRawDocsCoverage:
             return raw_resp
 
         client.get = AsyncMock(side_effect=_route)
-        with patch("wet_mcp.sources.docs._safe_httpx_client", return_value=client):
+        with patch("wet.sources.docs._safe_httpx_client", return_value=client):
             result = await _try_github_raw_docs("https://github.com/owner/repo")
         assert result is not None
         # Content should be markdown (RST converted)
@@ -1917,7 +1917,7 @@ class TestTryGithubRawDocsCoverage:
             return tree_resp
 
         client.get = AsyncMock(side_effect=_route)
-        with patch("wet_mcp.sources.docs._safe_httpx_client", return_value=client):
+        with patch("wet.sources.docs._safe_httpx_client", return_value=client):
             result = await _try_github_raw_docs("https://github.com/owner/repo")
         assert result is None
 
@@ -1953,9 +1953,9 @@ class TestDiscoverLibraryCoverage:
             ]
         }
         client = _make_mock_client({"api.github.com": resp})
-        with patch("wet_mcp.sources.docs._safe_httpx_client", return_value=client):
+        with patch("wet.sources.docs._safe_httpx_client", return_value=client):
             with patch(
-                "wet_mcp.sources.docs._probe_docs_url",
+                "wet.sources.docs._probe_docs_url",
                 return_value="https://vapor.codes",
             ):
                 result = await discover_library("vapor", language="swift")
@@ -1968,7 +1968,7 @@ class TestDiscoverLibraryCoverage:
         resp.status_code = 200
         resp.json.return_value = {"items": []}
         client = _make_mock_client({"api.github.com": resp})
-        with patch("wet_mcp.sources.docs._safe_httpx_client", return_value=client):
+        with patch("wet.sources.docs._safe_httpx_client", return_value=client):
             result = await discover_library("nonexistent", language="swift")
         assert result is None
 
@@ -1978,7 +1978,7 @@ class TestDiscoverLibraryCoverage:
         resp_404.status_code = 404
         client = _make_mock_client()
         client.get = AsyncMock(return_value=resp_404)
-        with patch("wet_mcp.sources.docs._safe_httpx_client", return_value=client):
+        with patch("wet.sources.docs._safe_httpx_client", return_value=client):
             result = await discover_library("test-lib", language="fortran")
         assert result is None
 
@@ -2010,9 +2010,9 @@ class TestDiscoverLibraryCoverage:
             return resp
 
         client.get = AsyncMock(side_effect=_route)
-        with patch("wet_mcp.sources.docs._safe_httpx_client", return_value=client):
+        with patch("wet.sources.docs._safe_httpx_client", return_value=client):
             with patch(
-                "wet_mcp.sources.docs._probe_docs_url", return_value="https://vuejs.org"
+                "wet.sources.docs._probe_docs_url", return_value="https://vuejs.org"
             ):
                 result = await discover_library("vue", language="javascript")
         assert result is not None
@@ -2042,9 +2042,9 @@ class TestDiscoverLibraryCoverage:
             return resp
 
         client.get = AsyncMock(side_effect=_route)
-        with patch("wet_mcp.sources.docs._safe_httpx_client", return_value=client):
+        with patch("wet.sources.docs._safe_httpx_client", return_value=client):
             with patch(
-                "wet_mcp.sources.docs._probe_docs_url",
+                "wet.sources.docs._probe_docs_url",
                 return_value="https://example.com",
             ):
                 result = await discover_library("old-pkg", language="javascript")
@@ -2077,9 +2077,9 @@ class TestDiscoverLibraryCoverage:
             return resp
 
         client.get = AsyncMock(side_effect=_route)
-        with patch("wet_mcp.sources.docs._safe_httpx_client", return_value=client):
+        with patch("wet.sources.docs._safe_httpx_client", return_value=client):
             with patch(
-                "wet_mcp.sources.docs._probe_docs_url", return_value="https://clap.rs"
+                "wet.sources.docs._probe_docs_url", return_value="https://clap.rs"
             ):
                 result = await discover_library("clap", language="rust")
         assert result is not None
@@ -2118,9 +2118,9 @@ class TestDiscoverLibraryCoverage:
             return resp_404
 
         client.get = AsyncMock(side_effect=_route)
-        with patch("wet_mcp.sources.docs._safe_httpx_client", return_value=client):
+        with patch("wet.sources.docs._safe_httpx_client", return_value=client):
             with patch(
-                "wet_mcp.sources.docs._probe_docs_url",
+                "wet.sources.docs._probe_docs_url",
                 return_value="https://custom-lib.dev",
             ):
                 result = await discover_library("custom-lib", language="python")
@@ -2156,7 +2156,7 @@ class TestDiscoverLibraryCoverage:
             return resp
 
         client.get = AsyncMock(side_effect=_route)
-        with patch("wet_mcp.sources.docs._safe_httpx_client", return_value=client):
+        with patch("wet.sources.docs._safe_httpx_client", return_value=client):
             result = await discover_library("nohome", language="javascript")
         assert result is not None
 
@@ -2186,9 +2186,9 @@ class TestDiscoverLibraryCoverage:
             return resp
 
         client.get = AsyncMock(side_effect=_route)
-        with patch("wet_mcp.sources.docs._safe_httpx_client", return_value=client):
+        with patch("wet.sources.docs._safe_httpx_client", return_value=client):
             with patch(
-                "wet_mcp.sources.docs._probe_docs_url",
+                "wet.sources.docs._probe_docs_url",
                 return_value="https://mylib.readthedocs.io",
             ):
                 result = await discover_library("mylib", language="python")
@@ -2232,7 +2232,7 @@ class TestDiscoverLibraryCoverage:
             return resp
 
         client.get = AsyncMock(side_effect=_route)
-        with patch("wet_mcp.sources.docs._safe_httpx_client", return_value=client):
+        with patch("wet.sources.docs._safe_httpx_client", return_value=client):
             result = await discover_library("mylib", language="swift")
         assert result is not None
         assert result["homepage"] == "https://mylib.dev"
@@ -2247,7 +2247,7 @@ class TestFetchDocsPagesCoverage:
     async def test_root_timeout(self):
         """Returns empty on root page fetch timeout."""
         with patch(
-            "wet_mcp.sources.crawler.extract",
+            "wet.sources.crawler.extract",
             new_callable=AsyncMock,
         ) as mock_extract:
             mock_extract.side_effect = TimeoutError()
@@ -2259,7 +2259,7 @@ class TestFetchDocsPagesCoverage:
         import json as json_mod
 
         with patch(
-            "wet_mcp.sources.crawler.extract",
+            "wet.sources.crawler.extract",
             new_callable=AsyncMock,
         ) as mock_extract:
             mock_extract.return_value = json_mod.dumps(
@@ -2273,12 +2273,12 @@ class TestFetchDocsPagesCoverage:
                 ]
             )
             with patch(
-                "wet_mcp.sources.docs._try_sitemap",
+                "wet.sources.docs._try_sitemap",
                 new_callable=AsyncMock,
                 return_value=[],
             ):
                 with patch(
-                    "wet_mcp.sources.docs._try_objects_inv",
+                    "wet.sources.docs._try_objects_inv",
                     new_callable=AsyncMock,
                     return_value=[],
                 ):
@@ -2290,7 +2290,7 @@ class TestFetchDocsPagesCoverage:
         import json as json_mod
 
         with patch(
-            "wet_mcp.sources.crawler.extract",
+            "wet.sources.crawler.extract",
             new_callable=AsyncMock,
         ) as mock_extract:
             mock_extract.return_value = json_mod.dumps(
@@ -2304,12 +2304,12 @@ class TestFetchDocsPagesCoverage:
                 ]
             )
             with patch(
-                "wet_mcp.sources.docs._try_sitemap",
+                "wet.sources.docs._try_sitemap",
                 new_callable=AsyncMock,
                 side_effect=TimeoutError(),
             ):
                 with patch(
-                    "wet_mcp.sources.docs._try_objects_inv",
+                    "wet.sources.docs._try_objects_inv",
                     new_callable=AsyncMock,
                     side_effect=TimeoutError(),
                 ):
@@ -2321,7 +2321,7 @@ class TestFetchDocsPagesCoverage:
         import json as json_mod
 
         with patch(
-            "wet_mcp.sources.crawler.extract",
+            "wet.sources.crawler.extract",
             new_callable=AsyncMock,
         ) as mock_extract:
             mock_extract.side_effect = [
@@ -2358,12 +2358,12 @@ class TestFetchDocsPagesCoverage:
                 ),
             ]
             with patch(
-                "wet_mcp.sources.docs._try_sitemap",
+                "wet.sources.docs._try_sitemap",
                 new_callable=AsyncMock,
                 return_value=[],
             ):
                 with patch(
-                    "wet_mcp.sources.docs._try_objects_inv",
+                    "wet.sources.docs._try_objects_inv",
                     new_callable=AsyncMock,
                     return_value=[],
                 ):
@@ -2377,7 +2377,7 @@ class TestFetchDocsPagesCoverage:
         import json as json_mod
 
         with patch(
-            "wet_mcp.sources.crawler.extract",
+            "wet.sources.crawler.extract",
             new_callable=AsyncMock,
         ) as mock_extract:
             mock_extract.return_value = json_mod.dumps(
@@ -2391,12 +2391,12 @@ class TestFetchDocsPagesCoverage:
                 ]
             )
             with patch(
-                "wet_mcp.sources.docs._try_sitemap",
+                "wet.sources.docs._try_sitemap",
                 new_callable=AsyncMock,
                 return_value=[],
             ):
                 with patch(
-                    "wet_mcp.sources.docs._try_objects_inv",
+                    "wet.sources.docs._try_objects_inv",
                     new_callable=AsyncMock,
                     return_value=[],
                 ):
@@ -2412,7 +2412,7 @@ class TestFetchDocsPagesCoverage:
 class TestRstToMarkdownCoverage:
     def test_rst_heading_other_char(self):
         """RST heading with non-standard underline char gets ####."""
-        from wet_mcp.sources.docs import _rst_to_markdown
+        from wet.sources.docs import _rst_to_markdown
 
         rst = "Title\n+++++\n\nContent here."
         md = _rst_to_markdown(rst)
@@ -2420,7 +2420,7 @@ class TestRstToMarkdownCoverage:
 
     def test_rst_overline_heading(self):
         """RST heading with overline is handled."""
-        from wet_mcp.sources.docs import _rst_to_markdown
+        from wet.sources.docs import _rst_to_markdown
 
         rst = "==========\nMain Title\n==========\n\nContent."
         md = _rst_to_markdown(rst)
@@ -2428,7 +2428,7 @@ class TestRstToMarkdownCoverage:
 
     def test_rst_image_directive_skipped(self):
         """Image directives are skipped entirely."""
-        from wet_mcp.sources.docs import _rst_to_markdown
+        from wet.sources.docs import _rst_to_markdown
 
         rst = "Before.\n\n.. image:: path/to/image.png\n   :alt: An image\n\nAfter."
         md = _rst_to_markdown(rst)
@@ -2438,7 +2438,7 @@ class TestRstToMarkdownCoverage:
 
     def test_rst_toctree_directive_skipped(self):
         """Toctree directives are skipped."""
-        from wet_mcp.sources.docs import _rst_to_markdown
+        from wet.sources.docs import _rst_to_markdown
 
         rst = "Before.\n\n.. toctree::\n   :maxdepth: 2\n\n   guide\n   api\n\nAfter."
         md = _rst_to_markdown(rst)
@@ -2446,7 +2446,7 @@ class TestRstToMarkdownCoverage:
 
     def test_rst_unknown_directive_keeps_body(self):
         """Unknown directives skip header/options but keep body."""
-        from wet_mcp.sources.docs import _rst_to_markdown
+        from wet.sources.docs import _rst_to_markdown
 
         rst = ".. custom-directive:: args\n   :option: val\n\nBody text."
         md = _rst_to_markdown(rst)
@@ -2454,7 +2454,7 @@ class TestRstToMarkdownCoverage:
 
     def test_rst_code_block_with_options(self):
         """Code block with directive options (e.g., :linenos:)."""
-        from wet_mcp.sources.docs import _rst_to_markdown
+        from wet.sources.docs import _rst_to_markdown
 
         rst = (
             ".. code-block:: python\n   :linenos:\n\n   x = 1\n   y = 2\n\nAfter code."
@@ -2465,7 +2465,7 @@ class TestRstToMarkdownCoverage:
 
     def test_rst_code_indent_less_than_2(self):
         """Code block with minimal indentation uses default indent."""
-        from wet_mcp.sources.docs import _rst_to_markdown
+        from wet.sources.docs import _rst_to_markdown
 
         rst = ".. code-block:: python\n\nx = 1\n\nAfter."
         md = _rst_to_markdown(rst)
@@ -2473,7 +2473,7 @@ class TestRstToMarkdownCoverage:
 
     def test_rst_literal_block_short_prefix(self):
         """Literal block with just :: (2 chars)."""
-        from wet_mcp.sources.docs import _rst_to_markdown
+        from wet.sources.docs import _rst_to_markdown
 
         rst = "::\n\n   x = 1\n   y = 2\n\nAfter."
         md = _rst_to_markdown(rst)
@@ -2482,7 +2482,7 @@ class TestRstToMarkdownCoverage:
 
     def test_rst_literal_block_code_indent_less_than_2(self):
         """Literal block where code has minimal indentation."""
-        from wet_mcp.sources.docs import _rst_to_markdown
+        from wet.sources.docs import _rst_to_markdown
 
         rst = "Example::\n\nx = 1\n\nAfter."
         md = _rst_to_markdown(rst)
@@ -2515,9 +2515,9 @@ class TestDiscoverLibraryScoringBranches:
             return r
 
         client.get = AsyncMock(side_effect=_route)
-        with patch("wet_mcp.sources.docs._safe_httpx_client", return_value=client):
+        with patch("wet.sources.docs._safe_httpx_client", return_value=client):
             with patch(
-                "wet_mcp.sources.docs._probe_docs_url",
+                "wet.sources.docs._probe_docs_url",
                 return_value="https://test-pkg.dev",
             ):
                 result = await discover_library("test-pkg", language="javascript")
@@ -2543,9 +2543,9 @@ class TestDiscoverLibraryScoringBranches:
             return r
 
         client.get = AsyncMock(side_effect=_route)
-        with patch("wet_mcp.sources.docs._safe_httpx_client", return_value=client):
+        with patch("wet.sources.docs._safe_httpx_client", return_value=client):
             with patch(
-                "wet_mcp.sources.docs._probe_docs_url",
+                "wet.sources.docs._probe_docs_url",
                 return_value="https://deprecate-holder.example.com",
             ):
                 result = await discover_library("old-pkg", language="javascript")
@@ -2574,9 +2574,9 @@ class TestDiscoverLibraryScoringBranches:
             return r
 
         client.get = AsyncMock(side_effect=_route)
-        with patch("wet_mcp.sources.docs._safe_httpx_client", return_value=client):
+        with patch("wet.sources.docs._safe_httpx_client", return_value=client):
             with patch(
-                "wet_mcp.sources.docs._probe_docs_url",
+                "wet.sources.docs._probe_docs_url",
                 return_value="https://docs.rs/tiny-crate",
             ):
                 result = await discover_library("tiny-crate", language="rust")
@@ -2610,9 +2610,9 @@ class TestDiscoverLibraryScoringBranches:
             return r
 
         client.get = AsyncMock(side_effect=_route)
-        with patch("wet_mcp.sources.docs._safe_httpx_client", return_value=client):
+        with patch("wet.sources.docs._safe_httpx_client", return_value=client):
             with patch(
-                "wet_mcp.sources.docs._probe_docs_url", return_value="https://mylib.dev"
+                "wet.sources.docs._probe_docs_url", return_value="https://mylib.dev"
             ):
                 result = await discover_library("mylib", language="go")
         assert result is not None
@@ -2641,9 +2641,9 @@ class TestDiscoverLibraryScoringBranches:
             return r
 
         client.get = AsyncMock(side_effect=_route)
-        with patch("wet_mcp.sources.docs._safe_httpx_client", return_value=client):
+        with patch("wet.sources.docs._safe_httpx_client", return_value=client):
             with patch(
-                "wet_mcp.sources.docs._probe_docs_url",
+                "wet.sources.docs._probe_docs_url",
                 return_value="https://mid-crate.rs",
             ):
                 result = await discover_library("mid-crate", language="rust")
@@ -2673,9 +2673,9 @@ class TestDiscoverLibraryScoringBranches:
             return r
 
         client.get = AsyncMock(side_effect=_route)
-        with patch("wet_mcp.sources.docs._safe_httpx_client", return_value=client):
+        with patch("wet.sources.docs._safe_httpx_client", return_value=client):
             with patch(
-                "wet_mcp.sources.docs._probe_docs_url",
+                "wet.sources.docs._probe_docs_url",
                 return_value="https://low-crate.rs",
             ):
                 result = await discover_library("low-crate", language="rust")
@@ -2709,9 +2709,9 @@ class TestDiscoverLibraryScoringBranches:
             return r
 
         client.get = AsyncMock(side_effect=_route)
-        with patch("wet_mcp.sources.docs._safe_httpx_client", return_value=client):
+        with patch("wet.sources.docs._safe_httpx_client", return_value=client):
             with patch(
-                "wet_mcp.sources.docs._probe_docs_url", return_value="https://vuejs.org"
+                "wet.sources.docs._probe_docs_url", return_value="https://vuejs.org"
             ):
                 result = await discover_library("vue", language="javascript")
         assert result is not None
@@ -2739,9 +2739,9 @@ class TestDiscoverLibraryScoringBranches:
             return r
 
         client.get = AsyncMock(side_effect=_route)
-        with patch("wet_mcp.sources.docs._safe_httpx_client", return_value=client):
+        with patch("wet.sources.docs._safe_httpx_client", return_value=client):
             with patch(
-                "wet_mcp.sources.docs._probe_docs_url",
+                "wet.sources.docs._probe_docs_url",
                 return_value="https://docs.myframework.com",
             ):
                 result = await discover_library("myframework", language="javascript")
@@ -2778,9 +2778,9 @@ class TestDiscoverLibraryScoringBranches:
             return resp_404
 
         client.get = AsyncMock(side_effect=_route)
-        with patch("wet_mcp.sources.docs._safe_httpx_client", return_value=client):
+        with patch("wet.sources.docs._safe_httpx_client", return_value=client):
             with patch(
-                "wet_mcp.sources.docs._probe_docs_url",
+                "wet.sources.docs._probe_docs_url",
                 return_value="https://docs.custom.dev",
             ):
                 result = await discover_library("custom", language="swift")
@@ -2823,7 +2823,7 @@ class TestDiscoverLibraryScoringBranches:
             return resp_404
 
         client.get = AsyncMock(side_effect=_route)
-        with patch("wet_mcp.sources.docs._safe_httpx_client", return_value=client):
+        with patch("wet.sources.docs._safe_httpx_client", return_value=client):
             result = await discover_library("swiftlib", language="swift")
         assert result is not None
         assert result["homepage"] == "https://swiftlib.dev"
@@ -2850,9 +2850,9 @@ class TestDiscoverLibraryScoringBranches:
             return r
 
         client.get = AsyncMock(side_effect=_route)
-        with patch("wet_mcp.sources.docs._safe_httpx_client", return_value=client):
+        with patch("wet.sources.docs._safe_httpx_client", return_value=client):
             with patch(
-                "wet_mcp.sources.docs._probe_docs_url",
+                "wet.sources.docs._probe_docs_url",
                 return_value="https://docs.myorg.dev",
             ):
                 result = await discover_library("@myorg/mylib", language="javascript")
@@ -2870,7 +2870,7 @@ class TestFetchDocsPagesLinks:
         import json as json_mod
 
         with patch(
-            "wet_mcp.sources.crawler.extract",
+            "wet.sources.crawler.extract",
             new_callable=AsyncMock,
         ) as mock_extract:
             mock_extract.return_value = json_mod.dumps(
@@ -2889,12 +2889,12 @@ class TestFetchDocsPagesLinks:
                 ]
             )
             with patch(
-                "wet_mcp.sources.docs._try_sitemap",
+                "wet.sources.docs._try_sitemap",
                 new_callable=AsyncMock,
                 return_value=[],
             ):
                 with patch(
-                    "wet_mcp.sources.docs._try_objects_inv",
+                    "wet.sources.docs._try_objects_inv",
                     new_callable=AsyncMock,
                     return_value=[],
                 ):
@@ -2906,7 +2906,7 @@ class TestFetchDocsPagesLinks:
         import json as json_mod
 
         with patch(
-            "wet_mcp.sources.crawler.extract",
+            "wet.sources.crawler.extract",
             new_callable=AsyncMock,
         ) as mock_extract:
             mock_extract.side_effect = [
@@ -2938,12 +2938,12 @@ class TestFetchDocsPagesLinks:
                 ),
             ]
             with patch(
-                "wet_mcp.sources.docs._try_sitemap",
+                "wet.sources.docs._try_sitemap",
                 new_callable=AsyncMock,
                 return_value=[],
             ):
                 with patch(
-                    "wet_mcp.sources.docs._try_objects_inv",
+                    "wet.sources.docs._try_objects_inv",
                     new_callable=AsyncMock,
                     return_value=[],
                 ):
@@ -2956,7 +2956,7 @@ class TestFetchDocsPagesLinks:
         import json as json_mod
 
         with patch(
-            "wet_mcp.sources.crawler.extract",
+            "wet.sources.crawler.extract",
             new_callable=AsyncMock,
         ) as mock_extract:
             mock_extract.return_value = json_mod.dumps(
@@ -2976,12 +2976,12 @@ class TestFetchDocsPagesLinks:
                 ]
             )
             with patch(
-                "wet_mcp.sources.docs._try_sitemap",
+                "wet.sources.docs._try_sitemap",
                 new_callable=AsyncMock,
                 return_value=[],
             ):
                 with patch(
-                    "wet_mcp.sources.docs._try_objects_inv",
+                    "wet.sources.docs._try_objects_inv",
                     new_callable=AsyncMock,
                     return_value=[],
                 ):
@@ -2997,7 +2997,7 @@ class TestFetchDocsPagesLinks:
         import json as json_mod
 
         with patch(
-            "wet_mcp.sources.crawler.extract",
+            "wet.sources.crawler.extract",
             new_callable=AsyncMock,
         ) as mock_extract:
             mock_extract.return_value = json_mod.dumps(
@@ -3017,12 +3017,12 @@ class TestFetchDocsPagesLinks:
                 ]
             )
             with patch(
-                "wet_mcp.sources.docs._try_sitemap",
+                "wet.sources.docs._try_sitemap",
                 new_callable=AsyncMock,
                 return_value=[],
             ):
                 with patch(
-                    "wet_mcp.sources.docs._try_objects_inv",
+                    "wet.sources.docs._try_objects_inv",
                     new_callable=AsyncMock,
                     return_value=[],
                 ):
@@ -3037,7 +3037,7 @@ class TestFetchDocsPagesLinks:
         import json as json_mod
 
         with patch(
-            "wet_mcp.sources.crawler.extract",
+            "wet.sources.crawler.extract",
             new_callable=AsyncMock,
         ) as mock_extract:
             mock_extract.side_effect = [
@@ -3078,12 +3078,12 @@ class TestFetchDocsPagesLinks:
                 ),
             ]
             with patch(
-                "wet_mcp.sources.docs._try_sitemap",
+                "wet.sources.docs._try_sitemap",
                 new_callable=AsyncMock,
                 return_value=[],
             ):
                 with patch(
-                    "wet_mcp.sources.docs._try_objects_inv",
+                    "wet.sources.docs._try_objects_inv",
                     new_callable=AsyncMock,
                     return_value=[],
                 ):
@@ -3099,7 +3099,7 @@ class TestFetchDocsPagesLinks:
         import json as json_mod
 
         with patch(
-            "wet_mcp.sources.crawler.extract",
+            "wet.sources.crawler.extract",
             new_callable=AsyncMock,
         ) as mock_extract:
             mock_extract.side_effect = [
@@ -3137,12 +3137,12 @@ class TestFetchDocsPagesLinks:
                 ),
             ]
             with patch(
-                "wet_mcp.sources.docs._try_sitemap",
+                "wet.sources.docs._try_sitemap",
                 new_callable=AsyncMock,
                 return_value=[],
             ):
                 with patch(
-                    "wet_mcp.sources.docs._try_objects_inv",
+                    "wet.sources.docs._try_objects_inv",
                     new_callable=AsyncMock,
                     return_value=[],
                 ):
@@ -3155,7 +3155,7 @@ class TestFetchDocsPagesLinks:
         import json as json_mod
 
         with patch(
-            "wet_mcp.sources.crawler.extract",
+            "wet.sources.crawler.extract",
             new_callable=AsyncMock,
         ) as mock_extract:
             mock_extract.side_effect = [
@@ -3185,12 +3185,12 @@ class TestFetchDocsPagesLinks:
                 TimeoutError(),
             ]
             with patch(
-                "wet_mcp.sources.docs._try_sitemap",
+                "wet.sources.docs._try_sitemap",
                 new_callable=AsyncMock,
                 return_value=[],
             ):
                 with patch(
-                    "wet_mcp.sources.docs._try_objects_inv",
+                    "wet.sources.docs._try_objects_inv",
                     new_callable=AsyncMock,
                     return_value=[],
                 ):
@@ -3202,7 +3202,7 @@ class TestFetchDocsPagesLinks:
         import json as json_mod
 
         with patch(
-            "wet_mcp.sources.crawler.extract",
+            "wet.sources.crawler.extract",
             new_callable=AsyncMock,
         ) as mock_extract:
             mock_extract.side_effect = [
@@ -3221,12 +3221,12 @@ class TestFetchDocsPagesLinks:
                 TimeoutError(),
             ]
             with patch(
-                "wet_mcp.sources.docs._try_sitemap",
+                "wet.sources.docs._try_sitemap",
                 new_callable=AsyncMock,
                 return_value=[],
             ):
                 with patch(
-                    "wet_mcp.sources.docs._try_objects_inv",
+                    "wet.sources.docs._try_objects_inv",
                     new_callable=AsyncMock,
                     return_value=[],
                 ):
@@ -3238,7 +3238,7 @@ class TestFetchDocsPagesLinks:
         import json as json_mod
 
         with patch(
-            "wet_mcp.sources.crawler.extract",
+            "wet.sources.crawler.extract",
             new_callable=AsyncMock,
         ) as mock_extract:
             mock_extract.return_value = json_mod.dumps(
@@ -3252,7 +3252,7 @@ class TestFetchDocsPagesLinks:
                 ]
             )
             with patch(
-                "wet_mcp.sources.docs._try_sitemap",
+                "wet.sources.docs._try_sitemap",
                 new_callable=AsyncMock,
                 return_value=[
                     "https://docs.test/en/3.0/guide",
@@ -3260,7 +3260,7 @@ class TestFetchDocsPagesLinks:
                 ],
             ):
                 with patch(
-                    "wet_mcp.sources.docs._try_objects_inv",
+                    "wet.sources.docs._try_objects_inv",
                     new_callable=AsyncMock,
                     return_value=[],
                 ):
@@ -3272,7 +3272,7 @@ class TestFetchDocsPagesLinks:
         import json as json_mod
 
         with patch(
-            "wet_mcp.sources.crawler.extract",
+            "wet.sources.crawler.extract",
             new_callable=AsyncMock,
         ) as mock_extract:
             mock_extract.side_effect = [
@@ -3297,12 +3297,12 @@ class TestFetchDocsPagesLinks:
                 ),
             ]
             with patch(
-                "wet_mcp.sources.docs._try_sitemap",
+                "wet.sources.docs._try_sitemap",
                 new_callable=AsyncMock,
                 return_value=[],
             ):
                 with patch(
-                    "wet_mcp.sources.docs._try_objects_inv",
+                    "wet.sources.docs._try_objects_inv",
                     new_callable=AsyncMock,
                     return_value=["https://docs.test/en/3.0/guide"],
                 ):
@@ -3314,7 +3314,7 @@ class TestFetchDocsPagesLinks:
         import json as json_mod
 
         with patch(
-            "wet_mcp.sources.crawler.extract",
+            "wet.sources.crawler.extract",
             new_callable=AsyncMock,
         ) as mock_extract:
             mock_extract.side_effect = [
@@ -3341,12 +3341,12 @@ class TestFetchDocsPagesLinks:
                 ),
             ]
             with patch(
-                "wet_mcp.sources.docs._try_sitemap",
+                "wet.sources.docs._try_sitemap",
                 new_callable=AsyncMock,
                 return_value=[],
             ):
                 with patch(
-                    "wet_mcp.sources.docs._try_objects_inv",
+                    "wet.sources.docs._try_objects_inv",
                     new_callable=AsyncMock,
                     return_value=[],
                 ):
@@ -3400,7 +3400,7 @@ def test_chunk_llms_txt_parameters():
     content = "# Title\n\nSome content."
     base_url = "https://example.com/docs"
 
-    with patch("wet_mcp.sources.docs.chunk_markdown") as mock_chunk:
+    with patch("wet.sources.docs.chunk_markdown") as mock_chunk:
         mock_chunk.return_value = [{"content": "mocked"}]
 
         result = chunk_llms_txt(content, base_url=base_url)

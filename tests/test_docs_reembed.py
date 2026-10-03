@@ -1,4 +1,4 @@
-"""``wet_mcp.docs_reembed`` — host-side vector backfill for docs chunks.
+"""``wet.docs_reembed`` — host-side vector backfill for docs chunks.
 
 Exercises the real decision ladder against a real DocsDB (dims=4, vec
 table on): backend resolution (cell → local → pending), the batch →
@@ -12,9 +12,9 @@ from types import SimpleNamespace
 
 import pytest
 
-from wet_mcp.config import settings
-from wet_mcp.db import DocsDB
-from wet_mcp.docs_reembed import reembed
+from wet.config import settings
+from wet.db import DocsDB
+from wet.docs_reembed import reembed
 
 DIMS = 4
 
@@ -65,14 +65,14 @@ def store(tmp_path, monkeypatch):
         ],
     )
     monkeypatch.setattr(settings, "embedding_dims", DIMS, raising=False)
-    monkeypatch.setattr("wet_mcp.runtime.cell_configured", lambda name: False)
+    monkeypatch.setattr("wet.runtime.cell_configured", lambda name: False)
     yield db, tmp_path / "docs.db"
     db.close()
 
 
 def _fake_local_backend(monkeypatch, vectors=None):
     """A real LocalEmbeddingBackend whose embed leg is a recorded fake."""
-    from wet_mcp.embedder import LocalEmbeddingBackend
+    from wet.embedder import LocalEmbeddingBackend
 
     backend = LocalEmbeddingBackend("local-test-model")
     calls: list = []
@@ -85,7 +85,7 @@ def _fake_local_backend(monkeypatch, vectors=None):
 
     monkeypatch.setattr(backend, "embed_texts", fake_embed_texts)
     monkeypatch.setattr(
-        "wet_mcp.embedder.resolve_embed_backend_for_request", lambda: backend
+        "wet.embedder.resolve_embed_backend_for_request", lambda: backend
     )
     return backend, calls
 
@@ -97,9 +97,7 @@ def _fake_local_backend(monkeypatch, vectors=None):
 
 async def test_reembed_pending_when_no_backend_resolves(store, monkeypatch):
     _, db_path = store
-    monkeypatch.setattr(
-        "wet_mcp.embedder.resolve_embed_backend_for_request", lambda: None
-    )
+    monkeypatch.setattr("wet.embedder.resolve_embed_backend_for_request", lambda: None)
 
     result = await reembed(db_path=db_path)
 
@@ -110,7 +108,7 @@ async def test_reembed_pending_when_no_backend_resolves(store, monkeypatch):
 async def test_reembed_error_when_docs_db_missing(tmp_path, monkeypatch):
     _fake_local_backend(monkeypatch)
     monkeypatch.setattr(settings, "embedding_dims", DIMS, raising=False)
-    monkeypatch.setattr("wet_mcp.runtime.cell_configured", lambda name: False)
+    monkeypatch.setattr("wet.runtime.cell_configured", lambda name: False)
 
     result = await reembed(db_path=tmp_path / "absent.db")
 
@@ -135,8 +133,8 @@ async def test_reembed_error_when_vector_table_absent(tmp_path, monkeypatch):
     db.close()
     # dims resolve to 0 (settings unset + default overridden) -> vec-less open.
     monkeypatch.setattr(settings, "embedding_dims", 0, raising=False)
-    monkeypatch.setattr("wet_mcp.runtime.DEFAULT_EMBEDDING_DIMS", 0)
-    monkeypatch.setattr("wet_mcp.runtime.cell_configured", lambda name: False)
+    monkeypatch.setattr("wet.runtime.DEFAULT_EMBEDDING_DIMS", 0)
+    monkeypatch.setattr("wet.runtime.cell_configured", lambda name: False)
     _fake_local_backend(monkeypatch)
 
     result = await reembed(db_path=tmp_path / "docs.db")
@@ -209,7 +207,7 @@ async def test_reembed_backfills_vectors_and_stamps_identity(store, monkeypatch)
 async def test_reembed_failed_batch_degrades_to_per_chunk(store, monkeypatch):
     """One pathological chunk must not lose the whole batch."""
     _, db_path = store
-    from wet_mcp.embedder import LocalEmbeddingBackend
+    from wet.embedder import LocalEmbeddingBackend
 
     backend = LocalEmbeddingBackend("local-test-model")
     batch_calls: list = []
@@ -224,7 +222,7 @@ async def test_reembed_failed_batch_degrades_to_per_chunk(store, monkeypatch):
 
     monkeypatch.setattr(backend, "embed_texts", flaky_embed)
     monkeypatch.setattr(
-        "wet_mcp.embedder.resolve_embed_backend_for_request", lambda: backend
+        "wet.embedder.resolve_embed_backend_for_request", lambda: backend
     )
 
     conn = sqlite3.connect(str(db_path))
@@ -285,13 +283,13 @@ async def test_reembed_prefers_configured_embed_cell(store, monkeypatch):
             return [[0.9] * DIMS for _ in texts]
 
     client = SimpleNamespace(name="provider-client")
-    monkeypatch.setattr("wet_mcp.embedder.CloudEmbeddingBackend", FakeCloudBackend)
-    monkeypatch.setattr("wet_mcp.runtime.cell_configured", lambda name: True)
+    monkeypatch.setattr("wet.embedder.CloudEmbeddingBackend", FakeCloudBackend)
+    monkeypatch.setattr("wet.runtime.cell_configured", lambda name: True)
     monkeypatch.setattr(
-        "wet_mcp.runtime.model_cell",
+        "wet.runtime.model_cell",
         lambda name: SimpleNamespace(model="voyage-4-lite"),
     )
-    monkeypatch.setattr("wet_mcp.runtime.provider_client", lambda name: client)
+    monkeypatch.setattr("wet.runtime.provider_client", lambda name: client)
 
     result = await reembed(db_path=db_path)
 
@@ -312,11 +310,11 @@ async def test_reembed_keeps_server_resolved_cloud_identity(store, monkeypatch):
     # Not a LocalEmbeddingBackend: the server resolved a cloud singleton.
     cloud_like = SimpleNamespace(model=None, embed_texts=fake_embed)
     monkeypatch.setattr(
-        "wet_mcp.embedder.resolve_embed_backend_for_request", lambda: cloud_like
+        "wet.embedder.resolve_embed_backend_for_request", lambda: cloud_like
     )
-    monkeypatch.setattr("wet_mcp.runtime.cell_configured", lambda name: False)
+    monkeypatch.setattr("wet.runtime.cell_configured", lambda name: False)
     monkeypatch.setattr(
-        "wet_mcp.runtime.model_cell",
+        "wet.runtime.model_cell",
         lambda name: SimpleNamespace(model="voyage-2.5-lite"),
     )
 

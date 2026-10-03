@@ -1,8 +1,8 @@
 """Tests for ``extract`` (post web-core ScrapingAgent migration).
 
-Each test patches ``wet_mcp.sources.crawler._get_scraping_agent`` to return
+Each test patches ``wet.sources.crawler._get_scraping_agent`` to return
 a fake agent so the real strategy chain never fires. Output is the smart-
-chunks dict shape from ``wet_mcp.sources._smart_chunks``.
+chunks dict shape from ``wet.sources._smart_chunks``.
 """
 
 import json
@@ -10,7 +10,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from wet_mcp.sources.crawler import extract
+from wet.sources.crawler import extract
 
 
 def _fake_agent(scrape_return: str | None = None, scrape_side_effect=None):
@@ -30,7 +30,7 @@ async def test_extract_success():
     agent = _fake_agent(scrape_return="# Test Title\n\nTest content.")
 
     with patch(
-        "wet_mcp.sources.crawler._get_scraping_agent",
+        "wet.sources.crawler._get_scraping_agent",
         new_callable=AsyncMock,
         return_value=agent,
     ):
@@ -50,7 +50,7 @@ async def test_extract_failure():
     agent = _fake_agent(scrape_side_effect=RuntimeError("Page not found"))
 
     with patch(
-        "wet_mcp.sources.crawler._get_scraping_agent",
+        "wet.sources.crawler._get_scraping_agent",
         new_callable=AsyncMock,
         return_value=agent,
     ):
@@ -68,7 +68,7 @@ async def test_extract_unsafe_url():
     agent = _fake_agent(scrape_return="should not run")
 
     with patch(
-        "wet_mcp.sources.crawler._get_scraping_agent",
+        "wet.sources.crawler._get_scraping_agent",
         new_callable=AsyncMock,
         return_value=agent,
     ):
@@ -87,7 +87,7 @@ async def test_extract_exception():
     agent = _fake_agent(scrape_side_effect=Exception("Connection error"))
 
     with patch(
-        "wet_mcp.sources.crawler._get_scraping_agent",
+        "wet.sources.crawler._get_scraping_agent",
         new_callable=AsyncMock,
         return_value=agent,
     ):
@@ -106,7 +106,7 @@ async def test_extract_html_format():
     agent = _fake_agent(scrape_return=html)
 
     with patch(
-        "wet_mcp.sources.crawler._get_scraping_agent",
+        "wet.sources.crawler._get_scraping_agent",
         new_callable=AsyncMock,
         return_value=agent,
     ):
@@ -123,7 +123,7 @@ async def test_extract_stealth_param():
     agent = _fake_agent(scrape_return="ok")
 
     with patch(
-        "wet_mcp.sources.crawler._get_scraping_agent",
+        "wet.sources.crawler._get_scraping_agent",
         new_callable=AsyncMock,
         return_value=agent,
     ) as mock_get:
@@ -141,7 +141,7 @@ async def test_extract_empty_list():
     agent = _fake_agent(scrape_return="ok")
 
     with patch(
-        "wet_mcp.sources.crawler._get_scraping_agent",
+        "wet.sources.crawler._get_scraping_agent",
         new_callable=AsyncMock,
         return_value=agent,
     ):

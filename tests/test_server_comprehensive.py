@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from structured import payload, text
 
-from wet_mcp import server
+from wet import server
 
 
 @pytest.fixture(autouse=True)
@@ -23,13 +23,13 @@ def _no_llm_provider_mode():
     mock = MagicMock()
     mock.resolve_provider_mode.return_value = "local"
     with (
-        patch("wet_mcp.sources.search_strategies.settings", mock),
-        patch("wet_mcp.sources.structured.settings", mock),
+        patch("wet.sources.search_strategies.settings", mock),
+        patch("wet.sources.structured.settings", mock),
         patch(
-            "wet_mcp.sources.search_strategies.has_llm_provider",
+            "wet.sources.search_strategies.has_llm_provider",
             return_value=False,
         ),
-        patch("wet_mcp.sources.structured.has_llm_provider", return_value=False),
+        patch("wet.sources.structured.has_llm_provider", return_value=False),
     ):
         yield mock
 
@@ -62,7 +62,7 @@ def _close_and_dummy_task(coro, label=None):
 
 @pytest.fixture(autouse=True)
 def mock_settings():
-    with patch("wet_mcp.server.settings") as mock:
+    with patch("wet.server.settings") as mock:
         mock.log_level = "DEBUG"
         mock.wet_cache = True
         mock.get_db_path.return_value = MagicMock()
@@ -100,9 +100,9 @@ def mock_docs_db():
 @pytest.mark.asyncio
 async def test_warmup_searxng():
     with (
-        patch("wet_mcp.setup.run_auto_setup", new_callable=MagicMock) as mock_setup,
+        patch("wet.setup.run_auto_setup", new_callable=MagicMock) as mock_setup,
         patch(
-            "wet_mcp.searxng_runner.ensure_searxng", new_callable=AsyncMock
+            "wet.searxng_runner.ensure_searxng", new_callable=AsyncMock
         ) as mock_ensure,
     ):
         await server._warmup_searxng()
@@ -112,7 +112,7 @@ async def test_warmup_searxng():
 
 @pytest.mark.asyncio
 async def test_warmup_searxng_exception():
-    with patch("wet_mcp.setup.run_auto_setup", side_effect=Exception("Test Error")):
+    with patch("wet.setup.run_auto_setup", side_effect=Exception("Test Error")):
         await server._warmup_searxng()
 
 
@@ -120,12 +120,10 @@ async def test_warmup_searxng_exception():
 async def test_lifespan():
     mock_fastmcp = MagicMock()
     with (
-        patch("wet_mcp.server._PerSubCache"),
-        patch("wet_mcp.server.make_docs_db", return_value=MagicMock()),
-        patch(
-            "wet_mcp.server.shutdown_crawler", new_callable=AsyncMock
-        ) as mock_shutdown,
-        patch("wet_mcp.server.stop_searxng") as mock_stop,
+        patch("wet.server._PerSubCache"),
+        patch("wet.server.make_docs_db", return_value=MagicMock()),
+        patch("wet.server.shutdown_crawler", new_callable=AsyncMock) as mock_shutdown,
+        patch("wet.server.stop_searxng") as mock_stop,
     ):
         async with server._lifespan(mock_fastmcp):
             pass
@@ -143,14 +141,12 @@ async def test_lifespan_skips_searxng_warmup_in_uvx_tool_venv():
     """
     mock_fastmcp = MagicMock()
     with (
-        patch("wet_mcp.server._PerSubCache"),
-        patch("wet_mcp.server.make_docs_db", return_value=MagicMock()),
-        patch(
-            "wet_mcp.server.shutdown_crawler", new_callable=AsyncMock
-        ) as mock_shutdown,
-        patch("wet_mcp.server.stop_searxng"),
-        patch("wet_mcp.server.is_uvx_tool_venv", return_value=True),
-        patch("wet_mcp.server._warmup_searxng", new_callable=AsyncMock) as mock_warmup,
+        patch("wet.server._PerSubCache"),
+        patch("wet.server.make_docs_db", return_value=MagicMock()),
+        patch("wet.server.shutdown_crawler", new_callable=AsyncMock) as mock_shutdown,
+        patch("wet.server.stop_searxng"),
+        patch("wet.server.is_uvx_tool_venv", return_value=True),
+        patch("wet.server._warmup_searxng", new_callable=AsyncMock) as mock_warmup,
     ):
         async with server._lifespan(mock_fastmcp):
             pass
@@ -164,12 +160,12 @@ async def test_lifespan_runs_searxng_warmup_outside_uvx():
     """Non-uvx transports (Docker / dev .venv) keep the eager warmup."""
     mock_fastmcp = MagicMock()
     with (
-        patch("wet_mcp.server._PerSubCache"),
-        patch("wet_mcp.server.make_docs_db", return_value=MagicMock()),
-        patch("wet_mcp.server.shutdown_crawler", new_callable=AsyncMock),
-        patch("wet_mcp.server.stop_searxng"),
-        patch("wet_mcp.server.is_uvx_tool_venv", return_value=False),
-        patch("wet_mcp.server._warmup_searxng", new_callable=AsyncMock) as mock_warmup,
+        patch("wet.server._PerSubCache"),
+        patch("wet.server.make_docs_db", return_value=MagicMock()),
+        patch("wet.server.shutdown_crawler", new_callable=AsyncMock),
+        patch("wet.server.stop_searxng"),
+        patch("wet.server.is_uvx_tool_venv", return_value=False),
+        patch("wet.server._warmup_searxng", new_callable=AsyncMock) as mock_warmup,
     ):
         async with server._lifespan(mock_fastmcp):
             pass
@@ -183,9 +179,9 @@ async def test_init_embedding_backend(monkeypatch):
     cell = MagicMock()
     cell.model = "text-embedding-3-large"
     with (
-        patch("wet_mcp.runtime.cell_configured", lambda t, settings=None: True),
-        patch("wet_mcp.server.model_cell", lambda t=None, settings=None: cell),
-        patch("wet_mcp.embedder.init_backend") as mock_init,
+        patch("wet.runtime.cell_configured", lambda t, settings=None: True),
+        patch("wet.server.model_cell", lambda t=None, settings=None: cell),
+        patch("wet.embedder.init_backend") as mock_init,
     ):
         mock_backend = MagicMock()
         mock_backend.check_available = AsyncMock(return_value=768)
@@ -200,9 +196,9 @@ async def test_init_reranker_backend():
     cell = MagicMock()
     cell.model = "rerank-model"
     with (
-        patch("wet_mcp.runtime.cell_configured", lambda t, settings=None: True),
-        patch("wet_mcp.server.model_cell", lambda t=None, settings=None: cell),
-        patch("wet_mcp.reranker.init_reranker") as mock_init,
+        patch("wet.runtime.cell_configured", lambda t, settings=None: True),
+        patch("wet.server.model_cell", lambda t=None, settings=None: cell),
+        patch("wet.reranker.init_reranker") as mock_init,
     ):
         mock_reranker = MagicMock()
         # CloudReranker.check_available is async (hull HTTP client).
@@ -214,9 +210,7 @@ async def test_init_reranker_backend():
 
 @pytest.mark.asyncio
 async def test_embed():
-    with patch(
-        "wet_mcp.embedder.resolve_embed_backend_for_request"
-    ) as mock_get_backend:
+    with patch("wet.embedder.resolve_embed_backend_for_request") as mock_get_backend:
         mock_backend = MagicMock()
         mock_backend.embed_single = AsyncMock(return_value=[0.1, 0.2])
         mock_get_backend.return_value = mock_backend
@@ -227,9 +221,7 @@ async def test_embed():
 
 @pytest.mark.asyncio
 async def test_embed_batch():
-    with patch(
-        "wet_mcp.embedder.resolve_embed_backend_for_request"
-    ) as mock_get_backend:
+    with patch("wet.embedder.resolve_embed_backend_for_request") as mock_get_backend:
         mock_backend = MagicMock()
         mock_backend.embed_texts = AsyncMock(return_value=[[0.1, 0.2]])
         mock_get_backend.return_value = mock_backend
@@ -240,9 +232,7 @@ async def test_embed_batch():
 
 @pytest.mark.asyncio
 async def test_rerank_results():
-    with patch(
-        "wet_mcp.reranker.resolve_rerank_backend_for_request"
-    ) as mock_get_reranker:
+    with patch("wet.reranker.resolve_rerank_backend_for_request") as mock_get_reranker:
         mock_reranker = MagicMock()
         mock_reranker.rerank.return_value = [(0, 0.9)]
         mock_get_reranker.return_value = mock_reranker
@@ -256,7 +246,7 @@ async def test_rerank_results():
 @pytest.mark.asyncio
 async def test_search_tool_search():
     with patch(
-        "wet_mcp.server._run_configured_search",
+        "wet.server._run_configured_search",
         new_callable=AsyncMock,
         return_value=(
             '{"results": [{"url": "https://e", "title": "T", "snippet": "search_result"}], '
@@ -269,7 +259,7 @@ async def test_search_tool_search():
 
 @pytest.mark.asyncio
 async def test_search_tool_research():
-    with patch("wet_mcp.server._do_research", new_callable=AsyncMock) as mock_research:
+    with patch("wet.server._do_research", new_callable=AsyncMock) as mock_research:
         mock_research.return_value = "research_result"
         res = await server.search("research", query="test")
         assert "research_result" in text(res)
@@ -277,7 +267,7 @@ async def test_search_tool_research():
 
 @pytest.mark.asyncio
 async def test_search_tool_docs():
-    with patch("wet_mcp.server._do_docs_search", new_callable=AsyncMock) as mock_docs:
+    with patch("wet.server._do_docs_search", new_callable=AsyncMock) as mock_docs:
         mock_docs.return_value = "docs_result"
         res = await server.search("docs", query="test", library="test")
         assert "docs_result" in text(res)
@@ -291,7 +281,7 @@ async def test_search_tool_invalid():
 
 @pytest.mark.asyncio
 async def test_extract_tool_extract():
-    with patch("wet_mcp.server._extract", new_callable=AsyncMock) as mock_ext:
+    with patch("wet.server._extract", new_callable=AsyncMock) as mock_ext:
         mock_ext.return_value = "ext_result"
         res = await server.extract("extract", urls=["http://test"])
         assert "ext_result" in text(res)
@@ -299,7 +289,7 @@ async def test_extract_tool_extract():
 
 @pytest.mark.asyncio
 async def test_extract_tool_crawl():
-    with patch("wet_mcp.server._crawl", new_callable=AsyncMock) as mock_crawl:
+    with patch("wet.server._crawl", new_callable=AsyncMock) as mock_crawl:
         mock_crawl.return_value = "crawl_result"
         res = await server.extract("crawl", urls=["http://test"])
         assert "crawl_result" in text(res)
@@ -307,7 +297,7 @@ async def test_extract_tool_crawl():
 
 @pytest.mark.asyncio
 async def test_extract_tool_map():
-    with patch("wet_mcp.server._sitemap", new_callable=AsyncMock) as mock_map:
+    with patch("wet.server._sitemap", new_callable=AsyncMock) as mock_map:
         mock_map.return_value = "map_result"
         res = await server.extract("map", urls=["http://test"])
         assert "map_result" in text(res)
@@ -317,11 +307,11 @@ async def test_extract_tool_map():
 async def test_media_tool():
     # list_media is imported in server.py at top level
     with (
-        patch("wet_mcp.server.list_media", new_callable=AsyncMock) as mock_list,
+        patch("wet.server.list_media", new_callable=AsyncMock) as mock_list,
         patch(
-            "wet_mcp.sources.crawler.download_media", new_callable=AsyncMock
+            "wet.sources.crawler.download_media", new_callable=AsyncMock
         ) as mock_down,
-        patch("wet_mcp.llm.analyze_media", new_callable=AsyncMock) as mock_analyze,
+        patch("wet.llm.analyze_media", new_callable=AsyncMock) as mock_analyze,
     ):
         mock_list.return_value = "list_result"
         res = await server.media("list", url="http://test")
@@ -342,7 +332,7 @@ async def test_media_tool():
 
 @pytest.mark.asyncio
 async def test_help_tool():
-    with patch("wet_mcp.server.files") as mock_files:
+    with patch("wet.server.files") as mock_files:
         mock_path = MagicMock()
         mock_path.read_text.return_value = "help_text"
         mock_files.return_value.joinpath.return_value = mock_path
@@ -363,9 +353,9 @@ async def test_config_tool():
 @pytest.mark.asyncio
 async def test_do_research():
     with (
-        patch("wet_mcp.server.ensure_searxng", new_callable=AsyncMock) as mock_ensure,
+        patch("wet.server.ensure_searxng", new_callable=AsyncMock) as mock_ensure,
         patch(
-            "wet_mcp.sources.search_backends.run_search_chain", new_callable=AsyncMock
+            "wet.sources.search_backends.run_search_chain", new_callable=AsyncMock
         ) as mock_search,
     ):
         mock_ensure.return_value = "url"
@@ -376,11 +366,9 @@ async def test_do_research():
 
 @pytest.mark.asyncio
 async def test_fetch_and_chunk_docs():
-    with patch(
-        "wet_mcp.sources.docs.try_llms_txt", new_callable=AsyncMock
-    ) as mock_llms:
+    with patch("wet.sources.docs.try_llms_txt", new_callable=AsyncMock) as mock_llms:
         mock_llms.return_value = "content"
-        with patch("wet_mcp.sources.docs.chunk_llms_txt") as mock_chunk:
+        with patch("wet.sources.docs.chunk_llms_txt") as mock_chunk:
             mock_chunk.return_value = [{"content": "c"}] * 20
             chunks, pages = await server._fetch_and_chunk_docs("test")
             assert pages == 1
@@ -398,8 +386,8 @@ async def test_do_docs_search_cached():
     server._docs_db.search.return_value = [{"content": "res"}]
 
     with (
-        patch("wet_mcp.server._embed", new_callable=AsyncMock) as mock_embed,
-        patch("wet_mcp.server._rerank_results", new_callable=AsyncMock) as mock_rerank,
+        patch("wet.server._embed", new_callable=AsyncMock) as mock_embed,
+        patch("wet.server._rerank_results", new_callable=AsyncMock) as mock_rerank,
     ):
         mock_embed.return_value = [0.1]
         mock_rerank.return_value = [{"content": "res"}]
@@ -414,28 +402,28 @@ async def test_do_docs_search_new():
 
     with (
         patch(
-            "wet_mcp.server._discover_docs_url",
+            "wet.server._discover_docs_url",
             new_callable=AsyncMock,
             return_value=("http://docs", "http://repo", "npm", "desc"),
         ),
         patch(
-            "wet_mcp.server._background_index_and_search",
+            "wet.server._background_index_and_search",
             new_callable=AsyncMock,
         ),
         # Patch the launcher so the fire-and-forget background indexer is
         # never scheduled as an orphan Task that survives into event-loop
         # teardown (closing the loop with a pending task hangs on the
         # Windows IOCP / macOS kqueue selectors -> pytest-timeout kill).
-        patch("wet_mcp.server._launch_background_task", _close_and_dummy_task),
+        patch("wet.server._launch_background_task", _close_and_dummy_task),
         # Mock the immediate fallback so the test makes no real network IO
         # (the un-mocked searxng_search hit httpx against a junk URL and
         # could hang on a slow/blocked CI runner).
         patch(
-            "wet_mcp.server._do_immediate_fallback_search",
+            "wet.server._do_immediate_fallback_search",
             new_callable=AsyncMock,
             return_value={"results": []},
         ),
-        patch("wet_mcp.server.ensure_searxng", new_callable=AsyncMock),
+        patch("wet.server.ensure_searxng", new_callable=AsyncMock),
     ):
         res = await server._do_docs_search("newlib", "query")
         data = payload(res)
@@ -453,7 +441,7 @@ def _force_local_searxng_startup(monkeypatch):
 async def test_do_research_timeout(monkeypatch):
     _force_local_searxng_startup(monkeypatch)
     with patch(
-        "wet_mcp.server.ensure_searxng",
+        "wet.server.ensure_searxng",
         new_callable=AsyncMock,
         side_effect=TimeoutError,
     ):
@@ -465,7 +453,7 @@ async def test_do_research_timeout(monkeypatch):
 async def test_do_research_exception(monkeypatch):
     _force_local_searxng_startup(monkeypatch)
     with patch(
-        "wet_mcp.server.ensure_searxng",
+        "wet.server.ensure_searxng",
         new_callable=AsyncMock,
         side_effect=Exception("Test error"),
     ):
@@ -476,9 +464,9 @@ async def test_do_research_exception(monkeypatch):
 @pytest.mark.asyncio
 async def test_do_research_json_decode_error():
     with (
-        patch("wet_mcp.server.ensure_searxng", new_callable=AsyncMock) as mock_ensure,
+        patch("wet.server.ensure_searxng", new_callable=AsyncMock) as mock_ensure,
         patch(
-            "wet_mcp.sources.search_backends.run_search_chain", new_callable=AsyncMock
+            "wet.sources.search_backends.run_search_chain", new_callable=AsyncMock
         ) as mock_search,
     ):
         mock_ensure.return_value = "url"
@@ -490,9 +478,9 @@ async def test_do_research_json_decode_error():
 @pytest.mark.asyncio
 async def test_do_research_source_types():
     with (
-        patch("wet_mcp.server.ensure_searxng", new_callable=AsyncMock) as mock_ensure,
+        patch("wet.server.ensure_searxng", new_callable=AsyncMock) as mock_ensure,
         patch(
-            "wet_mcp.sources.search_backends.run_search_chain", new_callable=AsyncMock
+            "wet.sources.search_backends.run_search_chain", new_callable=AsyncMock
         ) as mock_search,
     ):
         mock_ensure.return_value = "url"
@@ -520,11 +508,11 @@ async def test_do_research_source_types():
 @pytest.mark.asyncio
 async def test_fetch_and_chunk_docs_github_raw():
     with (
-        patch("wet_mcp.sources.docs.try_llms_txt", new_callable=AsyncMock) as mock_llms,
+        patch("wet.sources.docs.try_llms_txt", new_callable=AsyncMock) as mock_llms,
         patch(
-            "wet_mcp.sources.docs._try_github_raw_docs", new_callable=AsyncMock
+            "wet.sources.docs._try_github_raw_docs", new_callable=AsyncMock
         ) as mock_gh,
-        patch("wet_mcp.sources.docs.chunk_markdown") as mock_chunk,
+        patch("wet.sources.docs.chunk_markdown") as mock_chunk,
     ):
         mock_llms.return_value = None
         mock_gh.return_value = [{"content": "c", "title": "t", "url": "u"}]
@@ -539,13 +527,13 @@ async def test_fetch_and_chunk_docs_github_raw():
 @pytest.mark.asyncio
 async def test_fetch_and_chunk_docs_crawl_fallback_to_gh():
     with (
-        patch("wet_mcp.sources.docs.try_llms_txt", new_callable=AsyncMock) as mock_llms,
+        patch("wet.sources.docs.try_llms_txt", new_callable=AsyncMock) as mock_llms,
         patch(
-            "wet_mcp.sources.docs._try_github_raw_docs", new_callable=AsyncMock
+            "wet.sources.docs._try_github_raw_docs", new_callable=AsyncMock
         ) as mock_gh,
-        patch("wet_mcp.sources.docs.chunk_markdown") as mock_chunk,
+        patch("wet.sources.docs.chunk_markdown") as mock_chunk,
         patch(
-            "wet_mcp.sources.docs.fetch_docs_pages", new_callable=AsyncMock
+            "wet.sources.docs.fetch_docs_pages", new_callable=AsyncMock
         ) as mock_fetch,
     ):
         mock_llms.return_value = None
@@ -563,14 +551,14 @@ async def test_fetch_and_chunk_docs_crawl_fallback_to_gh():
 
 @pytest.mark.asyncio
 async def test_do_docs_search_db_not_init():
-    with patch("wet_mcp.server._docs_db", None):
+    with patch("wet.server._docs_db", None):
         res = await server._do_docs_search("test", "test")
         assert "Docs database not initialized" in text(res)
 
 
 @pytest.mark.asyncio
 async def test_do_docs_search_force_reindex():
-    from wet_mcp.sources.docs import DISCOVERY_VERSION
+    from wet.sources.docs import DISCOVERY_VERSION
 
     server._docs_db.get_library.return_value = {
         "id": 1,
@@ -580,20 +568,20 @@ async def test_do_docs_search_force_reindex():
 
     with (
         patch(
-            "wet_mcp.server._discover_docs_url",
+            "wet.server._discover_docs_url",
             new_callable=AsyncMock,
             return_value=("http://docs", "", "", ""),
         ),
-        patch("wet_mcp.server._background_index_and_search", new_callable=AsyncMock),
+        patch("wet.server._background_index_and_search", new_callable=AsyncMock),
         # See test_do_docs_search_new: prevent orphan background Task and
         # mock the immediate fallback so the test is fully hermetic.
-        patch("wet_mcp.server._launch_background_task", _close_and_dummy_task),
+        patch("wet.server._launch_background_task", _close_and_dummy_task),
         patch(
-            "wet_mcp.server._do_immediate_fallback_search",
+            "wet.server._do_immediate_fallback_search",
             new_callable=AsyncMock,
             return_value={"results": []},
         ),
-        patch("wet_mcp.server.ensure_searxng", new_callable=AsyncMock),
+        patch("wet.server.ensure_searxng", new_callable=AsyncMock),
     ):
         res = await server._do_docs_search("test", "test")
         assert "indexing_in_progress" in text(res)
@@ -602,7 +590,7 @@ async def test_do_docs_search_force_reindex():
 @pytest.mark.asyncio
 async def test_do_docs_search_discovery_timeout():
     server._docs_db.get_library.return_value = None
-    with patch("wet_mcp.server.asyncio.wait_for", side_effect=TimeoutError):
+    with patch("wet.server.asyncio.wait_for", side_effect=TimeoutError):
         res = await server._do_docs_search("test", "test")
         assert "Could not find documentation URL" in text(res)
 
@@ -613,7 +601,7 @@ async def test_do_docs_search_no_docs_but_repo():
     server._docs_db.get_library.return_value = None
     with (
         patch(
-            "wet_mcp.server._discover_docs_url",
+            "wet.server._discover_docs_url",
             new_callable=AsyncMock,
             return_value=(
                 "http://github.com/test",
@@ -622,8 +610,8 @@ async def test_do_docs_search_no_docs_but_repo():
                 "",
             ),
         ),
-        patch("wet_mcp.server._background_index_and_search", new_callable=AsyncMock),
-        patch("wet_mcp.server.ensure_searxng", new_callable=AsyncMock),
+        patch("wet.server._background_index_and_search", new_callable=AsyncMock),
+        patch("wet.server.ensure_searxng", new_callable=AsyncMock),
     ):
         res = await server._do_docs_search("test", "test")
         assert "indexing_in_progress" in text(res)
@@ -635,13 +623,13 @@ async def test_do_docs_search_fallback_searxng():
     server._docs_db.get_library.return_value = None
     with (
         patch(
-            "wet_mcp.sources.docs.discover_library", new_callable=AsyncMock
+            "wet.sources.docs.discover_library", new_callable=AsyncMock
         ) as mock_discover,
-        patch("wet_mcp.server.ensure_searxng", new_callable=AsyncMock) as mock_ensure,
+        patch("wet.server.ensure_searxng", new_callable=AsyncMock) as mock_ensure,
         patch(
-            "wet_mcp.sources.search_backends.run_search_chain", new_callable=AsyncMock
+            "wet.sources.search_backends.run_search_chain", new_callable=AsyncMock
         ) as mock_search,
-        patch("wet_mcp.server._background_index_and_search", new_callable=AsyncMock),
+        patch("wet.server._background_index_and_search", new_callable=AsyncMock),
     ):
         mock_discover.return_value = None
         mock_ensure.return_value = "url"
@@ -657,9 +645,9 @@ async def test_do_docs_search_fetch_timeout():
     server._docs_db.get_library.return_value = None
     with (
         patch(
-            "wet_mcp.sources.docs.discover_library", new_callable=AsyncMock
+            "wet.sources.docs.discover_library", new_callable=AsyncMock
         ) as mock_discover,
-        patch("wet_mcp.server._background_index_and_search", new_callable=AsyncMock),
+        patch("wet.server._background_index_and_search", new_callable=AsyncMock),
     ):
         mock_discover.return_value = {"homepage": "http://docs"}
 
@@ -669,7 +657,7 @@ async def test_do_docs_search_fetch_timeout():
 
 @pytest.mark.asyncio
 async def test_with_timeout_success():
-    with patch("wet_mcp.server.settings") as mock_settings:
+    with patch("wet.server.settings") as mock_settings:
         mock_settings.tool_timeout = 1
 
         async def dummy_coro():
@@ -681,7 +669,7 @@ async def test_with_timeout_success():
 
 @pytest.mark.asyncio
 async def test_with_timeout_expired():
-    with patch("wet_mcp.server.settings") as mock_settings:
+    with patch("wet.server.settings") as mock_settings:
         mock_settings.tool_timeout = 0.1
 
         async def slow_coro():
@@ -794,7 +782,7 @@ async def test_config_models_action_removed():
 @pytest.mark.asyncio
 async def test_config_set_log_level():
     """Test changing log level via config set."""
-    with patch("wet_mcp.server.logger") as mock_logger:
+    with patch("wet.server.logger") as mock_logger:
         res = await server.config("set", key="log_level", value="warning")
         data = payload(res)
         assert data["status"] == "updated"
@@ -834,7 +822,7 @@ async def test_config_set_rejects_sync_enabled(mock_settings):
 @pytest.mark.asyncio
 async def test_help_tool_not_found():
     """Test help with a non-existent tool name."""
-    with patch("wet_mcp.server.files") as mock_files:
+    with patch("wet.server.files") as mock_files:
         mock_files.return_value.joinpath.return_value.read_text.side_effect = (
             FileNotFoundError("not found")
         )
@@ -846,7 +834,7 @@ async def test_help_tool_not_found():
 @pytest.mark.asyncio
 async def test_help_tool_exception():
     """Test help when file read raises a generic exception."""
-    with patch("wet_mcp.server.files") as mock_files:
+    with patch("wet.server.files") as mock_files:
         mock_files.return_value.joinpath.return_value.read_text.side_effect = (
             RuntimeError("disk failure")
         )
@@ -858,7 +846,7 @@ async def test_help_tool_exception():
 @pytest.mark.asyncio
 async def test_help_tool_extract():
     """Test help for 'extract' tool."""
-    with patch("wet_mcp.server.files") as mock_files:
+    with patch("wet.server.files") as mock_files:
         mock_path = MagicMock()
         mock_path.read_text.return_value = "# Extract Help\nExtract content."
         mock_files.return_value.joinpath.return_value = mock_path
@@ -869,7 +857,7 @@ async def test_help_tool_extract():
 @pytest.mark.asyncio
 async def test_help_tool_media():
     """Test help for 'media' tool."""
-    with patch("wet_mcp.server.files") as mock_files:
+    with patch("wet.server.files") as mock_files:
         mock_path = MagicMock()
         mock_path.read_text.return_value = "# Media Help\nMedia discovery."
         mock_files.return_value.joinpath.return_value = mock_path
@@ -880,7 +868,7 @@ async def test_help_tool_media():
 @pytest.mark.asyncio
 async def test_help_tool_config():
     """Test help for 'config' tool."""
-    with patch("wet_mcp.server.files") as mock_files:
+    with patch("wet.server.files") as mock_files:
         mock_path = MagicMock()
         mock_path.read_text.return_value = "# Config Help\nServer config."
         mock_files.return_value.joinpath.return_value = mock_path
@@ -905,10 +893,10 @@ async def test_lifespan_startup_no_github_token():
     }
     mock_fastmcp = MagicMock()
     with (
-        patch("wet_mcp.server._PerSubCache"),
-        patch("wet_mcp.server.make_docs_db", return_value=MagicMock()),
-        patch("wet_mcp.server.shutdown_crawler", new_callable=AsyncMock),
-        patch("wet_mcp.server.stop_searxng"),
+        patch("wet.server._PerSubCache"),
+        patch("wet.server.make_docs_db", return_value=MagicMock()),
+        patch("wet.server.shutdown_crawler", new_callable=AsyncMock),
+        patch("wet.server.stop_searxng"),
         patch.dict("os.environ", _home_vars, clear=True),
     ):
         async with server._lifespan(mock_fastmcp):
@@ -916,18 +904,18 @@ async def test_lifespan_startup_no_github_token():
 
 
 @pytest.mark.asyncio
-@patch("wet_mcp.server._warmup_searxng", new_callable=AsyncMock)
+@patch("wet.server._warmup_searxng", new_callable=AsyncMock)
 async def test_lifespan_startup_backend_init_error(mock_warmup):
     """Test lifespan handles backend init failure gracefully (lines 134-136)."""
     mock_fastmcp = MagicMock()
     with (
-        patch("wet_mcp.server._PerSubCache"),
-        patch("wet_mcp.server.make_docs_db", return_value=MagicMock()),
-        patch("wet_mcp.server.shutdown_crawler", new_callable=AsyncMock),
-        patch("wet_mcp.server.stop_searxng"),
-        patch("wet_mcp.server._warmup_searxng", new_callable=AsyncMock),
+        patch("wet.server._PerSubCache"),
+        patch("wet.server.make_docs_db", return_value=MagicMock()),
+        patch("wet.server.shutdown_crawler", new_callable=AsyncMock),
+        patch("wet.server.stop_searxng"),
+        patch("wet.server._warmup_searxng", new_callable=AsyncMock),
         patch(
-            "wet_mcp.server._init_embedding_backend",
+            "wet.server._init_embedding_backend",
             new_callable=AsyncMock,
             side_effect=Exception("backend init error"),
         ),
@@ -949,9 +937,9 @@ async def test_init_embedding_backend_cloud_cell():
     cell = MagicMock()
     cell.model = "text-embedding-3-large"
     with (
-        patch("wet_mcp.runtime.cell_configured", lambda t, settings=None: True),
-        patch("wet_mcp.server.model_cell", lambda t=None, settings=None: cell),
-        patch("wet_mcp.embedder.init_backend") as mock_init,
+        patch("wet.runtime.cell_configured", lambda t, settings=None: True),
+        patch("wet.server.model_cell", lambda t=None, settings=None: cell),
+        patch("wet.embedder.init_backend") as mock_init,
     ):
         mock_backend = MagicMock()
         mock_backend.check_available = AsyncMock(return_value=1536)
@@ -967,9 +955,9 @@ async def test_init_embedding_backend_cloud_cell_fail_no_local_fallback():
     cell = MagicMock()
     cell.model = "bad-model"
     with (
-        patch("wet_mcp.runtime.cell_configured", lambda t, settings=None: True),
-        patch("wet_mcp.server.model_cell", lambda t=None, settings=None: cell),
-        patch("wet_mcp.embedder.init_backend") as mock_init,
+        patch("wet.runtime.cell_configured", lambda t, settings=None: True),
+        patch("wet.server.model_cell", lambda t=None, settings=None: cell),
+        patch("wet.embedder.init_backend") as mock_init,
     ):
         mock_init.side_effect = Exception("model not available")
 
@@ -981,9 +969,9 @@ async def test_init_embedding_backend_cloud_cell_fail_no_local_fallback():
 async def test_init_embedding_backend_local_fail():
     """No cell + local available: a failing local init is handled (no raise)."""
     with (
-        patch("wet_mcp.runtime.cell_configured", lambda t, settings=None: False),
-        patch("wet_mcp.server.settings") as ms,
-        patch("wet_mcp.embedder.init_backend") as mock_init,
+        patch("wet.runtime.cell_configured", lambda t, settings=None: False),
+        patch("wet.server.settings") as ms,
+        patch("wet.embedder.init_backend") as mock_init,
     ):
         ms.local_embed_available.return_value = True
         ms.resolve_local_embedding_model.return_value = "local-model"
@@ -997,9 +985,9 @@ async def test_init_embedding_backend_local_fail():
 async def test_init_embedding_backend_local_not_available():
     """No cell + local check returns 0 dims: the backend is cleared."""
     with (
-        patch("wet_mcp.runtime.cell_configured", lambda t, settings=None: False),
-        patch("wet_mcp.server.settings") as ms,
-        patch("wet_mcp.embedder.init_backend") as mock_init,
+        patch("wet.runtime.cell_configured", lambda t, settings=None: False),
+        patch("wet.server.settings") as ms,
+        patch("wet.embedder.init_backend") as mock_init,
     ):
         ms.local_embed_available.return_value = True
         ms.resolve_local_embedding_model.return_value = "local-model"
@@ -1011,7 +999,7 @@ async def test_init_embedding_backend_local_not_available():
 
         await server._init_embedding_backend()
 
-        from wet_mcp import embedder
+        from wet import embedder
 
         assert embedder.get_backend() is None
 
@@ -1024,7 +1012,7 @@ async def test_init_embedding_backend_local_not_available():
 @pytest.mark.asyncio
 async def test_init_reranker_backend_disabled():
     """RERANK_ENABLED=false disables reranking entirely."""
-    with patch("wet_mcp.server.settings") as ms:
+    with patch("wet.server.settings") as ms:
         ms.rerank_enabled = False
 
         await server._init_reranker_backend()
@@ -1036,9 +1024,9 @@ async def test_init_reranker_backend_cloud_fail_no_local_fallback():
     cell = MagicMock()
     cell.model = "rerank-model"
     with (
-        patch("wet_mcp.runtime.cell_configured", lambda t, settings=None: True),
-        patch("wet_mcp.server.model_cell", lambda t=None, settings=None: cell),
-        patch("wet_mcp.reranker.init_reranker") as mock_init,
+        patch("wet.runtime.cell_configured", lambda t, settings=None: True),
+        patch("wet.server.model_cell", lambda t=None, settings=None: cell),
+        patch("wet.reranker.init_reranker") as mock_init,
     ):
         mock_init.side_effect = Exception("cloud not available")
 
@@ -1050,9 +1038,9 @@ async def test_init_reranker_backend_cloud_fail_no_local_fallback():
 async def test_init_reranker_backend_local_fail():
     """No cell + local available: a failing local init is handled (no raise)."""
     with (
-        patch("wet_mcp.runtime.cell_configured", lambda t, settings=None: False),
-        patch("wet_mcp.server.settings") as ms,
-        patch("wet_mcp.reranker.init_reranker") as mock_init,
+        patch("wet.runtime.cell_configured", lambda t, settings=None: False),
+        patch("wet.server.settings") as ms,
+        patch("wet.reranker.init_reranker") as mock_init,
     ):
         ms.local_rerank_available.return_value = True
         ms.resolve_local_rerank_model.return_value = "local-rerank"
@@ -1066,9 +1054,9 @@ async def test_init_reranker_backend_local_fail():
 async def test_init_reranker_backend_local_not_available():
     """No cell + local check false: the backend is cleared."""
     with (
-        patch("wet_mcp.runtime.cell_configured", lambda t, settings=None: False),
-        patch("wet_mcp.server.settings") as ms,
-        patch("wet_mcp.reranker.init_reranker") as mock_init,
+        patch("wet.runtime.cell_configured", lambda t, settings=None: False),
+        patch("wet.server.settings") as ms,
+        patch("wet.reranker.init_reranker") as mock_init,
     ):
         ms.local_rerank_available.return_value = True
         ms.resolve_local_rerank_model.return_value = "local-rerank"
@@ -1080,7 +1068,7 @@ async def test_init_reranker_backend_local_not_available():
 
         await server._init_reranker_backend()
 
-        from wet_mcp import reranker as reranker_mod
+        from wet import reranker as reranker_mod
 
         assert reranker_mod.get_reranker() is None
 
@@ -1093,7 +1081,7 @@ async def test_init_reranker_backend_local_not_available():
 @pytest.mark.asyncio
 async def test_embed_no_backend():
     """Test _embed returns None when no backend (line 325)."""
-    with patch("wet_mcp.embedder.resolve_embed_backend_for_request", return_value=None):
+    with patch("wet.embedder.resolve_embed_backend_for_request", return_value=None):
         res = await server._embed("hello")
         assert res is None
 
@@ -1101,8 +1089,8 @@ async def test_embed_no_backend():
 @pytest.mark.asyncio
 async def test_embed_query_mode():
     """Test _embed with is_query=True for the local backend (lines 327-330)."""
-    with patch("wet_mcp.embedder.get_backend") as mock_get:
-        from wet_mcp.embedder import LocalEmbeddingBackend
+    with patch("wet.embedder.get_backend") as mock_get:
+        from wet.embedder import LocalEmbeddingBackend
 
         mock_backend = MagicMock(spec=LocalEmbeddingBackend)
         mock_backend.embed_single_query.return_value = [0.5, 0.6]
@@ -1117,7 +1105,7 @@ async def test_embed_transient_exception_returns_none():
     """A transient embedding error degrades this call to None (keyword-only)."""
     from hull_core.providers.openai_spec import ProviderError
 
-    with patch("wet_mcp.embedder.resolve_embed_backend_for_request") as mock_get:
+    with patch("wet.embedder.resolve_embed_backend_for_request") as mock_get:
         mock_backend = MagicMock()
         mock_backend.embed_single.side_effect = ProviderError(
             status=429, detail="rate limit exceeded"
@@ -1131,7 +1119,7 @@ async def test_embed_transient_exception_returns_none():
 @pytest.mark.asyncio
 async def test_embed_permanent_exception_raises():
     """A permanent embedding error is surfaced loudly, not swallowed to None."""
-    with patch("wet_mcp.embedder.get_backend") as mock_get:
+    with patch("wet.embedder.get_backend") as mock_get:
         mock_backend = MagicMock()
         mock_backend.embed_single.side_effect = Exception("model does not exist")
         mock_get.return_value = mock_backend
@@ -1143,7 +1131,7 @@ async def test_embed_permanent_exception_raises():
 @pytest.mark.asyncio
 async def test_embed_batch_no_backend():
     """Test _embed_batch returns None when no backend (line 343)."""
-    with patch("wet_mcp.embedder.resolve_embed_backend_for_request", return_value=None):
+    with patch("wet.embedder.resolve_embed_backend_for_request", return_value=None):
         res = await server._embed_batch(["hello"])
         assert res is None
 
@@ -1153,7 +1141,7 @@ async def test_embed_batch_transient_exception_returns_none():
     """A transient batch embedding error degrades this call to None."""
     from hull_core.providers.openai_spec import ProviderError
 
-    with patch("wet_mcp.embedder.resolve_embed_backend_for_request") as mock_get:
+    with patch("wet.embedder.resolve_embed_backend_for_request") as mock_get:
         mock_backend = MagicMock()
         mock_backend.embed_texts.side_effect = ProviderError(
             status=429, detail="rate limit exceeded"
@@ -1167,7 +1155,7 @@ async def test_embed_batch_transient_exception_returns_none():
 @pytest.mark.asyncio
 async def test_embed_batch_permanent_exception_raises():
     """A permanent batch embedding error is surfaced loudly, not swallowed."""
-    with patch("wet_mcp.embedder.get_backend") as mock_get:
+    with patch("wet.embedder.get_backend") as mock_get:
         mock_backend = MagicMock()
         mock_backend.embed_texts.side_effect = Exception("model does not exist")
         mock_get.return_value = mock_backend
@@ -1179,7 +1167,7 @@ async def test_embed_batch_permanent_exception_raises():
 @pytest.mark.asyncio
 async def test_rerank_results_exception():
     """Test _rerank_results falls back on exception (lines 377-380)."""
-    with patch("wet_mcp.reranker.resolve_rerank_backend_for_request") as mock_get:
+    with patch("wet.reranker.resolve_rerank_backend_for_request") as mock_get:
         mock_reranker = MagicMock()
         mock_reranker.rerank.side_effect = Exception("rerank error")
         mock_get.return_value = mock_reranker
@@ -1209,7 +1197,7 @@ async def test_search_tool_searxng_timeout(monkeypatch):
     """Test search handles SearXNG timeout (lines 516-517)."""
     _force_local_searxng_startup(monkeypatch)
     with patch(
-        "wet_mcp.server.ensure_searxng",
+        "wet.server.ensure_searxng",
         new_callable=AsyncMock,
         side_effect=TimeoutError,
     ):
@@ -1222,7 +1210,7 @@ async def test_search_tool_searxng_exception(monkeypatch):
     """Test search handles SearXNG startup exception (lines 518-519)."""
     _force_local_searxng_startup(monkeypatch)
     with patch(
-        "wet_mcp.server.ensure_searxng",
+        "wet.server.ensure_searxng",
         new_callable=AsyncMock,
         side_effect=Exception("docker not found"),
     ):
@@ -1310,7 +1298,7 @@ async def test_media_tool_download_missing_urls():
 @pytest.mark.asyncio
 async def test_media_tool_download_security_check():
     """Test media download output_dir security check (lines 722-730)."""
-    with patch("wet_mcp.server.settings") as ms:
+    with patch("wet.server.settings") as ms:
         ms.download_dir = "/tmp/wet_downloads"
         ms.tool_timeout = 0
         res = await server.media(
@@ -1384,14 +1372,14 @@ async def test_config_docs_reindex_db_not_init():
 async def test_fetch_and_chunk_docs_llms_txt_too_few():
     """Test llms.txt fallthrough when too few chunks (line 1037)."""
     with (
-        patch("wet_mcp.sources.docs.try_llms_txt", new_callable=AsyncMock) as mock_llms,
+        patch("wet.sources.docs.try_llms_txt", new_callable=AsyncMock) as mock_llms,
         patch(
-            "wet_mcp.sources.docs._try_github_raw_docs", new_callable=AsyncMock
+            "wet.sources.docs._try_github_raw_docs", new_callable=AsyncMock
         ) as mock_gh,
-        patch("wet_mcp.sources.docs.chunk_llms_txt") as mock_chunk_llms,
-        patch("wet_mcp.sources.docs.chunk_markdown") as mock_chunk_md,
+        patch("wet.sources.docs.chunk_llms_txt") as mock_chunk_llms,
+        patch("wet.sources.docs.chunk_markdown") as mock_chunk_md,
         patch(
-            "wet_mcp.sources.docs.fetch_docs_pages", new_callable=AsyncMock
+            "wet.sources.docs.fetch_docs_pages", new_callable=AsyncMock
         ) as mock_fetch,
     ):
         mock_llms.return_value = "small content"
@@ -1412,13 +1400,13 @@ async def test_fetch_and_chunk_docs_llms_txt_too_few():
 async def test_fetch_and_chunk_docs_tier2_crawl():
     """Test Tier 2 crawl produces chunks with title injection (lines 1085-1092)."""
     with (
-        patch("wet_mcp.sources.docs.try_llms_txt", new_callable=AsyncMock) as mock_llms,
+        patch("wet.sources.docs.try_llms_txt", new_callable=AsyncMock) as mock_llms,
         patch(
-            "wet_mcp.sources.docs._try_github_raw_docs", new_callable=AsyncMock
+            "wet.sources.docs._try_github_raw_docs", new_callable=AsyncMock
         ) as mock_gh,
-        patch("wet_mcp.sources.docs.chunk_markdown") as mock_chunk_md,
+        patch("wet.sources.docs.chunk_markdown") as mock_chunk_md,
         patch(
-            "wet_mcp.sources.docs.fetch_docs_pages", new_callable=AsyncMock
+            "wet.sources.docs.fetch_docs_pages", new_callable=AsyncMock
         ) as mock_fetch,
     ):
         mock_llms.return_value = None
@@ -1444,16 +1432,16 @@ async def test_fetch_and_chunk_docs_tier2_crawl():
 async def test_fetch_and_chunk_docs_readme_fallback():
     """Test Tier 3 README fallback (lines 1109-1121)."""
     with (
-        patch("wet_mcp.sources.docs.try_llms_txt", new_callable=AsyncMock) as mock_llms,
+        patch("wet.sources.docs.try_llms_txt", new_callable=AsyncMock) as mock_llms,
         patch(
-            "wet_mcp.sources.docs._try_github_raw_docs", new_callable=AsyncMock
+            "wet.sources.docs._try_github_raw_docs", new_callable=AsyncMock
         ) as mock_gh,
-        patch("wet_mcp.sources.docs.chunk_markdown") as mock_chunk_md,
+        patch("wet.sources.docs.chunk_markdown") as mock_chunk_md,
         patch(
-            "wet_mcp.sources.docs.fetch_docs_pages", new_callable=AsyncMock
+            "wet.sources.docs.fetch_docs_pages", new_callable=AsyncMock
         ) as mock_fetch,
         patch(
-            "wet_mcp.sources.docs._fetch_github_readme", new_callable=AsyncMock
+            "wet.sources.docs._fetch_github_readme", new_callable=AsyncMock
         ) as mock_readme,
     ):
         mock_llms.return_value = None
@@ -1474,16 +1462,16 @@ async def test_fetch_and_chunk_docs_readme_fallback():
 async def test_fetch_and_chunk_docs_all_tiers_fail():
     """Test all tiers fail returns empty (line 1120-1121)."""
     with (
-        patch("wet_mcp.sources.docs.try_llms_txt", new_callable=AsyncMock) as mock_llms,
+        patch("wet.sources.docs.try_llms_txt", new_callable=AsyncMock) as mock_llms,
         patch(
-            "wet_mcp.sources.docs._try_github_raw_docs", new_callable=AsyncMock
+            "wet.sources.docs._try_github_raw_docs", new_callable=AsyncMock
         ) as mock_gh,
-        patch("wet_mcp.sources.docs.chunk_markdown") as mock_chunk_md,
+        patch("wet.sources.docs.chunk_markdown") as mock_chunk_md,
         patch(
-            "wet_mcp.sources.docs.fetch_docs_pages", new_callable=AsyncMock
+            "wet.sources.docs.fetch_docs_pages", new_callable=AsyncMock
         ) as mock_fetch,
         patch(
-            "wet_mcp.sources.docs._fetch_github_readme", new_callable=AsyncMock
+            "wet.sources.docs._fetch_github_readme", new_callable=AsyncMock
         ) as mock_readme,
     ):
         mock_llms.return_value = None
@@ -1507,14 +1495,14 @@ async def test_fetch_and_chunk_docs_all_tiers_fail():
 async def test_background_index_fetch_timeout():
     """Test background indexing handles fetch timeout (lines 1160-1163)."""
     with (
-        patch("wet_mcp.sources.docs._normalize_docs_url", return_value="http://docs"),
+        patch("wet.sources.docs._normalize_docs_url", return_value="http://docs"),
         patch(
-            "wet_mcp.server._fetch_and_chunk_docs",
+            "wet.server._fetch_and_chunk_docs",
             new_callable=AsyncMock,
             side_effect=TimeoutError,
         ),
         patch(
-            "wet_mcp.server.ensure_searxng",
+            "wet.server.ensure_searxng",
             new_callable=AsyncMock,
             side_effect=Exception("no searxng"),
         ),
@@ -1542,7 +1530,7 @@ async def test_background_index_marks_library_indexed(tmp_path):
     writes it, a library indexed here would stay NULL forever and read as
     permanently stale (``hooks/SessionStart_check_docs_freshness.sh``).
     """
-    from wet_mcp.db import DocsDB
+    from wet.db import DocsDB
 
     db = DocsDB(tmp_path / "docs.db", embedding_dims=0)
     lib_id = db.upsert_library(name="testlib", docs_url="http://docs")
@@ -1567,16 +1555,14 @@ async def test_background_index_marks_library_indexed(tmp_path):
     server._docs_db = db
     try:
         with (
+            patch("wet.sources.docs._normalize_docs_url", return_value="http://docs"),
             patch(
-                "wet_mcp.sources.docs._normalize_docs_url", return_value="http://docs"
-            ),
-            patch(
-                "wet_mcp.server._fetch_and_chunk_docs",
+                "wet.server._fetch_and_chunk_docs",
                 new_callable=AsyncMock,
                 return_value=(chunks, 5),
             ),
             patch(
-                "wet_mcp.embedder.resolve_embed_backend_for_request",
+                "wet.embedder.resolve_embed_backend_for_request",
                 return_value=None,
             ),
         ):
@@ -1606,21 +1592,21 @@ async def test_background_index_marks_library_indexed(tmp_path):
 async def test_background_index_with_searxng_fallback():
     """Test background indexing SearXNG fallback (lines 1185-1207)."""
     with (
-        patch("wet_mcp.sources.docs._normalize_docs_url", return_value="http://docs"),
+        patch("wet.sources.docs._normalize_docs_url", return_value="http://docs"),
         patch(
-            "wet_mcp.server._fetch_and_chunk_docs",
+            "wet.server._fetch_and_chunk_docs",
             new_callable=AsyncMock,
         ) as mock_fetch,
         patch(
-            "wet_mcp.server.ensure_searxng",
+            "wet.server.ensure_searxng",
             new_callable=AsyncMock,
             return_value="http://searxng",
         ),
         patch(
-            "wet_mcp.sources.search_backends.run_search_chain",
+            "wet.sources.search_backends.run_search_chain",
             new_callable=AsyncMock,
         ) as mock_search,
-        patch("wet_mcp.server._embed_batch", new_callable=AsyncMock) as mock_embed,
+        patch("wet.server._embed_batch", new_callable=AsyncMock) as mock_embed,
     ):
         # First call returns few chunks, second call returns more
         mock_fetch.side_effect = [
@@ -1654,21 +1640,21 @@ async def test_background_index_with_searxng_fallback():
 async def test_background_index_with_language():
     """Test background indexing with language context (line 1168-1169)."""
     with (
-        patch("wet_mcp.sources.docs._normalize_docs_url", return_value="http://docs"),
+        patch("wet.sources.docs._normalize_docs_url", return_value="http://docs"),
         patch(
-            "wet_mcp.server._fetch_and_chunk_docs",
+            "wet.server._fetch_and_chunk_docs",
             new_callable=AsyncMock,
         ) as mock_fetch,
         patch(
-            "wet_mcp.server.ensure_searxng",
+            "wet.server.ensure_searxng",
             new_callable=AsyncMock,
             return_value="http://searxng",
         ),
         patch(
-            "wet_mcp.sources.search_backends.run_search_chain",
+            "wet.sources.search_backends.run_search_chain",
             new_callable=AsyncMock,
         ) as mock_search,
-        patch("wet_mcp.server._embed_batch", new_callable=AsyncMock) as mock_embed,
+        patch("wet.server._embed_batch", new_callable=AsyncMock) as mock_embed,
     ):
         mock_fetch.return_value = ([{"content": "c1"}], 1)
         mock_search.return_value = json.dumps({"results": []})
@@ -1694,13 +1680,13 @@ async def test_background_index_with_language():
 async def test_background_index_embeddings_and_store():
     """Test background indexing generates embeddings and stores (lines 1218-1249)."""
     with (
-        patch("wet_mcp.sources.docs._normalize_docs_url", return_value="http://docs"),
+        patch("wet.sources.docs._normalize_docs_url", return_value="http://docs"),
         patch(
-            "wet_mcp.server._fetch_and_chunk_docs",
+            "wet.server._fetch_and_chunk_docs",
             new_callable=AsyncMock,
         ) as mock_fetch,
-        patch("wet_mcp.embedder.get_backend") as mock_get_backend,
-        patch("wet_mcp.server._embed_batch", new_callable=AsyncMock) as mock_embed,
+        patch("wet.embedder.get_backend") as mock_get_backend,
+        patch("wet.server._embed_batch", new_callable=AsyncMock) as mock_embed,
     ):
         chunks = [
             {"content": "chunk1", "title": "T1", "heading_path": "H1"},
@@ -1734,14 +1720,14 @@ async def test_background_index_embeddings_and_store():
 async def test_background_index_embed_timeout():
     """Test background indexing handles embed timeout (lines 1238-1239)."""
     with (
-        patch("wet_mcp.sources.docs._normalize_docs_url", return_value="http://docs"),
+        patch("wet.sources.docs._normalize_docs_url", return_value="http://docs"),
         patch(
-            "wet_mcp.server._fetch_and_chunk_docs",
+            "wet.server._fetch_and_chunk_docs",
             new_callable=AsyncMock,
         ) as mock_fetch,
-        patch("wet_mcp.embedder.get_backend") as mock_get_backend,
+        patch("wet.embedder.get_backend") as mock_get_backend,
         patch(
-            "wet_mcp.server._embed_batch",
+            "wet.server._embed_batch",
             new_callable=AsyncMock,
             side_effect=TimeoutError,
         ),
@@ -1773,7 +1759,7 @@ async def test_background_index_embed_timeout():
 async def test_background_index_exception():
     """Test background indexing handles top-level exception (line 1254)."""
     with patch(
-        "wet_mcp.sources.docs._normalize_docs_url",
+        "wet.sources.docs._normalize_docs_url",
         side_effect=Exception("unexpected error"),
     ):
         # Should not raise
@@ -1795,14 +1781,14 @@ async def test_background_index_exception():
 async def test_background_index_no_chunks():
     """Test background indexing logs error when no chunks found."""
     with (
-        patch("wet_mcp.sources.docs._normalize_docs_url", return_value="http://docs"),
+        patch("wet.sources.docs._normalize_docs_url", return_value="http://docs"),
         patch(
-            "wet_mcp.server._fetch_and_chunk_docs",
+            "wet.server._fetch_and_chunk_docs",
             new_callable=AsyncMock,
             return_value=([], 0),
         ),
         patch(
-            "wet_mcp.server.ensure_searxng",
+            "wet.server.ensure_searxng",
             new_callable=AsyncMock,
             side_effect=Exception("no searxng"),
         ),
@@ -1829,23 +1815,23 @@ async def test_background_index_fallback_alt_timeout():
     """Test background indexing SearXNG fallback with alt fetch timeout (lines 1201-1202)."""
     with (
         patch(
-            "wet_mcp.sources.docs._normalize_docs_url",
+            "wet.sources.docs._normalize_docs_url",
             return_value="http://docs.example.com",
         ),
         patch(
-            "wet_mcp.server._fetch_and_chunk_docs",
+            "wet.server._fetch_and_chunk_docs",
             new_callable=AsyncMock,
         ) as mock_fetch,
         patch(
-            "wet_mcp.server.ensure_searxng",
+            "wet.server.ensure_searxng",
             new_callable=AsyncMock,
             return_value="http://searxng",
         ),
         patch(
-            "wet_mcp.sources.search_backends.run_search_chain",
+            "wet.sources.search_backends.run_search_chain",
             new_callable=AsyncMock,
         ) as mock_search,
-        patch("wet_mcp.server._embed_batch", new_callable=AsyncMock) as mock_embed,
+        patch("wet.server._embed_batch", new_callable=AsyncMock) as mock_embed,
     ):
         # First call returns few, alt fetch times out
         mock_fetch.side_effect = [
@@ -1880,23 +1866,23 @@ async def test_background_index_fallback_same_netloc():
     """Test background indexing skips same netloc in fallback (line 1194)."""
     with (
         patch(
-            "wet_mcp.sources.docs._normalize_docs_url",
+            "wet.sources.docs._normalize_docs_url",
             return_value="http://docs.example.com",
         ),
         patch(
-            "wet_mcp.server._fetch_and_chunk_docs",
+            "wet.server._fetch_and_chunk_docs",
             new_callable=AsyncMock,
         ) as mock_fetch,
         patch(
-            "wet_mcp.server.ensure_searxng",
+            "wet.server.ensure_searxng",
             new_callable=AsyncMock,
             return_value="http://searxng",
         ),
         patch(
-            "wet_mcp.sources.search_backends.run_search_chain",
+            "wet.sources.search_backends.run_search_chain",
             new_callable=AsyncMock,
         ) as mock_search,
-        patch("wet_mcp.server._embed_batch", new_callable=AsyncMock) as mock_embed,
+        patch("wet.server._embed_batch", new_callable=AsyncMock) as mock_embed,
     ):
         mock_fetch.return_value = ([{"content": "c1"}], 1)
         mock_search.return_value = json.dumps(
@@ -1941,7 +1927,7 @@ async def test_search_cached_index_no_results():
     }
     server._docs_db.search.return_value = []
 
-    with patch("wet_mcp.server._embed", new_callable=AsyncMock, return_value=[0.1]):
+    with patch("wet.server._embed", new_callable=AsyncMock, return_value=[0.1]):
         res = await server._search_cached_index("testlib", "query", None, 10)
         assert res is None
 
@@ -1982,12 +1968,12 @@ async def test_discover_docs_url_searxng_timeout():
     """Test _discover_docs_url SearXNG fallback timeout (lines 1388-1389)."""
     with (
         patch(
-            "wet_mcp.sources.docs.discover_library",
+            "wet.sources.docs.discover_library",
             new_callable=AsyncMock,
             return_value=None,
         ),
         patch(
-            "wet_mcp.server.ensure_searxng",
+            "wet.server.ensure_searxng",
             new_callable=AsyncMock,
             side_effect=TimeoutError,
         ),
@@ -2003,17 +1989,17 @@ async def test_discover_docs_url_searxng_json_error():
     """Test _discover_docs_url SearXNG JSON decode error (lines 1390-1391)."""
     with (
         patch(
-            "wet_mcp.sources.docs.discover_library",
+            "wet.sources.docs.discover_library",
             new_callable=AsyncMock,
             return_value=None,
         ),
         patch(
-            "wet_mcp.server.ensure_searxng",
+            "wet.server.ensure_searxng",
             new_callable=AsyncMock,
             return_value="http://searxng",
         ),
         patch(
-            "wet_mcp.sources.search_backends.run_search_chain",
+            "wet.sources.search_backends.run_search_chain",
             new_callable=AsyncMock,
             return_value="invalid json",
         ),
@@ -2029,17 +2015,17 @@ async def test_discover_docs_url_with_language():
     """Test _discover_docs_url with language context."""
     with (
         patch(
-            "wet_mcp.sources.docs.discover_library",
+            "wet.sources.docs.discover_library",
             new_callable=AsyncMock,
             return_value=None,
         ),
         patch(
-            "wet_mcp.server.ensure_searxng",
+            "wet.server.ensure_searxng",
             new_callable=AsyncMock,
             return_value="http://searxng",
         ),
         patch(
-            "wet_mcp.sources.search_backends.run_search_chain",
+            "wet.sources.search_backends.run_search_chain",
             new_callable=AsyncMock,
         ) as mock_search,
     ):
@@ -2058,17 +2044,17 @@ async def test_discover_docs_url_discovery_timeout():
     """Test _discover_docs_url discovery timeout."""
     with (
         patch(
-            "wet_mcp.sources.docs.discover_library",
+            "wet.sources.docs.discover_library",
             new_callable=AsyncMock,
             side_effect=TimeoutError,
         ),
         patch(
-            "wet_mcp.server.ensure_searxng",
+            "wet.server.ensure_searxng",
             new_callable=AsyncMock,
             return_value="http://searxng",
         ),
         patch(
-            "wet_mcp.sources.search_backends.run_search_chain",
+            "wet.sources.search_backends.run_search_chain",
             new_callable=AsyncMock,
             return_value=json.dumps({"results": []}),
         ),
@@ -2093,21 +2079,21 @@ async def test_do_docs_search_fallback_exception():
 
     with (
         patch(
-            "wet_mcp.server._search_cached_index",
+            "wet.server._search_cached_index",
             new_callable=AsyncMock,
             return_value=None,
         ),
         patch(
-            "wet_mcp.server._discover_docs_url",
+            "wet.server._discover_docs_url",
             new_callable=AsyncMock,
             return_value=("http://docs", "", "", ""),
         ),
         patch(
-            "wet_mcp.server._background_index_and_search",
+            "wet.server._background_index_and_search",
             new_callable=AsyncMock,
         ),
         patch(
-            "wet_mcp.server._do_immediate_fallback_search",
+            "wet.server._do_immediate_fallback_search",
             new_callable=AsyncMock,
             return_value={"results": []},
         ),
@@ -2126,7 +2112,7 @@ async def test_do_docs_search_fallback_exception():
 @pytest.mark.asyncio
 async def test_with_timeout_task_exception():
     """Test _with_timeout propagates task exception when done within timeout."""
-    with patch("wet_mcp.server.settings") as mock_settings:
+    with patch("wet.server.settings") as mock_settings:
         mock_settings.tool_timeout = 5
 
         async def failing_coro():

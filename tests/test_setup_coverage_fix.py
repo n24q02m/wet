@@ -1,11 +1,11 @@
 from unittest.mock import patch
 
-from wet_mcp.setup import patch_searxng_version, patch_searxng_windows
+from wet.setup import patch_searxng_version, patch_searxng_windows
 
 
-@patch("wet_mcp.setup.logger")
-@patch("wet_mcp.setup.Path")
-@patch("wet_mcp.setup._find_searx_package_dir")
+@patch("wet.setup.logger")
+@patch("wet.setup.Path")
+@patch("wet.setup._find_searx_package_dir")
 def test_patch_searxng_version_no_dir_robust(mock_find_dir, mock_path, mock_logger):
     """Verify patch_searxng_version returns early without any side effects if searx dir is missing."""
     mock_find_dir.return_value = None
@@ -20,10 +20,10 @@ def test_patch_searxng_version_no_dir_robust(mock_find_dir, mock_path, mock_logg
     mock_logger.error.assert_not_called()
 
 
-@patch("wet_mcp.setup.platform.system")
-@patch("wet_mcp.setup.logger")
-@patch("wet_mcp.setup.Path")
-@patch("wet_mcp.setup._find_searx_package_dir")
+@patch("wet.setup.platform.system")
+@patch("wet.setup.logger")
+@patch("wet.setup.Path")
+@patch("wet.setup._find_searx_package_dir")
 def test_patch_searxng_windows_no_dir_robust(
     mock_find_dir, mock_path, mock_logger, mock_system
 ):

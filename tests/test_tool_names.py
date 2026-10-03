@@ -1,4 +1,4 @@
-"""Protocol contract for the tool names exposed by wet (f. wet-mcp).
+"""Protocol contract for the tool names exposed by wet (f. wet).
 
 De-host: there is no stdio spawn anymore, so the probe lists tools
 in-process from the FastMCP instance instead of opening a client session.
@@ -29,7 +29,7 @@ async def _list_tool_names() -> list[str]:
     if _TOOL_NAMES is not None:
         return _TOOL_NAMES
 
-    from wet_mcp.server import mcp
+    from wet.server import mcp
 
     tools = await mcp.list_tools()
     _TOOL_NAMES = sorted(tool.name for tool in tools)

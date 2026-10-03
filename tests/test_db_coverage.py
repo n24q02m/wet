@@ -22,37 +22,35 @@ import pytest
 # ---------------------------------------------------------------------------
 _src_root = Path(__file__).resolve().parent.parent / "src"
 
-if "wet_mcp" not in sys.modules:
-    _pkg = types.ModuleType("wet_mcp")
-    _pkg.__path__ = [str(_src_root / "wet_mcp")]
-    sys.modules["wet_mcp"] = _pkg
+if "wet" not in sys.modules:
+    _pkg = types.ModuleType("wet")
+    _pkg.__path__ = [str(_src_root / "wet")]
+    sys.modules["wet"] = _pkg
 
-if "wet_mcp.sources" not in sys.modules:
-    _sources_pkg = types.ModuleType("wet_mcp.sources")
-    _sources_pkg.__path__ = [str(_src_root / "wet_mcp" / "sources")]
-    sys.modules["wet_mcp.sources"] = _sources_pkg
+if "wet.sources" not in sys.modules:
+    _sources_pkg = types.ModuleType("wet.sources")
+    _sources_pkg.__path__ = [str(_src_root / "wet" / "sources")]
+    sys.modules["wet.sources"] = _sources_pkg
 
-if "wet_mcp.sources.docs" not in sys.modules:
-    _docs_file = _src_root / "wet_mcp" / "sources" / "docs.py"
-    _docs_spec = importlib.util.spec_from_file_location(
-        "wet_mcp.sources.docs", _docs_file
-    )
+if "wet.sources.docs" not in sys.modules:
+    _docs_file = _src_root / "wet" / "sources" / "docs.py"
+    _docs_spec = importlib.util.spec_from_file_location("wet.sources.docs", _docs_file)
     assert _docs_spec is not None
     _docs_mod = importlib.util.module_from_spec(_docs_spec)
-    sys.modules["wet_mcp.sources.docs"] = _docs_mod
+    sys.modules["wet.sources.docs"] = _docs_mod
     _docs_spec.loader.exec_module(_docs_mod)
 else:
-    _docs_mod = sys.modules["wet_mcp.sources.docs"]
+    _docs_mod = sys.modules["wet.sources.docs"]
 
-if "wet_mcp.db" not in sys.modules:
-    _db_file = _src_root / "wet_mcp" / "db.py"
-    _db_spec = importlib.util.spec_from_file_location("wet_mcp.db", _db_file)
+if "wet.db" not in sys.modules:
+    _db_file = _src_root / "wet" / "db.py"
+    _db_spec = importlib.util.spec_from_file_location("wet.db", _db_file)
     assert _db_spec is not None
     _db_mod = importlib.util.module_from_spec(_db_spec)
-    sys.modules["wet_mcp.db"] = _db_mod
+    sys.modules["wet.db"] = _db_mod
     _db_spec.loader.exec_module(_db_mod)
 else:
-    _db_mod = sys.modules["wet_mcp.db"]
+    _db_mod = sys.modules["wet.db"]
 
 DocsDB = _db_mod.DocsDB
 _build_fts_queries = _db_mod._build_fts_queries
@@ -681,7 +679,7 @@ class TestMarkLibraryIndexed:
     def test_mark_library_indexed_all_cols(self, db):
         """Update last_indexed_at and total_versions (line 580)."""
         lib_id = db.upsert_library(name="marklib")
-        with patch("wet_mcp.db._now_ts", return_value=12345.6):
+        with patch("wet.db._now_ts", return_value=12345.6):
             db.mark_library_indexed(lib_id, total_versions=42)
 
         row = db._conn.execute(
@@ -700,7 +698,7 @@ class TestMarkLibraryIndexed:
         ).fetchone()
         assert row_before["total_versions"] == 0
 
-        with patch("wet_mcp.db._now_ts", return_value=67890.0):
+        with patch("wet.db._now_ts", return_value=67890.0):
             db.mark_library_indexed(lib_id)
 
         row = db._conn.execute(

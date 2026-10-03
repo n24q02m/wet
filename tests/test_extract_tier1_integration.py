@@ -37,7 +37,7 @@ def _load_urls() -> list[str]:
 @pytest.mark.asyncio
 async def test_tier1_extract_success_rate() -> None:
     """At least 80% of tier-1 URLs return smart-chunks output without error."""
-    from wet_mcp.sources.crawler import extract
+    from wet.sources.crawler import extract
 
     urls = _load_urls()
     assert urls, "tier1_popular.txt fixture is empty"

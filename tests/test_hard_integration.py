@@ -23,8 +23,8 @@ logger.add(sys.stdout, level="INFO")
 
 async def test_search_quality():
     """Test search result quality and relevance."""
-    from wet_mcp.searxng_runner import ensure_searxng
-    from wet_mcp.sources.searxng import search
+    from wet.searxng_runner import ensure_searxng
+    from wet.sources.searxng import search
 
     print("\n" + "=" * 60)
     print("TEST: Search Quality")
@@ -112,7 +112,7 @@ async def test_search_quality():
 
 async def test_extract_js_heavy():
     """Test extraction from JavaScript-heavy sites."""
-    from wet_mcp.sources.crawler import extract
+    from wet.sources.crawler import extract
 
     print("\n" + "=" * 60)
     print("TEST: JavaScript-Heavy Site Extraction")
@@ -201,7 +201,7 @@ async def test_extract_js_heavy():
 
 async def test_antibot_sites():
     """Test sites with anti-bot protection."""
-    from wet_mcp.sources.crawler import extract
+    from wet.sources.crawler import extract
 
     print("\n" + "=" * 60)
     print("TEST: Anti-Bot Protected Sites")
@@ -268,7 +268,7 @@ async def test_antibot_sites():
 
 async def test_crawl_depth():
     """Test multi-page crawling with depth control."""
-    from wet_mcp.sources.crawler import crawl
+    from wet.sources.crawler import crawl
 
     print("\n" + "=" * 60)
     print("TEST: Multi-page Crawl with Depth")
@@ -319,7 +319,7 @@ async def test_crawl_depth():
 
 async def test_media_detection():
     """Test media detection on pages with various media types."""
-    from wet_mcp.sources.crawler import list_media
+    from wet.sources.crawler import list_media
 
     print("\n" + "=" * 60)
     print("TEST: Media Detection")
@@ -370,7 +370,7 @@ async def test_media_detection():
 
 async def main():
     """Run all harder integration tests."""
-    from wet_mcp.searxng_runner import stop_searxng
+    from wet.searxng_runner import stop_searxng
 
     print("\n" + "#" * 60)
     print("# WET MCP - Harder Integration Tests")

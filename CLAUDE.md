@@ -1,18 +1,18 @@
-# wet-mcp
+# wet
 
 Python MCP Server: web search, content extraction, library docs, structured extraction.
 Xem `AGENTS.md` va `README.md` de hieu architecture va configuration.
 
 ## Cau truc
 
-- `src/wet_mcp/` -- Package chinh (src layout)
+- `src/wet/` -- Package chinh (src layout)
   - `server.py` -- FastMCP server (orchestrator, file lon nhat)
   - `config.py` -- Pydantic Settings (singleton)
   - `cache.py`, `db.py`, `embedder.py`, `reranker.py` -- Infrastructure
   - `relay_setup.py` -- `apply_config` / `load_config_from_file` env-applier used by the OAuth setup form (live setup UX = OAuth-AS browser form at `<PUBLIC_URL>/authorize`; the `ensure_config` create-session/poll path is legacy/unused in production)
   - `relay_schema.py` -- Relay form schema (2 modes: local/cloud)
   - `sync/` -- Docs sync backends: `gdrive.py` (Google Drive, OAuth Device Code, httpx) + `s3.py` (S3/R2/B2 operator mode) + `base.py`
-  - `token_store.py` -- Local token storage cho OAuth (~/.wet-mcp/tokens/)
+  - `token_store.py` -- Local token storage cho OAuth (~/.wet/tokens/)
   - `setup_tool.py` -- Warmup + setup-sync logic (MCP-callable)
   - `sources/` -- Data source integrations (crawler, docs, searxng)
 - `tests/` -- Mirror source modules
@@ -29,14 +29,14 @@ uv run ty check                    # Type check (ty lenient config)
 uv run pytest                      # Test tat ca (integration excluded by default)
 uv run pytest -m integration       # Chi integration tests
 uv run pytest tests/test_config.py::test_function_name -v  # Test don le
-uv run wet-mcp                     # Chay server
+uv run wet                     # Chay server
 
 # Mise shortcuts
 mise run setup     # Full dev env setup
 mise run lint      # ruff check + ruff format --check + ty check
 mise run test      # pytest
 mise run fix       # ruff check --fix --unsafe-fixes + ruff format
-mise run dev       # uv run wet-mcp
+mise run dev       # uv run wet
 ```
 
 ## Cau hinh quan trong
@@ -82,8 +82,8 @@ mise run dev       # uv run wet-mcp
 - Identity layer (one coherent person across the chain): `WET_IDENTITY_SEED` (int pin; default 0 = derive once and persist per namespace under `~/.wet/subs/<sub>/identity.json`), `IDENTITY_PROFILE_DIR` (persistent browser profile dir; default `~/.wet/subs/<sub>/profiles`). Requires the optional `hull-core[identity]` extra (`invisible-core`); without it strategies keep legacy behavior (warn once). First identity build may download a GeoIP mmdb (egress) and resolve locale/timezone from the egress IP — `timezone_mismatch` behind a proxy falls back to en-US/UTC, never raises to MCP callers
 - Robots policy: `RESPECT_ROBOTS_TXT` (default `false`); set `true` to enforce `robots.txt` for the ScrapingAgent extract chain and Crawl4AI `crawl`, `sitemap`, and `list_media` actions
 - Disable-local toggles (skip heavy in-process fallbacks per capability): `DISABLE_LOCAL_BROWSER`, `DISABLE_LOCAL_SEARCH`, `DISABLE_LOCAL_EMBED`, `DISABLE_LOCAL_RERANK`
-- Sync: `SYNC_ENABLED` (default true), `GOOGLE_DRIVE_CLIENT_ID` (required for sync), `SYNC_FOLDER` (default "wet-mcp"), `SYNC_INTERVAL` (default 300s)
-- Sync dung Google Drive API truc tiep (httpx). OAuth Device Code flow, token luu tai `~/.wet-mcp/tokens/google_drive.json`
+- Sync: `SYNC_ENABLED` (default true), `GOOGLE_DRIVE_CLIENT_ID` (required for sync), `SYNC_FOLDER` (default "wet"), `SYNC_INTERVAL` (default 300s)
+- Sync dung Google Drive API truc tiep (httpx). OAuth Device Code flow, token luu tai `~/.wet/tokens/google_drive.json`
 - HTTP auth (live self-host): credentials are configured via the OAuth-AS browser form at `<PUBLIC_URL>/authorize`; `GET /mcp` without a Bearer token returns 401 + `www-authenticate` pointing at `/.well-known/oauth-protected-resource`. The browser form is gated by `MCP_RELAY_PASSWORD` (single shared password, gate only — empty disables it; not per-user). Multi-user remote mode also requires `CREDENTIAL_SECRET` (per-sub vault key) + `MCP_DCR_SERVER_SECRET` (proof of intentional multi-user deploy).
 - `MCP_RELAY_URL`: read only by the legacy `ensure_config` create-session/poll path (`relay_setup.py`), which has no production caller — the live setup UX is the OAuth-AS form above, not an ECDH relay.
 - Secrets: skret SSM namespace `/wet-mcp/prod` (region `ap-southeast-1`)
@@ -160,12 +160,12 @@ not via the deprecated `*_BACKEND`). Empty chain -> local ONNX. With cloud force
 1. **Setup flow 2-phase race condition**:
    - Phase 1: user submit API keys form -> `writeConfig(SERVER_NAME, config)` -> `state=configured` (nhanh, ~5-30s)
    - Phase 2: Google Drive OAuth Device Code flow start (async, BLOCKING user hanh dong tren `google.com/device`)
-   - Sau Phase 2, token save vao `~/.wet-mcp/tokens/google_drive.json`
+   - Sau Phase 2, token save vao `~/.wet/tokens/google_drive.json`
    - **Gotcha:** E2E test script KHONG duoc kill server process sau Phase 1 -- PHAI wait cho `google_drive.json` ton tai TRUOC KHI exit. Neu kill som -> OAuth token mat -> next run phai re-auth.
    - Example fix: `phase-m-e2e-test/test_wet_full.py` phase_1 dung check `pathlib.Path(token_path).exists()` + 300s timeout after state=configured.
 
-2. **GDrive token shared voi mnemo-mcp**:
-   - Neu user auth mot account Google cho wet-mcp, mnemo-mcp co the auto-detect va skip device code flow (shared account pool ong)
+2. **GDrive token shared voi mnemo**:
+   - Neu user auth mot account Google cho wet, mnemo co the auto-detect va skip device code flow (shared account pool ong)
    - Chua verify chinh xac mechanism, nhung observed 2026-04-18 E2E: setup mnemo ngay sau wet -> report "configured" rat nhanh
    - **Impact:** Tot cho UX, nhung can check xem logic share co security concern khong (token scope, privilege escalation)
 
@@ -181,7 +181,7 @@ cd ../mcp-core && uv run --project scripts/e2e python -m e2e.driver <config-id>
 
 Configs for this repo: `wet-full`.
 
-t2-interaction: GDrive device-code (900s); per-sub token storage at ``~/.wet-mcp/subs/<sub>/tokens/google_drive.json``.
+t2-interaction: GDrive device-code (900s); per-sub token storage at ``~/.wet/subs/<sub>/tokens/google_drive.json``.
 
 Tier policy:
 

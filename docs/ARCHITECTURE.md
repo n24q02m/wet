@@ -1,9 +1,9 @@
-# wet-mcp Architecture
+# wet Architecture
 
 > v2.0.0: `extract.agent` + `extract.interact` shipped; `media.analyze`
 > removed (BREAKING).
 
-This document describes the runtime architecture of wet-mcp built on the
+This document describes the runtime architecture of wet built on the
 `n24q02m-web-core` `ScrapingAgent`. It covers the component graph,
 strategy escalation chain, storage layout, and LLM provider dispatch
 model.
@@ -11,11 +11,11 @@ model.
 ## Component graph
 
 ```text
-wet-mcp client (Claude Code / Codex / Cursor / Antigravity)
+wet client (Claude Code / Codex / Cursor / Antigravity)
     |
     | MCP protocol (stdio or HTTP)
     v
-wet-mcp server (FastMCP)
+wet server (FastMCP)
     |
     +-- search tool   ----> sources/searxng.py + cache.py (TTL 1h / 5min)
     |                          |
@@ -49,7 +49,7 @@ wet-mcp server (FastMCP)
     |
     +-- config tool   ----> mcp_core relay + config.py + cache management
     |
-    +-- help tool     ----> src/wet_mcp/docs/{search,extract,media,config}.md
+    +-- help tool     ----> src/wet/docs/{search,extract,media,config}.md
 ```
 
 ## Strategy escalation chain (extract pipeline)
@@ -108,17 +108,17 @@ Every extract call returns a structured dict (no raw HTML leakage):
 ```
 
 Heading extraction, code-block language detection, and JSON-LD parsing
-live in `src/wet_mcp/sources/_smart_chunks.py`.
+live in `src/wet/sources/_smart_chunks.py`.
 
 ## Storage layout
 
 | File | Purpose | Backend |
 |---|---|---|
-| `~/.wet-mcp/docs.db` | Library docs index (chunks + embeddings) | SQLite WAL + sqlite-vec |
-| `~/.wet-mcp/cache.db` | Web search + extract cache (TTL gated) | SQLite WAL |
-| `~/.wet-mcp/config.json` | Encrypted credentials (mcp-core `PerPluginStore`) | AES-GCM, machine-bound key at `~/.wet-mcp/.secret` |
-| `~/.wet-mcp/downloads/` | Media download output dir | Filesystem |
-| `~/.wet-mcp/tokens/google_drive.json` | OAuth Device Code token (sync) | Filesystem 0600 perms |
+| `~/.wet/docs.db` | Library docs index (chunks + embeddings) | SQLite WAL + sqlite-vec |
+| `~/.wet/cache.db` | Web search + extract cache (TTL gated) | SQLite WAL |
+| `~/.wet/config.json` | Encrypted credentials (mcp-core `PerPluginStore`) | AES-GCM, machine-bound key at `~/.wet/.secret` |
+| `~/.wet/downloads/` | Media download output dir | Filesystem |
+| `~/.wet/tokens/google_drive.json` | OAuth Device Code token (sync) | Filesystem 0600 perms |
 
 SearXNG runs as a bundled subprocess on `localhost:41592` (configurable
 via `WET_SEARXNG_PORT`). It is not persisted across restarts; SearXNG
@@ -130,7 +130,7 @@ land via Alembic revisions `docs_002_libraries`,
 
 ## LLM provider dispatch (per-task model chains)
 
-wet-mcp selects models via per-task model chains, not a pinned model or a
+wet selects models via per-task model chains, not a pinned model or a
 key-priority router. Each chain is a CSV of `provider/model` entries
 (order = litellm fallback); the provider is inferred from the model prefix:
 
@@ -161,9 +161,9 @@ This dispatch is shared with web-core's `selector_inference` module
 
 | Mode | Default? | Storage scope | Multi-user |
 |---|---|---|---|
-| stdio | Yes | Local user (`~/.wet-mcp/config.json`, perm 0600) | No |
-| HTTP self-host (single-user) | No | Shared local store (`~/.wet-mcp/config.json`), bind 127.0.0.1 | No |
-| HTTP self-host (multi-user) | No | Per-JWT-sub vault (`~/.wet-mcp/subs/<sub>/config.json`), bind 0.0.0.0 | Yes |
+| stdio | Yes | Local user (`~/.wet/config.json`, perm 0600) | No |
+| HTTP self-host (single-user) | No | Shared local store (`~/.wet/config.json`), bind 127.0.0.1 | No |
+| HTTP self-host (multi-user) | No | Per-JWT-sub vault (`~/.wet/subs/<sub>/config.json`), bind 0.0.0.0 | Yes |
 
 The stdio default avoids OAuth complexity for single-machine personal
 use; HTTP self-host is recommended when multi-device sync, claude.ai web
@@ -201,7 +201,7 @@ Alembic migration chain:
   `last_indexed_at` stamps into it, so "metadata seeded" and "chunks
   landed" stop being the same column.
 
-`run_migrations_on_startup()` (in `wet_mcp.migrations`) is invoked by
+`run_migrations_on_startup()` (in `wet.migrations`) is invoked by
 the FastMCP lifespan after `DocsDB.__init__`. The runner copies
 `docs.db -> docs.db.bak.<unix-ts>` before any forward migration.
 Failures are logged and swallowed so server startup never blocks.
@@ -303,12 +303,12 @@ extract(action="interact", url=, actions=, session=None, screenshot=False)
   |     +-- wait    -> InteractOps.wait_for(selector, state=visible)
   |
   +-- snapshot: page.content() -> _strip_html_to_markdown() (8000 char cap)
-  +-- screenshot? -> ops.screenshot() -> ~/.wet-mcp/interact/<sha>.png
+  +-- screenshot? -> ops.screenshot() -> ~/.wet/interact/<sha>.png
   +-- return {url, snapshot_markdown, screenshot_path?}
 ```
 
 `SessionPool` lifecycle: process-scoped singleton in
-`wet_mcp.sources._browser_sessions`. Background `_gc_loop` runs every
+`wet.sources._browser_sessions`. Background `_gc_loop` runs every
 60s, evicts entries past `_ttl` (default 1800s), and self-cancels
 when the pool is empty.
 
@@ -317,7 +317,7 @@ when the pool is empty.
 The legacy deprecation handler is gone. The `media` dispatcher now
 routes `action="analyze"` through the standard unknown-action branch
 with a special-cased migration string pointing to `imagine-mcp`'s
-`understand` action. `wet_mcp.llm.analyze_media` is preserved for unit
+`understand` action. `wet.llm.analyze_media` is preserved for unit
 tests but is unreachable from any MCP tool surface.
 
 ### `docs_004_chunk_summaries` schema

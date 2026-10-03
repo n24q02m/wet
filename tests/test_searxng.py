@@ -1,6 +1,6 @@
 """Tests for SearXNG search wrapper (delegates to web-core).
 
-Tests the wet-mcp wrapper layer:
+Tests the wet wrapper layer:
 - URL normalization (re-exported from web-core)
 - Per-domain result cap (re-exported from web-core)
 - Query filtering (re-exported from web-core)
@@ -12,7 +12,7 @@ import unittest.mock
 
 import pytest
 
-from wet_mcp.sources.searxng import (
+from wet.sources.searxng import (
     _apply_domain_cap,
     _build_filtered_query,
     _normalize_url,
@@ -189,7 +189,7 @@ class TestApplyDomainCap:
 @pytest.fixture(autouse=True)
 def mock_health_check():
     with unittest.mock.patch(
-        "wet_mcp.sources.searxng._ensure_searxng_healthy",
+        "wet.sources.searxng._ensure_searxng_healthy",
         new_callable=unittest.mock.AsyncMock,
     ) as mock_healthy:
         mock_healthy.side_effect = lambda url: url
@@ -200,7 +200,7 @@ def mock_health_check():
 def mock_wc_search():
     """Mock web-core's search function at the delegation boundary."""
     with unittest.mock.patch(
-        "wet_mcp.sources.searxng._wc_search",
+        "wet.sources.searxng._wc_search",
         new_callable=unittest.mock.AsyncMock,
     ) as mock_search:
         yield mock_search

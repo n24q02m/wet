@@ -3,7 +3,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from wet_mcp.sources.crawler import download_media
+from wet.sources.crawler import download_media
 
 
 @pytest.mark.asyncio

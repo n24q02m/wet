@@ -33,8 +33,8 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 from hull_core.auth.context import AuthContext, reset_current_user, set_current_user
 
-import wet_mcp.embedder as embedder_mod
-import wet_mcp.reranker as reranker_mod
+import wet.embedder as embedder_mod
+import wet.reranker as reranker_mod
 
 
 @pytest.fixture(autouse=True)
@@ -79,21 +79,21 @@ def slim_image(monkeypatch):
 
 @pytest.fixture
 def local_embed_disabled(monkeypatch):
-    from wet_mcp.config import settings
+    from wet.config import settings
 
     monkeypatch.setattr(settings, "disable_local_embed", True)
 
 
 @pytest.fixture
 def local_rerank_disabled(monkeypatch):
-    from wet_mcp.config import settings
+    from wet.config import settings
 
     monkeypatch.setattr(settings, "disable_local_rerank", True)
 
 
 def _cloud_embed_backend(model: str = "text-embedding-3-large"):
     """A CloudEmbeddingBackend over a stub client (cell-owned model id)."""
-    from wet_mcp.embedder import CloudEmbeddingBackend
+    from wet.embedder import CloudEmbeddingBackend
 
     client = MagicMock()
     client.cell.model = model
@@ -103,7 +103,7 @@ def _cloud_embed_backend(model: str = "text-embedding-3-large"):
 
 def _cloud_reranker(model: str = "cohere/rerank-v3.5"):
     """A CloudReranker over a stub client (cell-owned model id)."""
-    from wet_mcp.reranker import CloudReranker
+    from wet.reranker import CloudReranker
 
     client = MagicMock()
     client.cell.model = model
@@ -119,7 +119,7 @@ def _cloud_reranker(model: str = "cohere/rerank-v3.5"):
 class TestEmbedResolverHonoursDisableLocalEmbed:
     def test_no_backend_and_local_disabled_resolves_to_none(self, local_embed_disabled):
         """The exit the slim image actually takes: gracefully unavailable."""
-        from wet_mcp.embedder import resolve_embed_backend_for_request
+        from wet.embedder import resolve_embed_backend_for_request
 
         assert resolve_embed_backend_for_request() is None
 
@@ -133,7 +133,7 @@ class TestEmbedResolverHonoursDisableLocalEmbed:
         the fix has to make the resolver say "none" BEFORE anything touches
         ``fastretrieval``, which is why the import list is asserted too.
         """
-        from wet_mcp import server
+        from wet import server
 
         assert await server._embed("hello", is_query=True) is None
         assert slim_image == [], f"local ONNX leg was entered: {slim_image}"
@@ -142,14 +142,14 @@ class TestEmbedResolverHonoursDisableLocalEmbed:
         self, local_embed_disabled, slim_image
     ):
         """The batch path the background indexer uses degrades the same way."""
-        from wet_mcp import server
+        from wet import server
 
         assert await server._embed_batch(["a", "b"]) is None
         assert slim_image == [], f"local ONNX leg was entered: {slim_image}"
 
     def test_no_backend_with_local_enabled_still_returns_shared_local(self):
         """No regression: the local fallback is untouched when local is on."""
-        from wet_mcp.embedder import LocalEmbeddingBackend
+        from wet.embedder import LocalEmbeddingBackend
 
         backend = embedder_mod.resolve_embed_backend_for_request()
         assert isinstance(backend, LocalEmbeddingBackend)
@@ -160,7 +160,7 @@ class TestEmbedResolverHonoursDisableLocalEmbed:
         """A startup-resolved cloud backend is unaffected: the flag only
         gates the LOCAL leg (the cell is host-owned, so there is no per-sub
         key for the flag to interact with any more)."""
-        from wet_mcp.embedder import resolve_embed_backend_for_request
+        from wet.embedder import resolve_embed_backend_for_request
 
         backend = _cloud_embed_backend()
         embedder_mod._backend = backend
@@ -175,7 +175,7 @@ class TestEmbedResolverHonoursDisableLocalEmbed:
         De-host there is exactly one host-configured backend; a mode-3
         identity changes storage roots, not which embedding backend serves.
         """
-        from wet_mcp.embedder import LocalEmbeddingBackend
+        from wet.embedder import LocalEmbeddingBackend
 
         sentinel = LocalEmbeddingBackend()
         embedder_mod._backend = sentinel
@@ -192,7 +192,7 @@ class TestRerankResolverHonoursDisableLocalRerank:
     def test_no_backend_and_local_disabled_resolves_to_none(
         self, local_rerank_disabled
     ):
-        from wet_mcp.reranker import resolve_rerank_backend_for_request
+        from wet.reranker import resolve_rerank_backend_for_request
 
         assert resolve_rerank_backend_for_request() is None
 
@@ -206,7 +206,7 @@ class TestRerankResolverHonoursDisableLocalRerank:
         rather than a traceback -- the import list is the only assertion that
         can tell "reranking was skipped" from "reranking failed quietly".
         """
-        from wet_mcp import server
+        from wet import server
 
         results = [{"content": "doc-a"}, {"content": "doc-b"}]
         ranked = await server._rerank_results("q", results, 1)
@@ -214,14 +214,14 @@ class TestRerankResolverHonoursDisableLocalRerank:
         assert slim_image == [], f"local ONNX leg was entered: {slim_image}"
 
     def test_no_backend_with_local_enabled_still_returns_shared_local(self):
-        from wet_mcp.reranker import LocalReranker
+        from wet.reranker import LocalReranker
 
         backend = reranker_mod.resolve_rerank_backend_for_request()
         assert isinstance(backend, LocalReranker)
         assert backend is reranker_mod.resolve_rerank_backend_for_request()
 
     def test_cloud_backend_wins_over_the_flag(self, local_rerank_disabled):
-        from wet_mcp.reranker import resolve_rerank_backend_for_request
+        from wet.reranker import resolve_rerank_backend_for_request
 
         backend = _cloud_reranker()
         reranker_mod._backend = backend
@@ -244,14 +244,14 @@ class TestConfigStatusReflectsPerRequestResolution:
     async def test_embedding_reads_unavailable_when_the_request_has_no_backend(
         self, local_embed_disabled
     ):
-        from wet_mcp.server import _handle_config_status
+        from wet.server import _handle_config_status
 
         status = await _handle_config_status()
         assert status["embedding"]["available"] is False
         assert status["embedding"]["backend"] is None
 
     async def test_embedding_names_the_resolved_cloud_backend(self):
-        from wet_mcp.server import _handle_config_status
+        from wet.server import _handle_config_status
 
         embedder_mod._backend = _cloud_embed_backend(
             "jina_ai/jina-embeddings-v5-text-small"
@@ -262,8 +262,8 @@ class TestConfigStatusReflectsPerRequestResolution:
         assert status["embedding"]["available"] is True
 
     async def test_embedding_status_records_model_and_dimensions(self, monkeypatch):
-        from wet_mcp import server
-        from wet_mcp.server import _handle_config_status
+        from wet import server
+        from wet.server import _handle_config_status
 
         embedder_mod._backend = _cloud_embed_backend(
             "jina_ai/jina-embeddings-v5-text-small"
@@ -278,7 +278,7 @@ class TestConfigStatusReflectsPerRequestResolution:
     async def test_reranker_reads_unavailable_when_the_request_has_no_backend(
         self, local_rerank_disabled
     ):
-        from wet_mcp.server import _handle_config_status
+        from wet.server import _handle_config_status
 
         status = await _handle_config_status()
         assert status["reranker"]["available"] is False
@@ -286,7 +286,7 @@ class TestConfigStatusReflectsPerRequestResolution:
 
     async def test_status_reports_the_resolved_backends(self):
         """Existing readers keep seeing the backends requests actually get."""
-        from wet_mcp.server import _handle_config_status
+        from wet.server import _handle_config_status
 
         embedder_mod._backend = _cloud_embed_backend()
         reranker_mod._backend = _cloud_reranker()
@@ -299,7 +299,7 @@ class TestConfigStatusReflectsPerRequestResolution:
 
     async def test_status_says_why_embedding_is_unavailable(self, local_embed_disabled):
         """ "available: false" alone reads as a bug report, not a config answer."""
-        from wet_mcp.server import _handle_config_status
+        from wet.server import _handle_config_status
 
         reason = (await _handle_config_status())["embedding"]["unavailable_reason"]
         assert reason and "DISABLE_LOCAL_EMBED" in reason
@@ -320,7 +320,7 @@ class TestSearchSignalsKeywordOnlyRetrieval:
 
     @staticmethod
     def _stub_docs_db(monkeypatch, captured: dict):
-        from wet_mcp import server
+        from wet import server
 
         db = MagicMock()
         db.get_library.return_value = {"id": "lib1", "discovery_version": 10**6}
@@ -338,14 +338,14 @@ class TestSearchSignalsKeywordOnlyRetrieval:
     def _stub_hyde(monkeypatch):
         """HyDE needs an LLM; these tests are about the retrieval signal."""
         monkeypatch.setattr(
-            "wet_mcp.sources.search_strategies.generate_hyde_query",
+            "wet.sources.search_strategies.generate_hyde_query",
             AsyncMock(return_value=None),
         )
 
     async def test_keyword_only_reply_names_the_missing_vector_leg(
         self, local_embed_disabled, slim_image, monkeypatch
     ):
-        from wet_mcp import server
+        from wet import server
 
         captured: dict = {}
         self._stub_docs_db(monkeypatch, captured)
@@ -360,7 +360,7 @@ class TestSearchSignalsKeywordOnlyRetrieval:
         assert slim_image == [], f"local ONNX leg was entered: {slim_image}"
 
     async def test_hybrid_reply_says_hybrid_and_carries_no_notice(self, monkeypatch):
-        from wet_mcp import server
+        from wet import server
 
         class _FakeBackend:
             async def embed_texts(

@@ -1,6 +1,6 @@
 import json
 
-from wet_mcp.db import DocsDB
+from wet.db import DocsDB
 
 
 def test_get_existing_allowed_tables(tmp_path):

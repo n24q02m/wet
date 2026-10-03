@@ -5,7 +5,7 @@ for a single key."""
 import json
 from unittest import mock
 
-from wet_mcp.sources.search_backends import TavilyBackend
+from wet.sources.search_backends import TavilyBackend
 
 
 class _RL(Exception):

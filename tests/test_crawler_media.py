@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from wet_mcp.sources.crawler import list_media
+from wet.sources.crawler import list_media
 
 
 @pytest.mark.asyncio
@@ -22,7 +22,7 @@ async def test_list_media_success_all(mock_crawler_instance):
     mock_crawler_instance.arun = AsyncMock(return_value=mock_result)
 
     with patch(
-        "wet_mcp.sources.crawler._get_crawler",
+        "wet.sources.crawler._get_crawler",
         new_callable=AsyncMock,
         return_value=mock_crawler_instance,
     ):
@@ -51,7 +51,7 @@ async def test_list_media_type_filter(mock_crawler_instance):
     mock_crawler_instance.arun = AsyncMock(return_value=mock_result)
 
     with patch(
-        "wet_mcp.sources.crawler._get_crawler",
+        "wet.sources.crawler._get_crawler",
         new_callable=AsyncMock,
         return_value=mock_crawler_instance,
     ):
@@ -95,7 +95,7 @@ async def test_list_media_max_items(mock_crawler_instance):
     mock_crawler_instance.arun = AsyncMock(return_value=mock_result)
 
     with patch(
-        "wet_mcp.sources.crawler._get_crawler",
+        "wet.sources.crawler._get_crawler",
         new_callable=AsyncMock,
         return_value=mock_crawler_instance,
     ):
@@ -110,7 +110,7 @@ async def test_list_media_max_items(mock_crawler_instance):
 @pytest.mark.asyncio
 async def test_list_media_unsafe_url():
     """Test unsafe URL handling."""
-    with patch("wet_mcp.sources.crawler.is_safe_url", return_value=False):
+    with patch("wet.sources.crawler.is_safe_url", return_value=False):
         result_json = await list_media(url="https://unsafe.com")
 
     results = json.loads(result_json)
@@ -128,7 +128,7 @@ async def test_list_media_crawler_failure(mock_crawler_instance):
     mock_crawler_instance.arun = AsyncMock(return_value=mock_result)
 
     with patch(
-        "wet_mcp.sources.crawler._get_crawler",
+        "wet.sources.crawler._get_crawler",
         new_callable=AsyncMock,
         return_value=mock_crawler_instance,
     ):
@@ -149,7 +149,7 @@ async def test_list_media_empty(mock_crawler_instance):
     mock_crawler_instance.arun = AsyncMock(return_value=mock_result)
 
     with patch(
-        "wet_mcp.sources.crawler._get_crawler",
+        "wet.sources.crawler._get_crawler",
         new_callable=AsyncMock,
         return_value=mock_crawler_instance,
     ):

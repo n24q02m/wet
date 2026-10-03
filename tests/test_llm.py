@@ -14,8 +14,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from wet_mcp.config import settings
-from wet_mcp.llm import (
+from wet.config import settings
+from wet.llm import (
     _AUDIO_INPUT_MODELS,
     _VISION_MODELS,
     _read_and_truncate,
@@ -41,11 +41,9 @@ def _cell(model: str = "gemini-2.5-flash", configured: bool = True):
 @pytest.fixture
 def chat_cell(monkeypatch):
     """A configured [models.chat] cell for the duration of the test."""
+    monkeypatch.setattr("wet.runtime.model_cell", lambda task, settings=None: _cell())
     monkeypatch.setattr(
-        "wet_mcp.runtime.model_cell", lambda task, settings=None: _cell()
-    )
-    monkeypatch.setattr(
-        "wet_mcp.runtime.cell_configured",
+        "wet.runtime.cell_configured",
         lambda task, settings=None: task == "chat",
     )
 
@@ -53,11 +51,11 @@ def chat_cell(monkeypatch):
 @pytest.fixture
 def no_chat_cell(monkeypatch):
     monkeypatch.setattr(
-        "wet_mcp.runtime.model_cell",
+        "wet.runtime.model_cell",
         lambda task, settings=None: _cell(configured=False),
     )
     monkeypatch.setattr(
-        "wet_mcp.runtime.cell_configured", lambda task, settings=None: False
+        "wet.runtime.cell_configured", lambda task, settings=None: False
     )
 
 
@@ -123,7 +121,7 @@ def _chat_client(content: str = "ok"):
 
 
 async def test_acompletion_returns_chat_result():
-    with patch("wet_mcp.llm._chat_provider_client", return_value=_chat_client("hello")):
+    with patch("wet.llm._chat_provider_client", return_value=_chat_client("hello")):
         result = await acompletion(messages=[{"role": "user", "content": "hi"}])
 
     assert result.choices[0].message.content == "hello"
@@ -131,7 +129,7 @@ async def test_acompletion_returns_chat_result():
 
 async def test_acompletion_forwards_set_options_only():
     client = _chat_client("ok")
-    with patch("wet_mcp.llm._chat_provider_client", return_value=client):
+    with patch("wet.llm._chat_provider_client", return_value=client):
         await acompletion(
             messages=[{"role": "user", "content": "hi"}],
             temperature=0.5,
@@ -145,7 +143,7 @@ async def test_acompletion_forwards_set_options_only():
     assert call_kwargs["response_format"] == {"type": "json_object"}
 
     client.chat.reset_mock()
-    with patch("wet_mcp.llm._chat_provider_client", return_value=client):
+    with patch("wet.llm._chat_provider_client", return_value=client):
         await acompletion(messages=[{"role": "user", "content": "hi"}])
     call_kwargs = client.chat.call_args[1]
     assert "temperature" not in call_kwargs
@@ -156,7 +154,7 @@ async def test_acompletion_forwards_set_options_only():
 async def test_acompletion_ignores_legacy_caller_args():
     """model/api_base/api_key/fallbacks are accepted and ignored (cell-owned)."""
     client = _chat_client("ok")
-    with patch("wet_mcp.llm._chat_provider_client", return_value=client):
+    with patch("wet.llm._chat_provider_client", return_value=client):
         result = await acompletion(
             model="gemini/legacy-model",
             api_base="https://legacy.example.com/v1",
@@ -176,7 +174,7 @@ async def test_acompletion_ignores_legacy_caller_args():
 
 async def test_acompletion_extra_kwargs_forwarded():
     client = _chat_client("ok")
-    with patch("wet_mcp.llm._chat_provider_client", return_value=client):
+    with patch("wet.llm._chat_provider_client", return_value=client):
         await acompletion(messages=[{"role": "user", "content": "hi"}], top_p=0.2)
 
     assert client.chat.call_args[1]["top_p"] == 0.2
@@ -184,14 +182,14 @@ async def test_acompletion_extra_kwargs_forwarded():
 
 def test_chat_client_built_once_from_cell(monkeypatch):
     """The chat-cell client is a process-lifetime singleton built lazily."""
-    import wet_mcp.llm as llm_mod
+    import wet.llm as llm_mod
 
     original = llm_mod._chat_client
     llm_mod._chat_client = None
     try:
         client = MagicMock()
         provider_client = MagicMock(return_value=client)
-        monkeypatch.setattr("wet_mcp.runtime.provider_client", provider_client)
+        monkeypatch.setattr("wet.runtime.provider_client", provider_client)
 
         first = llm_mod._chat_provider_client()
         second = llm_mod._chat_provider_client()
@@ -207,7 +205,7 @@ def test_chat_client_built_once_from_cell(monkeypatch):
 # ---------------------------------------------------------------------------
 
 
-@patch("wet_mcp.llm.acompletion", new_callable=AsyncMock)
+@patch("wet.llm.acompletion", new_callable=AsyncMock)
 async def test_analyze_media_image(mock_completion, chat_cell, download_dir):
     img_path = download_dir / "test.jpg"
     img_path.write_bytes(b"fake-image-data")
@@ -241,7 +239,7 @@ async def test_analyze_media_file_not_found(chat_cell, download_dir):
     assert "Error: File not found" in result
 
 
-@patch("wet_mcp.llm.acompletion", new_callable=AsyncMock)
+@patch("wet.llm.acompletion", new_callable=AsyncMock)
 async def test_analyze_media_text_file(mock_completion, chat_cell, download_dir):
     txt_path = download_dir / "test.txt"
     txt_path.write_text("Hello")
@@ -268,7 +266,7 @@ async def test_analyze_media_unsupported_type(chat_cell, download_dir):
     assert "Unsupported media type" in result or "Cannot determine file type" in result
 
 
-@patch("wet_mcp.llm.acompletion", new_callable=AsyncMock)
+@patch("wet.llm.acompletion", new_callable=AsyncMock)
 async def test_analyze_media_large_text_file(mock_completion, chat_cell, download_dir):
     txt_path = download_dir / "large.txt"
     txt_path.write_text("a" * 100005)
@@ -357,10 +355,10 @@ def test_analyze_media_tilde_download_dir(chat_cell, tmp_path, monkeypatch):
     monkeypatch.setenv("HOME", str(fake_home))
     monkeypatch.setenv("USERPROFILE", str(fake_home))  # Windows compat
 
-    dl_dir = fake_home / ".wet-mcp" / "downloads"
+    dl_dir = fake_home / ".wet" / "downloads"
     dl_dir.mkdir(parents=True)
     original = settings.download_dir
-    settings.download_dir = "~/.wet-mcp/downloads"
+    settings.download_dir = "~/.wet/downloads"
     try:
         img_file = dl_dir / "test.jpg"
         img_file.write_bytes(b"fake-image-data")
@@ -389,7 +387,7 @@ def test_get_model_capabilities_comprehensive():
 
 
 def test_get_model_capabilities_audio_output():
-    with patch("wet_mcp.llm._AUDIO_OUTPUT_MODELS", {"test-audio-model"}):
+    with patch("wet.llm._AUDIO_OUTPUT_MODELS", {"test-audio-model"}):
         caps = get_model_capabilities("test-audio-model")
         assert caps["audio_output"] is True
 

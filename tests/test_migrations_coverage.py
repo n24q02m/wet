@@ -8,7 +8,7 @@ from alembic import command
 from alembic.config import Config
 from loguru import logger
 
-from wet_mcp.migrations import (
+from wet.migrations import (
     _ALEMBIC_INI_PATH,
     _ALEMBIC_SCRIPT_LOCATION,
     _backup_db_file,
@@ -69,7 +69,7 @@ def test_run_migrations_on_startup_no_config(tmp_path: Path, caplog):
     try:
         # Use tmp_path instead of hardcoded /tmp for portability
         missing_ini = tmp_path / "missing_alembic.ini"
-        with patch("wet_mcp.migrations._ALEMBIC_INI_PATH", missing_ini):
+        with patch("wet.migrations._ALEMBIC_INI_PATH", missing_ini):
             run_migrations_on_startup(db_path)
         assert "Alembic config not found" in caplog.text
     finally:
@@ -102,7 +102,7 @@ def test_run_migrations_on_startup_unstamped(tmp_path: Path, caplog):
     db_path = tmp_path / "docs.db"
 
     # Seed minimal baseline schema so forward migrations find their columns.
-    # The SQL matches src/wet_mcp/alembic/versions/docs_001_baseline.py
+    # The SQL matches src/wet/alembic/versions/docs_001_baseline.py
     conn = sqlite3.connect(str(db_path))
     conn.execute("""
         CREATE TABLE libraries (

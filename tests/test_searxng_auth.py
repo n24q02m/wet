@@ -4,8 +4,8 @@ SEARXNG_URL."""
 
 from unittest.mock import AsyncMock, MagicMock, patch
 
-import wet_mcp.sources.searxng as sx
-from wet_mcp.config import settings
+import wet.sources.searxng as sx
+from wet.config import settings
 
 
 def _set_auth(monkeypatch, user, pwd):

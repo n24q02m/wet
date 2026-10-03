@@ -7,7 +7,7 @@ import httpx
 import pytest
 
 # Import from the module we're testing
-from wet_mcp.sources import crawler
+from wet.sources import crawler
 
 
 # Helper classes to mock AsyncWebCrawler results
@@ -69,11 +69,11 @@ async def test_extract_success():
     agent = _fake_scraping_agent(scrape_return="# Test Title\n\nmd content")
     with (
         patch(
-            "wet_mcp.sources.crawler._get_scraping_agent",
+            "wet.sources.crawler._get_scraping_agent",
             new_callable=AsyncMock,
             return_value=agent,
         ),
-        patch("wet_mcp.sources.crawler.is_safe_url", return_value=True),
+        patch("wet.sources.crawler.is_safe_url", return_value=True),
     ):
         result_json = await crawler.extract(
             ["https://safe.com"],
@@ -97,11 +97,11 @@ async def test_extract_html_format():
     agent = _fake_scraping_agent(scrape_return=html_payload)
     with (
         patch(
-            "wet_mcp.sources.crawler._get_scraping_agent",
+            "wet.sources.crawler._get_scraping_agent",
             new_callable=AsyncMock,
             return_value=agent,
         ),
-        patch("wet_mcp.sources.crawler.is_safe_url", return_value=True),
+        patch("wet.sources.crawler.is_safe_url", return_value=True),
     ):
         result_json = await crawler.extract(["https://safe.com"], format="html")
         data = json.loads(result_json)
@@ -113,9 +113,9 @@ async def test_extract_html_format():
 async def test_extract_unsafe_url():
     agent = _fake_scraping_agent(scrape_return="should not run")
     with (
-        patch("wet_mcp.sources.crawler.is_safe_url", return_value=False),
+        patch("wet.sources.crawler.is_safe_url", return_value=False),
         patch(
-            "wet_mcp.sources.crawler._get_scraping_agent",
+            "wet.sources.crawler._get_scraping_agent",
             new_callable=AsyncMock,
             return_value=agent,
         ),
@@ -130,11 +130,11 @@ async def test_extract_crawler_failure():
     agent = _fake_scraping_agent(scrape_side_effect=RuntimeError("Crawling failed"))
     with (
         patch(
-            "wet_mcp.sources.crawler._get_scraping_agent",
+            "wet.sources.crawler._get_scraping_agent",
             new_callable=AsyncMock,
             return_value=agent,
         ),
-        patch("wet_mcp.sources.crawler.is_safe_url", return_value=True),
+        patch("wet.sources.crawler.is_safe_url", return_value=True),
     ):
         result_json = await crawler.extract(["https://safe.com"])
         data = json.loads(result_json)
@@ -146,11 +146,11 @@ async def test_extract_crawler_exception():
     agent = _fake_scraping_agent(scrape_side_effect=Exception("Unexpected error"))
     with (
         patch(
-            "wet_mcp.sources.crawler._get_scraping_agent",
+            "wet.sources.crawler._get_scraping_agent",
             new_callable=AsyncMock,
             return_value=agent,
         ),
-        patch("wet_mcp.sources.crawler.is_safe_url", return_value=True),
+        patch("wet.sources.crawler.is_safe_url", return_value=True),
     ):
         result_json = await crawler.extract(["https://safe.com"])
         data = json.loads(result_json)
@@ -167,9 +167,9 @@ async def test_crawl_success():
     )
 
     with (
-        patch("wet_mcp.sources.crawler.AsyncWebCrawler", return_value=mock_crawler),
+        patch("wet.sources.crawler.AsyncWebCrawler", return_value=mock_crawler),
         patch("playwright.async_api.async_playwright"),
-        patch("wet_mcp.sources.crawler.is_safe_url", return_value=True),
+        patch("wet.sources.crawler.is_safe_url", return_value=True),
     ):
         result_json = await crawler.crawl(["https://safe.com"], depth=1, max_pages=3)
         data = json.loads(result_json)
@@ -192,10 +192,10 @@ async def test_crawl_robots_blocked_result_is_excluded(monkeypatch):
 
     with (
         patch(
-            "wet_mcp.sources.crawler._get_crawler",
+            "wet.sources.crawler._get_crawler",
             new=AsyncMock(return_value=mock_crawler),
         ),
-        patch("wet_mcp.sources.crawler.is_safe_url", return_value=True),
+        patch("wet.sources.crawler.is_safe_url", return_value=True),
     ):
         result_json = await crawler.crawl(["https://safe.com"], depth=0)
 
@@ -205,8 +205,8 @@ async def test_crawl_robots_blocked_result_is_excluded(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_crawl_unsafe_url():
-    with patch("wet_mcp.sources.crawler.is_safe_url", return_value=False):
-        with patch("wet_mcp.sources.crawler._get_crawler", new_callable=AsyncMock):
+    with patch("wet.sources.crawler.is_safe_url", return_value=False):
+        with patch("wet.sources.crawler._get_crawler", new_callable=AsyncMock):
             result_json = await crawler.crawl(["http://unsafe.com"])
         data = json.loads(result_json)
         assert len(data) == 0
@@ -218,9 +218,9 @@ async def test_crawl_exception():
     mock_crawler.arun.side_effect = Exception("Unexpected error")
 
     with (
-        patch("wet_mcp.sources.crawler.AsyncWebCrawler", return_value=mock_crawler),
+        patch("wet.sources.crawler.AsyncWebCrawler", return_value=mock_crawler),
         patch("playwright.async_api.async_playwright"),
-        patch("wet_mcp.sources.crawler.is_safe_url", return_value=True),
+        patch("wet.sources.crawler.is_safe_url", return_value=True),
     ):
         result_json = await crawler.crawl(["https://safe.com"])
         data = json.loads(result_json)
@@ -237,9 +237,9 @@ async def test_sitemap_success():
     )
 
     with (
-        patch("wet_mcp.sources.crawler.AsyncWebCrawler", return_value=mock_crawler),
+        patch("wet.sources.crawler.AsyncWebCrawler", return_value=mock_crawler),
         patch("playwright.async_api.async_playwright"),
-        patch("wet_mcp.sources.crawler.is_safe_url", return_value=True),
+        patch("wet.sources.crawler.is_safe_url", return_value=True),
     ):
         result_json = await crawler.sitemap(["https://safe.com"], depth=1, max_pages=3)
         data = json.loads(result_json)
@@ -262,10 +262,10 @@ async def test_sitemap_robots_blocked_result_is_excluded_when_enabled(monkeypatc
 
     with (
         patch(
-            "wet_mcp.sources.crawler._get_crawler",
+            "wet.sources.crawler._get_crawler",
             new=AsyncMock(return_value=mock_crawler),
         ),
-        patch("wet_mcp.sources.crawler.is_safe_url", return_value=True),
+        patch("wet.sources.crawler.is_safe_url", return_value=True),
     ):
         result_json = await crawler.sitemap(["https://safe.com"], depth=0)
 
@@ -284,10 +284,10 @@ async def test_sitemap_failed_result_keeps_legacy_output_when_disabled(monkeypat
 
     with (
         patch(
-            "wet_mcp.sources.crawler._get_crawler",
+            "wet.sources.crawler._get_crawler",
             new=AsyncMock(return_value=mock_crawler),
         ),
-        patch("wet_mcp.sources.crawler.is_safe_url", return_value=True),
+        patch("wet.sources.crawler.is_safe_url", return_value=True),
     ):
         result_json = await crawler.sitemap(["https://safe.com"], depth=0)
 
@@ -297,8 +297,8 @@ async def test_sitemap_failed_result_keeps_legacy_output_when_disabled(monkeypat
 
 @pytest.mark.asyncio
 async def test_sitemap_unsafe_url():
-    with patch("wet_mcp.sources.crawler.is_safe_url", return_value=False):
-        with patch("wet_mcp.sources.crawler._get_crawler", new_callable=AsyncMock):
+    with patch("wet.sources.crawler.is_safe_url", return_value=False):
+        with patch("wet.sources.crawler._get_crawler", new_callable=AsyncMock):
             result_json = await crawler.sitemap(["http://unsafe.com"])
         data = json.loads(result_json)
         assert len(data) == 0
@@ -310,9 +310,9 @@ async def test_sitemap_exception():
     mock_crawler.arun.side_effect = Exception("Unexpected error")
 
     with (
-        patch("wet_mcp.sources.crawler.AsyncWebCrawler", return_value=mock_crawler),
+        patch("wet.sources.crawler.AsyncWebCrawler", return_value=mock_crawler),
         patch("playwright.async_api.async_playwright"),
-        patch("wet_mcp.sources.crawler.is_safe_url", return_value=True),
+        patch("wet.sources.crawler.is_safe_url", return_value=True),
     ):
         result_json = await crawler.sitemap(["https://safe.com"])
         data = json.loads(result_json)
@@ -331,9 +331,9 @@ async def test_list_media_success():
     )
 
     with (
-        patch("wet_mcp.sources.crawler.AsyncWebCrawler", return_value=mock_crawler),
+        patch("wet.sources.crawler.AsyncWebCrawler", return_value=mock_crawler),
         patch("playwright.async_api.async_playwright"),
-        patch("wet_mcp.sources.crawler.is_safe_url", return_value=True),
+        patch("wet.sources.crawler.is_safe_url", return_value=True),
     ):
         result_json = await crawler.list_media("https://safe.com", media_type="all")
         data = json.loads(result_json)
@@ -357,10 +357,10 @@ async def test_list_media_robots_blocked_result_returns_error(monkeypatch):
 
     with (
         patch(
-            "wet_mcp.sources.crawler._get_crawler",
+            "wet.sources.crawler._get_crawler",
             new=AsyncMock(return_value=mock_crawler),
         ),
-        patch("wet_mcp.sources.crawler.is_safe_url", return_value=True),
+        patch("wet.sources.crawler.is_safe_url", return_value=True),
     ):
         result_json = await crawler.list_media("https://safe.com")
 
@@ -376,9 +376,9 @@ async def test_list_media_specific_type():
     )
 
     with (
-        patch("wet_mcp.sources.crawler.AsyncWebCrawler", return_value=mock_crawler),
+        patch("wet.sources.crawler.AsyncWebCrawler", return_value=mock_crawler),
         patch("playwright.async_api.async_playwright"),
-        patch("wet_mcp.sources.crawler.is_safe_url", return_value=True),
+        patch("wet.sources.crawler.is_safe_url", return_value=True),
     ):
         result_json = await crawler.list_media("https://safe.com", media_type="images")
         data = json.loads(result_json)
@@ -390,7 +390,7 @@ async def test_list_media_specific_type():
 
 @pytest.mark.asyncio
 async def test_list_media_unsafe_url():
-    with patch("wet_mcp.sources.crawler.is_safe_url", return_value=False):
+    with patch("wet.sources.crawler.is_safe_url", return_value=False):
         result_json = await crawler.list_media("http://unsafe.com")
         data = json.loads(result_json)
         assert data["error"] == "Security Alert: Unsafe URL blocked"
@@ -404,9 +404,9 @@ async def test_list_media_failure():
     )
 
     with (
-        patch("wet_mcp.sources.crawler.AsyncWebCrawler", return_value=mock_crawler),
+        patch("wet.sources.crawler.AsyncWebCrawler", return_value=mock_crawler),
         patch("playwright.async_api.async_playwright"),
-        patch("wet_mcp.sources.crawler.is_safe_url", return_value=True),
+        patch("wet.sources.crawler.is_safe_url", return_value=True),
     ):
         result_json = await crawler.list_media("https://safe.com")
         data = json.loads(result_json)
@@ -436,7 +436,7 @@ async def test_download_media_success(tmp_path):
     mock_client.get.return_value = MockResponse(content=b"file data")
 
     with (
-        patch("wet_mcp.sources.crawler.is_safe_url", return_value=True),
+        patch("wet.sources.crawler.is_safe_url", return_value=True),
         patch(
             "httpx.AsyncClient",
             return_value=AsyncMock(
@@ -466,7 +466,7 @@ async def test_download_media_redirect(tmp_path):
     ]
 
     with (
-        patch("wet_mcp.sources.crawler.is_safe_url", return_value=True),
+        patch("wet.sources.crawler.is_safe_url", return_value=True),
         patch(
             "httpx.AsyncClient",
             return_value=AsyncMock(
@@ -487,7 +487,7 @@ async def test_download_media_redirect(tmp_path):
 
 @pytest.mark.asyncio
 async def test_download_media_unsafe_url(tmp_path):
-    with patch("wet_mcp.sources.crawler.is_safe_url", return_value=False):
+    with patch("wet.sources.crawler.is_safe_url", return_value=False):
         result_json = await crawler.download_media(
             ["http://unsafe.com/image.jpg"], str(tmp_path)
         )
@@ -501,7 +501,7 @@ async def test_download_media_path_traversal(tmp_path):
     mock_client.get.return_value = MockResponse(content=b"file data")
 
     with (
-        patch("wet_mcp.sources.crawler.is_safe_url", return_value=True),
+        patch("wet.sources.crawler.is_safe_url", return_value=True),
         patch(
             "httpx.AsyncClient",
             return_value=AsyncMock(
@@ -526,7 +526,7 @@ async def test_download_media_http_error(tmp_path):
     mock_client.get.side_effect = Exception("HTTP Failed")
 
     with (
-        patch("wet_mcp.sources.crawler.is_safe_url", return_value=True),
+        patch("wet.sources.crawler.is_safe_url", return_value=True),
         patch(
             "httpx.AsyncClient",
             return_value=AsyncMock(
@@ -543,7 +543,7 @@ async def test_download_media_http_error(tmp_path):
 
 @pytest.mark.asyncio
 async def test_get_crawler_singleton_and_recycle():
-    with patch("wet_mcp.sources.crawler.AsyncWebCrawler", new=MockAsyncWebCrawler):
+    with patch("wet.sources.crawler.AsyncWebCrawler", new=MockAsyncWebCrawler):
         # First call creates crawler
         c1 = await crawler._get_crawler(stealth=True)
         assert c1 is not None
@@ -578,8 +578,8 @@ async def test_get_crawler_retry_logic():
             self.__aenter__ = AsyncMock(side_effect=self.get_effect)
 
     with (
-        patch("wet_mcp.sources.crawler.AsyncWebCrawler", new=FlakyMockCrawler),
-        patch("wet_mcp.sources.crawler._cleanup_browser_data_dir") as mock_cleanup,
+        patch("wet.sources.crawler.AsyncWebCrawler", new=FlakyMockCrawler),
+        patch("wet.sources.crawler._cleanup_browser_data_dir") as mock_cleanup,
     ):
         c = await crawler._get_crawler(stealth=True)
         assert c is not None
@@ -594,14 +594,14 @@ async def test_get_crawler_total_failure():
             super().__init__(*args, **kwargs)
             self.__aenter__ = AsyncMock(side_effect=Exception("Always fails"))
 
-    with patch("wet_mcp.sources.crawler.AsyncWebCrawler", new=FailingMockCrawler):
+    with patch("wet.sources.crawler.AsyncWebCrawler", new=FailingMockCrawler):
         with pytest.raises(Exception, match="Always fails"):
             await crawler._get_crawler(stealth=True)
 
 
 @pytest.mark.asyncio
 async def test_shutdown_crawler():
-    with patch("wet_mcp.sources.crawler.AsyncWebCrawler", new=MockAsyncWebCrawler):
+    with patch("wet.sources.crawler.AsyncWebCrawler", new=MockAsyncWebCrawler):
         c = await crawler._get_crawler(stealth=True)
         assert crawler._crawler_instance is not None
 
@@ -615,7 +615,7 @@ async def test_shutdown_crawler_exception_handled():
     mock_crawler = MockAsyncWebCrawler()
     mock_crawler.__aexit__.side_effect = Exception("Shutdown error")
 
-    with patch("wet_mcp.sources.crawler.AsyncWebCrawler", return_value=mock_crawler):
+    with patch("wet.sources.crawler.AsyncWebCrawler", return_value=mock_crawler):
         crawler._crawler_instance = mock_crawler  # type: ignore
         await crawler.shutdown_crawler()
         assert crawler._crawler_instance is None
@@ -657,7 +657,7 @@ def test_get_semaphore():
 async def test_get_crawler_recycle_exception():
     mock_crawler = MockAsyncWebCrawler()
     mock_crawler.__aexit__.side_effect = Exception("aexit failed")
-    with patch("wet_mcp.sources.crawler.AsyncWebCrawler", return_value=mock_crawler):
+    with patch("wet.sources.crawler.AsyncWebCrawler", return_value=mock_crawler):
         # We need to manually set it so recycle logic triggers
         crawler._crawler_instance = mock_crawler  # type: ignore
         crawler._crawler_stealth = True
@@ -680,9 +680,9 @@ async def test_crawl_visited_and_depth():
     )
 
     with (
-        patch("wet_mcp.sources.crawler.AsyncWebCrawler", return_value=mock_crawler),
+        patch("wet.sources.crawler.AsyncWebCrawler", return_value=mock_crawler),
         patch("playwright.async_api.async_playwright"),
-        patch("wet_mcp.sources.crawler.is_safe_url", return_value=True),
+        patch("wet.sources.crawler.is_safe_url", return_value=True),
     ):
         result_json = await crawler.crawl(["https://safe.com"], depth=1, max_pages=5)
         json.loads(result_json)
@@ -699,9 +699,9 @@ async def test_sitemap_visited_and_depth():
     )
 
     with (
-        patch("wet_mcp.sources.crawler.AsyncWebCrawler", return_value=mock_crawler),
+        patch("wet.sources.crawler.AsyncWebCrawler", return_value=mock_crawler),
         patch("playwright.async_api.async_playwright"),
-        patch("wet_mcp.sources.crawler.is_safe_url", return_value=True),
+        patch("wet.sources.crawler.is_safe_url", return_value=True),
     ):
         result_json = await crawler.sitemap(["https://safe.com"], depth=1, max_pages=5)
         json.loads(result_json)
@@ -713,7 +713,7 @@ async def test_download_media_redirect_no_location(tmp_path):
     mock_client.get.return_value = MockResponse(is_redirect=True, headers={})
 
     with (
-        patch("wet_mcp.sources.crawler.is_safe_url", return_value=True),
+        patch("wet.sources.crawler.is_safe_url", return_value=True),
         patch(
             "httpx.AsyncClient",
             return_value=AsyncMock(
@@ -736,7 +736,7 @@ async def test_download_media_too_many_redirects(tmp_path):
     )
 
     with (
-        patch("wet_mcp.sources.crawler.is_safe_url", return_value=True),
+        patch("wet.sources.crawler.is_safe_url", return_value=True),
         patch(
             "httpx.AsyncClient",
             return_value=AsyncMock(

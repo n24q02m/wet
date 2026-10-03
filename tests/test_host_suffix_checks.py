@@ -30,7 +30,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from wet_mcp.sources.docs import (
+from wet.sources.docs import (
     _discover_from_crates,
     _discover_from_nuget,
     _discover_from_pypi,
@@ -165,7 +165,7 @@ def _nuget_payload(url):
 @pytest.mark.parametrize("url", HOSTILE_URLS)
 async def test_pypi_rejects_non_github_host(url):
     client = _client({"pypi.org": _json_response(_pypi_payload(url))})
-    with patch("wet_mcp.sources.docs._safe_httpx_client", return_value=client):
+    with patch("wet.sources.docs._safe_httpx_client", return_value=client):
         result = await _discover_from_pypi("victim")
     assert result is not None
     assert result["repository"] != url
@@ -174,7 +174,7 @@ async def test_pypi_rejects_non_github_host(url):
 @pytest.mark.parametrize("url", HOSTILE_URLS)
 async def test_rubygems_rejects_non_github_host(url):
     client = _client({"rubygems.org": _json_response(_rubygems_payload(url))})
-    with patch("wet_mcp.sources.docs._safe_httpx_client", return_value=client):
+    with patch("wet.sources.docs._safe_httpx_client", return_value=client):
         result = await _discover_from_rubygems("victim")
     assert result is not None
     assert result["repository"] != url
@@ -183,7 +183,7 @@ async def test_rubygems_rejects_non_github_host(url):
 @pytest.mark.parametrize("url", HOSTILE_URLS)
 async def test_nuget_rejects_non_github_host(url):
     client = _client({"api.nuget.org": _json_response(_nuget_payload(url))})
-    with patch("wet_mcp.sources.docs._safe_httpx_client", return_value=client):
+    with patch("wet.sources.docs._safe_httpx_client", return_value=client):
         result = await _discover_from_nuget("victim")
     assert result is not None
     assert result["repository"] != url
@@ -192,7 +192,7 @@ async def test_nuget_rejects_non_github_host(url):
 @pytest.mark.parametrize("url", LEGITIMATE_URLS)
 async def test_legitimate_github_urls_still_accepted(url):
     client = _client({"pypi.org": _json_response(_pypi_payload(url))})
-    with patch("wet_mcp.sources.docs._safe_httpx_client", return_value=client):
+    with patch("wet.sources.docs._safe_httpx_client", return_value=client):
         result = await _discover_from_pypi("victim")
     assert result is not None
     assert result["repository"] == url
@@ -216,7 +216,7 @@ async def test_crates_keeps_homepage_on_lookalike_host():
         }
     }
     client = _client({"crates.io/api": _json_response(payload)})
-    with patch("wet_mcp.sources.docs._safe_httpx_client", return_value=client):
+    with patch("wet.sources.docs._safe_httpx_client", return_value=client):
         result = await _discover_from_crates("victim")
     assert result is not None
     assert result["homepage"] == "https://evil.example/?ref=crates.io"
@@ -234,7 +234,7 @@ async def test_crates_still_drops_real_self_reference():
         }
     }
     client = _client({"crates.io/api": _json_response(payload)})
-    with patch("wet_mcp.sources.docs._safe_httpx_client", return_value=client):
+    with patch("wet.sources.docs._safe_httpx_client", return_value=client):
         result = await _discover_from_crates("victim")
     assert result is not None
     assert result["homepage"] != "https://crates.io/crates/victim"

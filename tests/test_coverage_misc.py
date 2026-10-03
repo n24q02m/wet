@@ -608,17 +608,17 @@ class TestEnsureSearxngHealthyUnhealthy:
     """Cover lines 46-59: unhealthy path with restart attempt."""
 
     async def test_unhealthy_triggers_restart(self):
-        from wet_mcp.sources.searxng import _ensure_searxng_healthy
+        from wet.sources.searxng import _ensure_searxng_healthy
 
         # First health check fails, restart succeeds, second health check succeeds
         mock_ensure = AsyncMock(return_value="http://127.0.0.1:9090")
         with (
             patch(
-                "wet_mcp.sources.searxng._check_health",
+                "wet.sources.searxng._check_health",
                 side_effect=[False, True],
             ),
             patch(
-                "wet_mcp.searxng_runner.ensure_searxng",
+                "wet.searxng_runner.ensure_searxng",
                 mock_ensure,
             ),
         ):
@@ -626,17 +626,17 @@ class TestEnsureSearxngHealthyUnhealthy:
             assert result == "http://127.0.0.1:9090"
 
     async def test_unhealthy_restart_still_unhealthy(self):
-        from wet_mcp.sources.searxng import _ensure_searxng_healthy
+        from wet.sources.searxng import _ensure_searxng_healthy
 
         # Both health checks fail
         mock_ensure = AsyncMock(return_value="http://127.0.0.1:9090")
         with (
             patch(
-                "wet_mcp.sources.searxng._check_health",
+                "wet.sources.searxng._check_health",
                 side_effect=[False, False],
             ),
             patch(
-                "wet_mcp.searxng_runner.ensure_searxng",
+                "wet.searxng_runner.ensure_searxng",
                 mock_ensure,
             ),
         ):
@@ -644,10 +644,10 @@ class TestEnsureSearxngHealthyUnhealthy:
             assert result == "http://127.0.0.1:9090"
 
     async def test_healthy_no_restart(self):
-        from wet_mcp.sources.searxng import _ensure_searxng_healthy
+        from wet.sources.searxng import _ensure_searxng_healthy
 
         with patch(
-            "wet_mcp.sources.searxng._check_health",
+            "wet.sources.searxng._check_health",
             return_value=True,
         ):
             result = await _ensure_searxng_healthy("http://localhost:8080")
@@ -658,9 +658,9 @@ class TestCheckHealth:
     """Cover _check_health success and exception paths."""
 
     async def test_check_health_success(self):
-        from wet_mcp.sources.searxng import _check_health
+        from wet.sources.searxng import _check_health
 
-        with patch("wet_mcp.sources.searxng.httpx.AsyncClient") as mock_client_cls:
+        with patch("wet.sources.searxng.httpx.AsyncClient") as mock_client_cls:
             mock_response = MagicMock()
             mock_response.status_code = 200
             mock_client = AsyncMock()
@@ -673,9 +673,9 @@ class TestCheckHealth:
             assert result is True
 
     async def test_check_health_exception(self):
-        from wet_mcp.sources.searxng import _check_health
+        from wet.sources.searxng import _check_health
 
-        with patch("wet_mcp.sources.searxng.httpx.AsyncClient") as mock_client_cls:
+        with patch("wet.sources.searxng.httpx.AsyncClient") as mock_client_cls:
             mock_client = AsyncMock()
             mock_client.get.side_effect = Exception("connection refused")
             mock_client_cls.return_value.__aenter__ = AsyncMock(
@@ -692,7 +692,7 @@ class TestSearchDedup:
     async def test_search_dedup_merges_engines_and_keeps_longer_snippet(self):
         import unittest.mock
 
-        from wet_mcp.sources.searxng import search
+        from wet.sources.searxng import search
 
         mock_response = MagicMock()
         mock_response.status_code = 200
@@ -725,12 +725,12 @@ class TestSearchDedup:
 
         with (
             unittest.mock.patch(
-                "wet_mcp.sources.searxng._ensure_searxng_healthy",
+                "wet.sources.searxng._ensure_searxng_healthy",
                 new_callable=AsyncMock,
                 side_effect=lambda url: url,
             ),
             unittest.mock.patch(
-                "wet_mcp.sources.searxng.httpx.AsyncClient",
+                "wet.sources.searxng.httpx.AsyncClient",
                 return_value=mock_context,
             ),
         ):
@@ -761,12 +761,12 @@ class TestDetectDocumentContentType:
     """Cover lines 175-184: _detect_document_content_type."""
 
     async def test_pdf_content_type(self):
-        from wet_mcp.sources.crawler import _detect_document_content_type
+        from wet.sources.crawler import _detect_document_content_type
 
         assert _detect_document_content_type("application/pdf") is True
 
     async def test_docx_content_type(self):
-        from wet_mcp.sources.crawler import _detect_document_content_type
+        from wet.sources.crawler import _detect_document_content_type
 
         assert (
             _detect_document_content_type(
@@ -776,7 +776,7 @@ class TestDetectDocumentContentType:
         )
 
     async def test_pptx_content_type(self):
-        from wet_mcp.sources.crawler import _detect_document_content_type
+        from wet.sources.crawler import _detect_document_content_type
 
         assert (
             _detect_document_content_type(
@@ -786,7 +786,7 @@ class TestDetectDocumentContentType:
         )
 
     async def test_xlsx_content_type(self):
-        from wet_mcp.sources.crawler import _detect_document_content_type
+        from wet.sources.crawler import _detect_document_content_type
 
         assert (
             _detect_document_content_type(
@@ -796,27 +796,27 @@ class TestDetectDocumentContentType:
         )
 
     async def test_msword_content_type(self):
-        from wet_mcp.sources.crawler import _detect_document_content_type
+        from wet.sources.crawler import _detect_document_content_type
 
         assert _detect_document_content_type("application/msword") is True
 
     async def test_ms_powerpoint_content_type(self):
-        from wet_mcp.sources.crawler import _detect_document_content_type
+        from wet.sources.crawler import _detect_document_content_type
 
         assert _detect_document_content_type("application/vnd.ms-powerpoint") is True
 
     async def test_ms_excel_content_type(self):
-        from wet_mcp.sources.crawler import _detect_document_content_type
+        from wet.sources.crawler import _detect_document_content_type
 
         assert _detect_document_content_type("application/vnd.ms-excel") is True
 
     async def test_non_document_content_type(self):
-        from wet_mcp.sources.crawler import _detect_document_content_type
+        from wet.sources.crawler import _detect_document_content_type
 
         assert _detect_document_content_type("text/html") is False
 
     async def test_empty_content_type(self):
-        from wet_mcp.sources.crawler import _detect_document_content_type
+        from wet.sources.crawler import _detect_document_content_type
 
         assert _detect_document_content_type("") is False
 
@@ -825,7 +825,7 @@ class TestExtractWithMarkitdown:
     """Cover lines 189-217: _extract_with_markitdown error paths."""
 
     async def test_markitdown_import_error(self):
-        from wet_mcp.sources.crawler import _extract_with_markitdown
+        from wet.sources.crawler import _extract_with_markitdown
 
         with patch.dict("sys.modules", {"markitdown": None}):
             with patch("builtins.__import__", side_effect=ImportError("no markitdown")):
@@ -834,7 +834,7 @@ class TestExtractWithMarkitdown:
                 assert "markitdown not installed" in result["error"]
 
     async def test_markitdown_conversion_error(self):
-        from wet_mcp.sources.crawler import _extract_with_markitdown
+        from wet.sources.crawler import _extract_with_markitdown
 
         mock_md = MagicMock()
         mock_md_cls = MagicMock(return_value=mock_md)
@@ -860,7 +860,7 @@ class TestExtractWithMarkitdown:
             assert "Document conversion failed" in result["error"]
 
     async def test_markitdown_http_error(self):
-        from wet_mcp.sources.crawler import _extract_with_markitdown
+        from wet.sources.crawler import _extract_with_markitdown
 
         mock_response = MagicMock()
         mock_response.raise_for_status.side_effect = httpx.HTTPStatusError(
@@ -888,8 +888,8 @@ class TestGetCrawlerRetryOnFailure:
     """Cover line 143: RuntimeError after browser start retry fails."""
 
     async def test_get_crawler_retry_exhausted(self):
-        import wet_mcp.sources.crawler as crawler_mod
-        from wet_mcp.sources.crawler import _get_crawler
+        import wet.sources.crawler as crawler_mod
+        from wet.sources.crawler import _get_crawler
 
         crawler_mod._crawler_instance = None
 
@@ -897,8 +897,8 @@ class TestGetCrawlerRetryOnFailure:
         mock_crawler.__aenter__ = AsyncMock(side_effect=RuntimeError("browser failed"))
 
         with (
-            patch("wet_mcp.sources.crawler.AsyncWebCrawler", return_value=mock_crawler),
-            patch("wet_mcp.sources.crawler._cleanup_browser_data_dir"),
+            patch("wet.sources.crawler.AsyncWebCrawler", return_value=mock_crawler),
+            patch("wet.sources.crawler._cleanup_browser_data_dir"),
         ):
             with pytest.raises(RuntimeError, match="browser failed"):
                 await _get_crawler()
@@ -908,18 +908,18 @@ class TestExtractDocumentUrl:
     """Cover line 270-271: document URL routing in extract."""
 
     async def test_extract_routes_document_to_markitdown(self):
-        from wet_mcp.sources.crawler import extract
+        from wet.sources.crawler import extract
 
         mock_crawler = AsyncMock()
 
         with (
             patch(
-                "wet_mcp.sources.crawler._get_crawler",
+                "wet.sources.crawler._get_crawler",
                 new_callable=AsyncMock,
                 return_value=mock_crawler,
             ),
             patch(
-                "wet_mcp.sources.crawler._extract_with_markitdown",
+                "wet.sources.crawler._extract_with_markitdown",
                 new_callable=AsyncMock,
                 return_value={
                     "url": "https://example.com/doc.pdf",
@@ -941,7 +941,7 @@ class TestCrawlSkipsVisitedAndDepth:
     """Cover lines 353, 437: visited/depth skip in crawl/sitemap."""
 
     async def test_sitemap_skips_visited_urls(self):
-        from wet_mcp.sources.crawler import sitemap
+        from wet.sources.crawler import sitemap
 
         mock_crawler = AsyncMock()
         mock_result = MagicMock()
@@ -950,7 +950,7 @@ class TestCrawlSkipsVisitedAndDepth:
         mock_crawler.arun = AsyncMock(return_value=mock_result)
 
         with patch(
-            "wet_mcp.sources.crawler._get_crawler",
+            "wet.sources.crawler._get_crawler",
             new_callable=AsyncMock,
             return_value=mock_crawler,
         ):
@@ -967,7 +967,7 @@ class TestExtractErrorPath:
     """Cover the error branch in extract.process_url after ScrapingAgent migration."""
 
     async def test_extract_crawl_error(self):
-        from wet_mcp.sources.crawler import extract
+        from wet.sources.crawler import extract
 
         agent = MagicMock()
         agent.scrape = AsyncMock(side_effect=RuntimeError("browser crash"))
@@ -975,7 +975,7 @@ class TestExtractErrorPath:
         agent.strategy_cache.recommend = AsyncMock(return_value=["basic_http"])
 
         with patch(
-            "wet_mcp.sources.crawler._get_scraping_agent",
+            "wet.sources.crawler._get_scraping_agent",
             new_callable=AsyncMock,
             return_value=agent,
         ):
@@ -1004,7 +1004,7 @@ class TestCloudEmbeddingBackendCheckAvailableEmpty:
     """Cover check_available returns 0 when embeddings are empty."""
 
     async def test_check_available_empty_data(self):
-        from wet_mcp.embedder import CloudEmbeddingBackend
+        from wet.embedder import CloudEmbeddingBackend
 
         client = _stub_embed_client()
         client.embeddings.return_value = []
@@ -1017,7 +1017,7 @@ class TestCloudEmbeddingBackendCellOwned:
     """The cell owns model/base_url/key; the backend reads the model id."""
 
     async def test_embed_reads_model_from_cell_and_returns_vectors(self):
-        from wet_mcp.embedder import CloudEmbeddingBackend
+        from wet.embedder import CloudEmbeddingBackend
 
         client = _stub_embed_client("text-embedding-3-large")
         client.embeddings.return_value = [[0.1]]
@@ -1027,7 +1027,7 @@ class TestCloudEmbeddingBackendCellOwned:
         assert await backend.embed_texts(["test"]) == [[0.1]]
 
     async def test_check_available_reports_native_dims(self):
-        from wet_mcp.embedder import CloudEmbeddingBackend
+        from wet.embedder import CloudEmbeddingBackend
 
         client = _stub_embed_client()
         client.embeddings.return_value = [[0.1, 0.2]]
@@ -1040,7 +1040,7 @@ class TestLocalEmbeddingBackendLoadError:
     """Cover lines 262-272: _get_model import error and lazy loading."""
 
     async def test_get_model_import_error(self):
-        from wet_mcp.embedder import LocalEmbeddingBackend
+        from wet.embedder import LocalEmbeddingBackend
 
         backend = LocalEmbeddingBackend()
         with patch.dict("sys.modules", {"fastretrieval": None}):
@@ -1052,7 +1052,7 @@ class TestLocalEmbeddingBackendLoadError:
                     backend._get_model()
 
     async def test_get_model_caches(self):
-        from wet_mcp.embedder import LocalEmbeddingBackend
+        from wet.embedder import LocalEmbeddingBackend
 
         backend = LocalEmbeddingBackend("test-model")
         mock_text_embedding = MagicMock()
@@ -1071,7 +1071,7 @@ class TestLocalEmbedCheckAvailableEmptyResult:
     """Cover line 324: check_available returns 0 when result is empty."""
 
     async def test_check_available_empty_result(self):
-        from wet_mcp.embedder import LocalEmbeddingBackend
+        from wet.embedder import LocalEmbeddingBackend
 
         backend = LocalEmbeddingBackend()
         mock_model = MagicMock()
@@ -1088,7 +1088,7 @@ class TestLocalEmbedSingleQuery:
     async def test_embed_single_query_with_dims(self):
         import numpy as np
 
-        from wet_mcp.embedder import LocalEmbeddingBackend
+        from wet.embedder import LocalEmbeddingBackend
 
         backend = LocalEmbeddingBackend()
         mock_model = MagicMock()
@@ -1102,7 +1102,7 @@ class TestLocalEmbedSingleQuery:
     async def test_embed_single_query_no_dims(self):
         import numpy as np
 
-        from wet_mcp.embedder import LocalEmbeddingBackend
+        from wet.embedder import LocalEmbeddingBackend
 
         backend = LocalEmbeddingBackend()
         mock_model = MagicMock()
@@ -1123,14 +1123,12 @@ class TestGetLlmConfigCellGating:
     """The [models.chat] cell decides whether LLM features exist at all."""
 
     async def test_unconfigured_cell_means_no_model(self):
-        from wet_mcp.llm import get_llm_config
+        from wet.llm import get_llm_config
 
         unconfigured = MagicMock()
         unconfigured.configured = False
 
-        with patch(
-            "wet_mcp.runtime.model_cell", lambda task, settings=None: unconfigured
-        ):
+        with patch("wet.runtime.model_cell", lambda task, settings=None: unconfigured):
             config = get_llm_config()
 
         # Unconfigured cell -> no model (LLM feature off), empty key.
@@ -1139,7 +1137,7 @@ class TestGetLlmConfigCellGating:
         assert config["fallbacks"] == []
 
     async def test_configured_cell_owns_model_and_base(self):
-        from wet_mcp.llm import get_llm_config
+        from wet.llm import get_llm_config
 
         cell = MagicMock()
         cell.configured = True
@@ -1147,7 +1145,7 @@ class TestGetLlmConfigCellGating:
         cell.base_url = "https://cell.example/v1"
         cell.api_key = "cell-key"
 
-        with patch("wet_mcp.runtime.model_cell", lambda task, settings=None: cell):
+        with patch("wet.runtime.model_cell", lambda task, settings=None: cell):
             config = get_llm_config()
 
         assert config["model"] == "gemini/gemini-3-flash"
@@ -1160,8 +1158,8 @@ class TestAnalyzeMediaMimeUnknown:
     """Cover unknown mime type."""
 
     async def test_mime_type_none(self, tmp_path):
-        from wet_mcp.config import settings
-        from wet_mcp.llm import analyze_media
+        from wet.config import settings
+        from wet.llm import analyze_media
 
         original_download = settings.download_dir
         settings.download_dir = str(tmp_path)
@@ -1171,7 +1169,7 @@ class TestAnalyzeMediaMimeUnknown:
         f.write_bytes(b"\x00\x01\x02")
 
         try:
-            with patch("wet_mcp.llm.has_llm_provider", return_value=True):
+            with patch("wet.llm.has_llm_provider", return_value=True):
                 result = await analyze_media(str(f))
             assert "Error" in result
         finally:
@@ -1182,8 +1180,8 @@ class TestAnalyzeMediaErrorPaths:
     """Cover lines 120-121, 131-132, 134-135, 166-168: error handling."""
 
     async def test_text_file_completion_error(self, tmp_path):
-        from wet_mcp.config import settings
-        from wet_mcp.llm import analyze_media
+        from wet.config import settings
+        from wet.llm import analyze_media
 
         settings.download_dir = str(tmp_path)
 
@@ -1191,9 +1189,9 @@ class TestAnalyzeMediaErrorPaths:
         txt.write_text("hello")
 
         with (
-            patch("wet_mcp.llm.has_llm_provider", return_value=True),
+            patch("wet.llm.has_llm_provider", return_value=True),
             patch(
-                "wet_mcp.llm.acompletion",
+                "wet.llm.acompletion",
                 side_effect=Exception("API down"),
             ),
         ):
@@ -1201,8 +1199,8 @@ class TestAnalyzeMediaErrorPaths:
             assert "Error analyzing text file" in result
 
     async def test_audio_not_supported(self, tmp_path):
-        from wet_mcp.config import settings
-        from wet_mcp.llm import analyze_media
+        from wet.config import settings
+        from wet.llm import analyze_media
 
         settings.download_dir = str(tmp_path)
 
@@ -1210,8 +1208,8 @@ class TestAnalyzeMediaErrorPaths:
         audio_file.write_bytes(b"fake audio")
 
         with (
-            patch("wet_mcp.llm.has_llm_provider", return_value=True),
-            patch("wet_mcp.llm.get_model_capabilities") as mock_caps,
+            patch("wet.llm.has_llm_provider", return_value=True),
+            patch("wet.llm.get_model_capabilities") as mock_caps,
         ):
             mock_caps.return_value = {
                 "vision": False,
@@ -1222,8 +1220,8 @@ class TestAnalyzeMediaErrorPaths:
             assert "does not support audio input" in result
 
     async def test_video_not_supported(self, tmp_path):
-        from wet_mcp.config import settings
-        from wet_mcp.llm import analyze_media
+        from wet.config import settings
+        from wet.llm import analyze_media
 
         settings.download_dir = str(tmp_path)
 
@@ -1231,8 +1229,8 @@ class TestAnalyzeMediaErrorPaths:
         video_file.write_bytes(b"fake video")
 
         with (
-            patch("wet_mcp.llm.has_llm_provider", return_value=True),
-            patch("wet_mcp.llm.get_model_capabilities") as mock_caps,
+            patch("wet.llm.has_llm_provider", return_value=True),
+            patch("wet.llm.get_model_capabilities") as mock_caps,
         ):
             mock_caps.return_value = {
                 "vision": False,
@@ -1244,8 +1242,8 @@ class TestAnalyzeMediaErrorPaths:
 
     async def test_media_analysis_exception(self, tmp_path):
         """Cover exception during media analysis."""
-        from wet_mcp.config import settings
-        from wet_mcp.llm import analyze_media
+        from wet.config import settings
+        from wet.llm import analyze_media
 
         settings.download_dir = str(tmp_path)
 
@@ -1253,10 +1251,10 @@ class TestAnalyzeMediaErrorPaths:
         img.write_bytes(b"fake image")
 
         with (
-            patch("wet_mcp.llm.has_llm_provider", return_value=True),
-            patch("wet_mcp.llm.get_model_capabilities") as mock_caps,
+            patch("wet.llm.has_llm_provider", return_value=True),
+            patch("wet.llm.get_model_capabilities") as mock_caps,
             patch(
-                "wet_mcp.llm.acompletion",
+                "wet.llm.acompletion",
                 side_effect=Exception("LLM crashed"),
             ),
         ):
@@ -1287,7 +1285,7 @@ class TestCloudRerankerCellOwned:
     """The cell owns model/base_url/key; results parse to (index, score)."""
 
     async def test_rerank_parses_provider_results(self):
-        from wet_mcp.reranker import CloudReranker
+        from wet.reranker import CloudReranker
 
         client = _stub_rerank_client()
         client.rerank.return_value = [{"index": 0, "relevance_score": 0.9}]
@@ -1299,7 +1297,7 @@ class TestCloudRerankerCellOwned:
         client.rerank.assert_awaited_once_with("query", ["doc1"], top_n=5)
 
     async def test_check_available_true_when_provider_answers(self):
-        from wet_mcp.reranker import CloudReranker
+        from wet.reranker import CloudReranker
 
         client = _stub_rerank_client()
         client.rerank.return_value = [{"index": 0, "relevance_score": 0.5}]
@@ -1312,7 +1310,7 @@ class TestLocalRerankerLoadModel:
     """Cover lines 164-174: _get_model lazy loading and caching."""
 
     async def test_get_model_loads_and_caches(self):
-        from wet_mcp.reranker import LocalReranker
+        from wet.reranker import LocalReranker
 
         reranker = LocalReranker("test-model")
         mock_cross_encoder = MagicMock()
@@ -1326,7 +1324,7 @@ class TestLocalRerankerLoadModel:
             mock_cross_encoder.assert_called_once()
 
     async def test_get_model_import_error(self):
-        from wet_mcp.reranker import LocalReranker
+        from wet.reranker import LocalReranker
 
         reranker = LocalReranker()
         with patch.dict("sys.modules", {"fastretrieval": None}):
@@ -1342,7 +1340,7 @@ class TestCloudRerankerCheckAvailableEmpty:
     """Cover edge case: check_available with empty results."""
 
     async def test_check_available_empty_results(self):
-        from wet_mcp.reranker import CloudReranker
+        from wet.reranker import CloudReranker
 
         client = _stub_rerank_client()
         client.rerank.return_value = []

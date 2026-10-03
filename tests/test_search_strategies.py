@@ -3,7 +3,7 @@
 import json
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from wet_mcp.sources.search_strategies import (
+from wet.sources.search_strategies import (
     _extract_passage,
     enrich_snippets,
     expand_query,
@@ -32,15 +32,15 @@ async def test_expand_query_success():
     """LLM returns 2 alternative queries -- happy path."""
     with (
         patch(
-            "wet_mcp.sources.search_strategies.has_llm_provider",
+            "wet.sources.search_strategies.has_llm_provider",
             return_value=True,
         ),
         patch(
-            "wet_mcp.sources.search_strategies.get_llm_config",
+            "wet.sources.search_strategies.get_llm_config",
             return_value={"model": "gpt-4", "fallbacks": None, "temperature": 0},
         ),
         patch(
-            "wet_mcp.sources.search_strategies.acompletion",
+            "wet.sources.search_strategies.acompletion",
             new_callable=AsyncMock,
             return_value=_mock_llm_response("python web scraping\nweb crawling python"),
         ),
@@ -55,9 +55,7 @@ async def test_expand_query_success():
 
 async def test_expand_query_local_mode_fallback():
     """Local mode (no LLM) returns only original query."""
-    with patch(
-        "wet_mcp.sources.search_strategies.has_llm_provider", return_value=False
-    ):
+    with patch("wet.sources.search_strategies.has_llm_provider", return_value=False):
         result = await expand_query("python scraping")
 
         assert result == ["python scraping"]
@@ -67,15 +65,15 @@ async def test_expand_query_llm_failure_fallback():
     """LLM call fails -- gracefully returns original query."""
     with (
         patch(
-            "wet_mcp.sources.search_strategies.has_llm_provider",
+            "wet.sources.search_strategies.has_llm_provider",
             return_value=True,
         ),
         patch(
-            "wet_mcp.sources.search_strategies.get_llm_config",
+            "wet.sources.search_strategies.get_llm_config",
             return_value={"model": "gpt-4", "fallbacks": None, "temperature": 0},
         ),
         patch(
-            "wet_mcp.sources.search_strategies.acompletion",
+            "wet.sources.search_strategies.acompletion",
             new_callable=AsyncMock,
             side_effect=Exception("API error"),
         ),
@@ -89,15 +87,15 @@ async def test_expand_query_numbered_lines():
     """LLM returns numbered lines -- numbers are stripped."""
     with (
         patch(
-            "wet_mcp.sources.search_strategies.has_llm_provider",
+            "wet.sources.search_strategies.has_llm_provider",
             return_value=True,
         ),
         patch(
-            "wet_mcp.sources.search_strategies.get_llm_config",
+            "wet.sources.search_strategies.get_llm_config",
             return_value={"model": "gpt-4", "fallbacks": None, "temperature": 0},
         ),
         patch(
-            "wet_mcp.sources.search_strategies.acompletion",
+            "wet.sources.search_strategies.acompletion",
             new_callable=AsyncMock,
             return_value=_mock_llm_response("1. alternative one\n2) alternative two"),
         ),
@@ -113,15 +111,15 @@ async def test_expand_query_empty_llm_response():
     """LLM returns empty content -- falls back to original."""
     with (
         patch(
-            "wet_mcp.sources.search_strategies.has_llm_provider",
+            "wet.sources.search_strategies.has_llm_provider",
             return_value=True,
         ),
         patch(
-            "wet_mcp.sources.search_strategies.get_llm_config",
+            "wet.sources.search_strategies.get_llm_config",
             return_value={"model": "gpt-4", "fallbacks": None, "temperature": 0},
         ),
         patch(
-            "wet_mcp.sources.search_strategies.acompletion",
+            "wet.sources.search_strategies.acompletion",
             new_callable=AsyncMock,
             return_value=_mock_llm_response(""),
         ),
@@ -136,15 +134,15 @@ async def test_expand_query_more_than_two_alts():
     """LLM returns more than 2 alternatives -- only first 2 kept."""
     with (
         patch(
-            "wet_mcp.sources.search_strategies.has_llm_provider",
+            "wet.sources.search_strategies.has_llm_provider",
             return_value=True,
         ),
         patch(
-            "wet_mcp.sources.search_strategies.get_llm_config",
+            "wet.sources.search_strategies.get_llm_config",
             return_value={"model": "gpt-4", "fallbacks": None, "temperature": 0},
         ),
         patch(
-            "wet_mcp.sources.search_strategies.acompletion",
+            "wet.sources.search_strategies.acompletion",
             new_callable=AsyncMock,
             return_value=_mock_llm_response("alt1\nalt2\nalt3\nalt4"),
         ),
@@ -187,17 +185,17 @@ async def test_find_similar_success():
     """Happy path: extract content, get keywords, search."""
     with (
         patch(
-            "wet_mcp.sources.search_strategies.raw_extract",
+            "wet.sources.search_strategies.raw_extract",
             new_callable=AsyncMock,
             return_value=json.dumps(SAMPLE_PAGES),
         ),
         patch(
-            "wet_mcp.sources.search_strategies._extract_keywords",
+            "wet.sources.search_strategies._extract_keywords",
             new_callable=AsyncMock,
             return_value="python web scraping beautifulsoup",
         ),
         patch(
-            "wet_mcp.sources.search_backends.run_search_chain",
+            "wet.sources.search_backends.run_search_chain",
             new_callable=AsyncMock,
             return_value=SEARCH_RESULTS,
         ) as mock_search,
@@ -221,7 +219,7 @@ async def test_find_similar_extract_failure():
     """Extract fails -- returns error JSON."""
     error_pages = [{"url": "https://bad.com", "error": "Failed to load"}]
     with patch(
-        "wet_mcp.sources.search_strategies.raw_extract",
+        "wet.sources.search_strategies.raw_extract",
         new_callable=AsyncMock,
         return_value=json.dumps(error_pages),
     ):
@@ -235,7 +233,7 @@ async def test_find_similar_extract_failure():
 async def test_find_similar_empty_pages():
     """Extract returns empty list -- returns error JSON."""
     with patch(
-        "wet_mcp.sources.search_strategies.raw_extract",
+        "wet.sources.search_strategies.raw_extract",
         new_callable=AsyncMock,
         return_value=json.dumps([]),
     ):
@@ -248,29 +246,29 @@ async def test_find_similar_empty_pages():
 async def test_find_similar_auto_searxng_url(monkeypatch):
     """A local single-user SearXNG chain is started before similar search."""
     monkeypatch.delenv("PUBLIC_URL", raising=False)
-    monkeypatch.setattr("wet_mcp.runtime.current_sub", lambda: "default")
+    monkeypatch.setattr("wet.runtime.current_sub", lambda: "default")
     monkeypatch.setattr(
-        "wet_mcp.sources.search_backends.chain_backend_names",
+        "wet.sources.search_backends.chain_backend_names",
         lambda: ["searxng"],
     )
     with (
         patch(
-            "wet_mcp.sources.search_strategies.raw_extract",
+            "wet.sources.search_strategies.raw_extract",
             new_callable=AsyncMock,
             return_value=json.dumps(SAMPLE_PAGES),
         ),
         patch(
-            "wet_mcp.sources.search_strategies._extract_keywords",
+            "wet.sources.search_strategies._extract_keywords",
             new_callable=AsyncMock,
             return_value="keywords",
         ),
         patch(
-            "wet_mcp.sources.search_backends.run_search_chain",
+            "wet.sources.search_backends.run_search_chain",
             new_callable=AsyncMock,
             return_value=SEARCH_RESULTS,
         ) as mock_search,
         patch(
-            "wet_mcp.searxng_runner.ensure_searxng",
+            "wet.searxng_runner.ensure_searxng",
             new_callable=AsyncMock,
             return_value="http://localhost:41592",
         ) as mock_ensure,
@@ -294,41 +292,37 @@ async def test_find_similar_auto_searxng_url(monkeypatch):
 
 async def test_extract_keywords_local_mode():
     """Local mode returns title as keywords."""
-    from wet_mcp.sources.search_strategies import _extract_keywords
+    from wet.sources.search_strategies import _extract_keywords
 
-    with patch(
-        "wet_mcp.sources.search_strategies.has_llm_provider", return_value=False
-    ):
+    with patch("wet.sources.search_strategies.has_llm_provider", return_value=False):
         result = await _extract_keywords("some content", "My Title")
         assert result == "My Title"
 
 
 async def test_extract_keywords_local_no_title():
     """Local mode with no title returns content prefix."""
-    from wet_mcp.sources.search_strategies import _extract_keywords
+    from wet.sources.search_strategies import _extract_keywords
 
-    with patch(
-        "wet_mcp.sources.search_strategies.has_llm_provider", return_value=False
-    ):
+    with patch("wet.sources.search_strategies.has_llm_provider", return_value=False):
         result = await _extract_keywords("some content here", "")
         assert result == "some content here"
 
 
 async def test_extract_keywords_llm_success():
     """LLM returns comma-separated keywords."""
-    from wet_mcp.sources.search_strategies import _extract_keywords
+    from wet.sources.search_strategies import _extract_keywords
 
     with (
         patch(
-            "wet_mcp.sources.search_strategies.has_llm_provider",
+            "wet.sources.search_strategies.has_llm_provider",
             return_value=True,
         ),
         patch(
-            "wet_mcp.sources.search_strategies.get_llm_config",
+            "wet.sources.search_strategies.get_llm_config",
             return_value={"model": "gpt-4", "fallbacks": None, "temperature": 0},
         ),
         patch(
-            "wet_mcp.sources.search_strategies.acompletion",
+            "wet.sources.search_strategies.acompletion",
             new_callable=AsyncMock,
             return_value=_mock_llm_response("python, scraping, web, automation"),
         ),
@@ -339,19 +333,19 @@ async def test_extract_keywords_llm_success():
 
 async def test_extract_keywords_llm_failure():
     """LLM fails -- falls back to title."""
-    from wet_mcp.sources.search_strategies import _extract_keywords
+    from wet.sources.search_strategies import _extract_keywords
 
     with (
         patch(
-            "wet_mcp.sources.search_strategies.has_llm_provider",
+            "wet.sources.search_strategies.has_llm_provider",
             return_value=True,
         ),
         patch(
-            "wet_mcp.sources.search_strategies.get_llm_config",
+            "wet.sources.search_strategies.get_llm_config",
             return_value={"model": "gpt-4", "fallbacks": None, "temperature": 0},
         ),
         patch(
-            "wet_mcp.sources.search_strategies.acompletion",
+            "wet.sources.search_strategies.acompletion",
             new_callable=AsyncMock,
             side_effect=Exception("API error"),
         ),
@@ -386,7 +380,7 @@ async def test_enrich_snippets_success():
     ]
 
     with patch(
-        "wet_mcp.sources.search_strategies.raw_extract",
+        "wet.sources.search_strategies.raw_extract",
         new_callable=AsyncMock,
         return_value=json.dumps(ENRICHMENT_PAGES),
     ):
@@ -411,7 +405,7 @@ async def test_enrich_snippets_extract_failure():
     ]
 
     with patch(
-        "wet_mcp.sources.search_strategies.raw_extract",
+        "wet.sources.search_strategies.raw_extract",
         new_callable=AsyncMock,
         side_effect=Exception("Network error"),
     ):
@@ -440,7 +434,7 @@ async def test_enrich_snippets_preserves_rest():
     ]
 
     with patch(
-        "wet_mcp.sources.search_strategies.raw_extract",
+        "wet.sources.search_strategies.raw_extract",
         new_callable=AsyncMock,
         return_value=json.dumps(ENRICHMENT_PAGES),
     ):
@@ -512,15 +506,15 @@ async def test_generate_hyde_query_success():
     """LLM returns hypothetical document text -- happy path."""
     with (
         patch(
-            "wet_mcp.sources.search_strategies.has_llm_provider",
+            "wet.sources.search_strategies.has_llm_provider",
             return_value=True,
         ),
         patch(
-            "wet_mcp.sources.search_strategies.get_llm_config",
+            "wet.sources.search_strategies.get_llm_config",
             return_value={"model": "gpt-4", "fallbacks": None, "temperature": 0},
         ),
         patch(
-            "wet_mcp.sources.search_strategies.acompletion",
+            "wet.sources.search_strategies.acompletion",
             new_callable=AsyncMock,
             return_value=_mock_llm_response(
                 "The requests library provides a simple HTTP client for Python. "
@@ -536,9 +530,7 @@ async def test_generate_hyde_query_success():
 
 async def test_generate_hyde_query_local_mode():
     """Local mode (no LLM) returns None."""
-    with patch(
-        "wet_mcp.sources.search_strategies.has_llm_provider", return_value=False
-    ):
+    with patch("wet.sources.search_strategies.has_llm_provider", return_value=False):
         result = await generate_hyde_query("some query", "some-lib")
 
         assert result is None
@@ -548,15 +540,15 @@ async def test_generate_hyde_query_llm_failure():
     """LLM call fails -- returns None gracefully."""
     with (
         patch(
-            "wet_mcp.sources.search_strategies.has_llm_provider",
+            "wet.sources.search_strategies.has_llm_provider",
             return_value=True,
         ),
         patch(
-            "wet_mcp.sources.search_strategies.get_llm_config",
+            "wet.sources.search_strategies.get_llm_config",
             return_value={"model": "gpt-4", "fallbacks": None, "temperature": 0},
         ),
         patch(
-            "wet_mcp.sources.search_strategies.acompletion",
+            "wet.sources.search_strategies.acompletion",
             new_callable=AsyncMock,
             side_effect=Exception("API error"),
         ),
@@ -570,15 +562,15 @@ async def test_generate_hyde_query_empty_response():
     """LLM returns empty content -- returns None."""
     with (
         patch(
-            "wet_mcp.sources.search_strategies.has_llm_provider",
+            "wet.sources.search_strategies.has_llm_provider",
             return_value=True,
         ),
         patch(
-            "wet_mcp.sources.search_strategies.get_llm_config",
+            "wet.sources.search_strategies.get_llm_config",
             return_value={"model": "gpt-4", "fallbacks": None, "temperature": 0},
         ),
         patch(
-            "wet_mcp.sources.search_strategies.acompletion",
+            "wet.sources.search_strategies.acompletion",
             new_callable=AsyncMock,
             return_value=_mock_llm_response(""),
         ),

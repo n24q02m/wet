@@ -9,8 +9,8 @@ import pytest
 from mcp.types import CallToolResult
 from structured import payload, text
 
-from wet_mcp.cache import WebCache
-from wet_mcp.server import extract
+from wet.cache import WebCache
+from wet.server import extract
 
 
 def _extract_json(url: str, markdown: str) -> str:
@@ -34,7 +34,7 @@ def real_cache(tmp_path):
     """A real (not mocked) WebCache so record_snapshot/latest_snapshots/diff
     run against actual SQLite state instead of a hand-wired mock.
     """
-    import wet_mcp.server as server
+    import wet.server as server
 
     cache = WebCache(tmp_path / "diff_test.db")
     old_cache = server._web_cache
@@ -53,7 +53,7 @@ async def test_diff_missing_urls_returns_error():
 
 @pytest.mark.asyncio
 async def test_diff_requires_cache_enabled():
-    import wet_mcp.server as server
+    import wet.server as server
 
     old_cache = server._web_cache
     server._web_cache = None
@@ -69,7 +69,7 @@ async def test_diff_requires_cache_enabled():
 async def test_diff_first_fetch_is_new(real_cache):
     """Only one snapshot exists so far -> change_status 'new', empty diff."""
     with patch(
-        "wet_mcp.server._extract",
+        "wet.server._extract",
         new_callable=AsyncMock,
         return_value=_extract_json("https://example.com", "hello v1"),
     ):
@@ -86,14 +86,14 @@ async def test_diff_first_fetch_is_new(real_cache):
 async def test_diff_second_fetch_changed(real_cache):
     """Two differing snapshots -> change_status 'changed' with -old/+new lines."""
     with patch(
-        "wet_mcp.server._extract",
+        "wet.server._extract",
         new_callable=AsyncMock,
         return_value=_extract_json("https://example.com", "line one\nline two"),
     ):
         await extract(action="diff", urls=["https://example.com"])
 
     with patch(
-        "wet_mcp.server._extract",
+        "wet.server._extract",
         new_callable=AsyncMock,
         return_value=_extract_json("https://example.com", "line one\nline THREE"),
     ):
@@ -115,7 +115,7 @@ async def test_diff_second_fetch_changed(real_cache):
 async def test_diff_unchanged_content_is_same(real_cache):
     """Refetching identical content -> change_status 'same', empty diff."""
     with patch(
-        "wet_mcp.server._extract",
+        "wet.server._extract",
         new_callable=AsyncMock,
         return_value=_extract_json("https://example.com", "static content"),
     ):
@@ -133,7 +133,7 @@ async def test_diff_no_refetch_uses_existing_snapshots_only(real_cache):
     real_cache.record_snapshot("https://example.com", "line one\nline two")
     real_cache.record_snapshot("https://example.com", "line one\nline THREE")
 
-    with patch("wet_mcp.server._extract", new_callable=AsyncMock) as mock_extract:
+    with patch("wet.server._extract", new_callable=AsyncMock) as mock_extract:
         result = await extract(
             action="diff", urls=["https://example.com"], refetch=False
         )
@@ -148,7 +148,7 @@ async def test_diff_no_refetch_uses_existing_snapshots_only(real_cache):
 @pytest.mark.asyncio
 async def test_diff_no_history_and_no_refetch_returns_error(real_cache):
     """refetch=False with zero prior snapshots -> per-URL error, not a fabricated status."""
-    with patch("wet_mcp.server._extract", new_callable=AsyncMock) as mock_extract:
+    with patch("wet.server._extract", new_callable=AsyncMock) as mock_extract:
         result = await extract(
             action="diff", urls=["https://never-fetched.com"], refetch=False
         )
@@ -165,9 +165,7 @@ async def test_diff_multiple_urls_wraps_in_results(real_cache):
     async def fake_extract(urls, format, stealth):
         return _extract_json(urls[0], f"content for {urls[0]}")
 
-    with patch(
-        "wet_mcp.server._extract", new_callable=AsyncMock, side_effect=fake_extract
-    ):
+    with patch("wet.server._extract", new_callable=AsyncMock, side_effect=fake_extract):
         result = await extract(action="diff", urls=["https://a.com", "https://b.com"])
 
     data = payload(result)

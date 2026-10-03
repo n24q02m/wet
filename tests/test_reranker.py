@@ -1,4 +1,4 @@
-"""Tests for src/wet_mcp/reranker.py — dual-backend reranking over hull cells.
+"""Tests for src/wet/reranker.py — dual-backend reranking over hull cells.
 
 Covers CloudReranker (async; the [models.rerank] cell's OpenAI-spec client),
 LocalReranker (sync local ONNX cross-encoder), the per-request resolver, and
@@ -10,8 +10,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-import wet_mcp.reranker as reranker_mod
-from wet_mcp.reranker import (
+import wet.reranker as reranker_mod
+from wet.reranker import (
     CloudReranker,
     LocalReranker,
     get_reranker,
@@ -224,11 +224,11 @@ class TestRerankerFactory:
         """init_reranker('cloud') wraps the [models.rerank] cell's client."""
         client = _cell_client("cell-rerank-model")
         monkeypatch.setattr(
-            "wet_mcp.runtime.cell_configured",
+            "wet.runtime.cell_configured",
             lambda task, settings=None: task == "rerank",
         )
         monkeypatch.setattr(
-            "wet_mcp.runtime.provider_client", lambda task, settings=None: client
+            "wet.runtime.provider_client", lambda task, settings=None: client
         )
 
         reranker = init_reranker("cloud")
@@ -239,7 +239,7 @@ class TestRerankerFactory:
 
     def test_init_cloud_requires_configured_cell(self, monkeypatch):
         monkeypatch.setattr(
-            "wet_mcp.runtime.cell_configured", lambda task, settings=None: False
+            "wet.runtime.cell_configured", lambda task, settings=None: False
         )
         with pytest.raises(RuntimeError, match="not configured"):
             init_reranker("cloud")
@@ -272,13 +272,13 @@ class TestResolveRerankBackendForRequest:
         assert resolve_rerank_backend_for_request() is backend
 
     def test_none_when_rerank_disabled(self, monkeypatch):
-        from wet_mcp.config import settings
+        from wet.config import settings
 
         monkeypatch.setattr(settings, "rerank_enabled", False)
         assert resolve_rerank_backend_for_request() is None
 
     def test_none_when_local_leg_disabled(self, monkeypatch):
-        from wet_mcp.config import settings
+        from wet.config import settings
 
         monkeypatch.setattr(settings, "disable_local_rerank", True)
         assert resolve_rerank_backend_for_request() is None

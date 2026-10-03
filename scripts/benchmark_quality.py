@@ -280,7 +280,7 @@ async def run_single_case(
     backend: str = "searxng",
     model_chain: str = "none",
 ) -> BenchmarkResult:
-    """Run a single benchmark test case using direct wet_mcp server calls."""
+    """Run a single benchmark test case using direct wet server calls."""
     if mode != "stdio":
         return BenchmarkResult(
             corpus_id=item.id,
@@ -300,36 +300,36 @@ async def run_single_case(
             ),
         )
     try:
-        import wet_mcp.transport_check as tc
+        import wet.transport_check as tc
 
         tc._UVX_TOOL_VENV_CACHE = False
-        from wet_mcp.credential_state import CredentialState, set_state
+        from wet.credential_state import CredentialState, set_state
 
         set_state(CredentialState.LOCAL)
-        from wet_mcp import server as wet_server
+        from wet import server as wet_server
 
         if wet_server._docs_db is None:
             try:
                 wet_server._docs_db = wet_server.make_docs_db()
             except Exception:
                 pass
-        from wet_mcp.server import extract, search
+        from wet.server import extract, search
     except ImportError:
         sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
-        import wet_mcp.transport_check as tc
+        import wet.transport_check as tc
 
         tc._UVX_TOOL_VENV_CACHE = False
-        from wet_mcp.credential_state import CredentialState, set_state
+        from wet.credential_state import CredentialState, set_state
 
         set_state(CredentialState.LOCAL)
-        from wet_mcp import server as wet_server
+        from wet import server as wet_server
 
         if wet_server._docs_db is None:
             try:
                 wet_server._docs_db = wet_server.make_docs_db()
             except Exception:
                 pass
-        from wet_mcp.server import extract, search
+        from wet.server import extract, search
     t0 = time.perf_counter()
     status = "FAIL"
     failure_class = FailureClass.NONE

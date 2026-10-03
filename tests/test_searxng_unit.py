@@ -1,6 +1,6 @@
 """Unit tests for SearXNG search wrapper (delegates to web-core).
 
-Tests the wet-mcp wrapper layer: JSON conversion, error handling,
+Tests the wet wrapper layer: JSON conversion, error handling,
 health check integration, and parameter passing to web-core.
 """
 
@@ -11,14 +11,14 @@ import pytest
 from hull_web.search import SearchError
 from hull_web.search.models import SearchResult
 
-from wet_mcp.sources.searxng import search
+from wet.sources.searxng import search
 
 
 @pytest.fixture(autouse=True)
 def mock_health_check():
     """Mock _ensure_searxng_healthy to prevent real SearXNG startup in unit tests."""
     with unittest.mock.patch(
-        "wet_mcp.sources.searxng._ensure_searxng_healthy",
+        "wet.sources.searxng._ensure_searxng_healthy",
         new_callable=unittest.mock.AsyncMock,
     ) as mock_healthy:
         mock_healthy.side_effect = lambda url: url
@@ -29,7 +29,7 @@ def mock_health_check():
 def mock_wc_search():
     """Mock web-core's search function at the delegation boundary."""
     with unittest.mock.patch(
-        "wet_mcp.sources.searxng._wc_search",
+        "wet.sources.searxng._wc_search",
         new_callable=unittest.mock.AsyncMock,
     ) as mock_search:
         yield mock_search

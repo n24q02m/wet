@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1
-# wet-mcp — single-stage runtime image (CF-era HTTP deployment).
-# The bare `python -m wet_mcp` module IS the blocking HTTP server: it serves
+# wet — single-stage runtime image (CF-era HTTP deployment).
+# The bare `python -m wet` module IS the blocking HTTP server: it serves
 # WET_HOST:WET_PORT (env below; also overridable per-container at runtime).
 # The old multi-stage stdio/http matrix and its MCP_TRANSPORT/MCP_PORT wiring
 # are gone — stdio is a local uvx concern, not a container one.
@@ -117,4 +117,4 @@ VOLUME /data
 EXPOSE 8000
 USER appuser
 
-ENTRYPOINT ["python", "-m", "wet_mcp"]
+ENTRYPOINT ["python", "-m", "wet"]

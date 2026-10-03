@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# UserPromptSubmit hook -- pre-warm wet-mcp docs cache when the user's
+# UserPromptSubmit hook -- pre-warm wet docs cache when the user's
 # prompt mentions a known Tier 1 library import.
 #
 # Spec section 12.2 NICE + Phase 3 plan task 10. Best-effort only;
@@ -30,7 +30,7 @@ if [ -z "$PROMPT" ]; then
     exit 0
 fi
 
-# Tier 1 library aliases the wet-mcp registry currently knows about.
+# Tier 1 library aliases the wet registry currently knows about.
 # The list mirrors tests/fixtures/libraries/tier1_libraries.json so the
 # hook stays useful without a runtime DB lookup. Extend cautiously --
 # extra entries cost a no-op warmup, missing entries are silent.
@@ -98,24 +98,24 @@ fi
 # Deduplicate hits.
 UNIQUE_HITS=$(printf "%s\n" "${HITS[@]}" | sort -u)
 
-# Fire-and-forget docs_resolve warmup. We use the wet-mcp CLI in
+# Fire-and-forget docs_resolve warmup. We use the wet CLI in
 # headless mode if available; otherwise log to stderr and exit so the
 # operator can see what would have warmed.
 WARMUP_LOG="${WET_PREWARM_LOG:-/dev/null}"
-if command -v wet-mcp >/dev/null 2>&1; then
+if command -v wet >/dev/null 2>&1; then
     while IFS= read -r lib; do
         [ -z "$lib" ] && continue
         # Detached subshell -- never blocks the user prompt.
         (
-            wet-mcp call --tool search --action docs_resolve \
+            wet call --tool search --action docs_resolve \
                 --query "$lib" >>"$WARMUP_LOG" 2>&1 || true
         ) &
     done <<< "$UNIQUE_HITS"
 else
     # Advisory-only fallback: tell the operator which libraries would
-    # have been warmed if the wet-mcp CLI were on PATH.
+    # have been warmed if the wet CLI were on PATH.
     {
-        printf '[wet-mcp UserPromptSubmit hook] would prewarm: '
+        printf '[wet UserPromptSubmit hook] would prewarm: '
         printf '%s ' "${UNIQUE_HITS[@]}"
         printf '\n'
     } >&2

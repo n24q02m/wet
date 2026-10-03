@@ -3,8 +3,8 @@ from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 
-from wet_mcp.sources._search_polish import standardize_citation
-from wet_mcp.sources.search_backends import run_search_chain
+from wet.sources._search_polish import standardize_citation
+from wet.sources.search_backends import run_search_chain
 
 
 def test_standardize_citation_confidence_exposure():
@@ -81,11 +81,11 @@ async def test_run_search_chain_parallel_fanout():
     )
 
     with patch(
-        "wet_mcp.sources.search_backends.search_backends_from_env",
+        "wet.sources.search_backends.search_backends_from_env",
         return_value=[b1, b2],
     ):
         with patch(
-            "wet_mcp.sources.search_backends.chain_backend_names",
+            "wet.sources.search_backends.chain_backend_names",
             return_value=["tavily", "brave"],
         ):
             out_raw = await run_search_chain(
@@ -123,11 +123,11 @@ async def test_run_search_chain_parallel_with_one_failure():
     )
 
     with patch(
-        "wet_mcp.sources.search_backends.search_backends_from_env",
+        "wet.sources.search_backends.search_backends_from_env",
         return_value=[b1, b2],
     ):
         with patch(
-            "wet_mcp.sources.search_backends.chain_backend_names",
+            "wet.sources.search_backends.chain_backend_names",
             return_value=["tavily", "brave"],
         ):
             out_raw = await run_search_chain(
@@ -160,11 +160,11 @@ async def test_run_search_chain_parallel_false_uses_sequential():
     )
 
     with patch(
-        "wet_mcp.sources.search_backends.search_backends_from_env",
+        "wet.sources.search_backends.search_backends_from_env",
         return_value=[b1, b2],
     ):
         with patch(
-            "wet_mcp.sources.search_backends.chain_backend_names",
+            "wet.sources.search_backends.chain_backend_names",
             return_value=["tavily", "brave"],
         ):
             out_raw = await run_search_chain(

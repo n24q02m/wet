@@ -18,8 +18,8 @@ logger.add(sys.stdout, level="INFO")
 
 async def test_searxng():
     """Test SearXNG search functionality."""
-    from wet_mcp.searxng_runner import ensure_searxng
-    from wet_mcp.sources.searxng import search
+    from wet.searxng_runner import ensure_searxng
+    from wet.sources.searxng import search
 
     print("\n" + "=" * 50)
     print("TEST: SearXNG Integration")
@@ -62,7 +62,7 @@ async def test_searxng():
 
 async def test_extract():
     """Test content extraction."""
-    from wet_mcp.sources.crawler import extract
+    from wet.sources.crawler import extract
 
     print("\n" + "=" * 50)
     print("TEST: Content Extraction")
@@ -100,7 +100,7 @@ async def test_extract():
 
 async def test_sitemap():
     """Test sitemap discovery."""
-    from wet_mcp.sources.crawler import sitemap
+    from wet.sources.crawler import sitemap
 
     print("\n" + "=" * 50)
     print("TEST: Sitemap Discovery")
@@ -157,7 +157,7 @@ async def main():
 
     # Cleanup
     print("\n[Cleanup] Stopping SearXNG...")
-    from wet_mcp.searxng_runner import stop_searxng
+    from wet.searxng_runner import stop_searxng
 
     stop_searxng()
     print("    Done!")

@@ -30,8 +30,8 @@ from hull_web.search.runner import (
     _write_discovery,
 )
 
-from wet_mcp.config import settings
-from wet_mcp.searxng_runner import (
+from wet.config import settings
+from wet.searxng_runner import (
     ensure_searxng,
 )
 
@@ -253,8 +253,8 @@ def test_install_searxng():
     with (
         patch("hull_web.search.runner._get_pip_command", return_value=["pip"]),
         patch("subprocess.run") as mock_run,
-        patch("wet_mcp.setup.patch_searxng_version"),
-        patch("wet_mcp.setup.patch_searxng_windows"),
+        patch("wet.setup.patch_searxng_version"),
+        patch("wet.setup.patch_searxng_windows"),
     ):
         mock_run_result = MagicMock()
         mock_run_result.returncode = 0
@@ -527,7 +527,7 @@ async def test_start_searxng_subprocess_exception_after_start():
 
 @pytest.mark.asyncio
 async def test_ensure_searxng_disabled():
-    with patch("wet_mcp.config.settings.wet_auto_searxng", False):
+    with patch("wet.config.settings.wet_auto_searxng", False):
         url = await ensure_searxng()
         assert url == settings.searxng_url
 

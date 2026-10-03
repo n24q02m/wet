@@ -22,8 +22,8 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from wet_mcp import embedder, server
-from wet_mcp.db import INDEX_STATE_DONE, DocsDB
+from wet import embedder, server
+from wet.db import INDEX_STATE_DONE, DocsDB
 
 DOCS_URL = "https://example.test/biglib"
 

@@ -8,7 +8,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from wet_mcp.sources.crawler import _build_headless_strategies, _resolve_identity
+from wet.sources.crawler import _build_headless_strategies, _resolve_identity
 
 
 def _install_fake_hull_identity(
@@ -82,7 +82,7 @@ class TestInvisibleBranch:
         monkeypatch.setenv("BROWSER_BACKENDS", "native,browserless,invisible")
         monkeypatch.setenv("STEALTHFOX_BINARY", "/opt/stealthfox")
         monkeypatch.setattr(
-            "wet_mcp.identity.identity_profile_dir", lambda: str(tmp_path / "profiles")
+            "wet.identity.identity_profile_dir", lambda: str(tmp_path / "profiles")
         )
         monkeypatch.setenv("WET_IDENTITY_SEED", "5")
 
@@ -98,7 +98,7 @@ class TestInvisibleBranch:
         monkeypatch.setenv("BROWSER_BACKENDS", "invisible")
         monkeypatch.delenv("STEALTHFOX_BINARY", raising=False)
         monkeypatch.setattr(
-            "wet_mcp.identity.identity_profile_dir", lambda: str(tmp_path / "profiles")
+            "wet.identity.identity_profile_dir", lambda: str(tmp_path / "profiles")
         )
 
         strats = _build_headless_strategies(stealth=True)

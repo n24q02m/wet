@@ -4,7 +4,7 @@ from unittest.mock import patch
 
 import pytest
 
-from wet_mcp.security import is_safe_local_path, is_safe_url
+from wet.security import is_safe_local_path, is_safe_url
 
 # Tests mock ``hull_web.http.client._original_getaddrinfo`` because
 # ``is_safe_url`` (now in web-core) calls the saved reference (not
@@ -151,7 +151,7 @@ def test_is_safe_url_general_exception():
 
 
 def test_wrap_external_content_success():
-    from wet_mcp.security import wrap_external_content
+    from wet.security import wrap_external_content
 
     result = wrap_external_content("test_tool", "some content")
     tag = "untrusted_test_tool_content"
@@ -165,7 +165,7 @@ def test_wrap_external_content_success():
 
 
 def test_wrap_external_content_error():
-    from wet_mcp.security import wrap_external_content
+    from wet.security import wrap_external_content
 
     result = wrap_external_content("test_tool", "Error: something went wrong")
     assert result == "Error: something went wrong"

@@ -22,9 +22,9 @@ import sqlite3
 
 import pytest
 
-from wet_mcp import server
-from wet_mcp.config import settings
-from wet_mcp.db import DocsDB, EmbeddingModelMismatch
+from wet import server
+from wet.config import settings
+from wet.db import DocsDB, EmbeddingModelMismatch
 
 _SCRIPT = (
     pathlib.Path(__file__).resolve().parent.parent / "scripts" / "build_tier1_index.py"
@@ -61,7 +61,7 @@ def clean_runner_env(monkeypatch):
     monkeypatch.delenv("REINDEX_ON_MODEL_CHANGE", raising=False)
     monkeypatch.setattr(settings, "embedding_dims", 0)
     monkeypatch.setattr(settings, "reindex_on_model_change", False)
-    from wet_mcp.runtime import reset_settings_cache
+    from wet.runtime import reset_settings_cache
 
     reset_settings_cache()
 

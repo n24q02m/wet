@@ -1,4 +1,4 @@
-# wet-mcp instance config (host-owned, spec §4) — copy to config.toml and edit.
+# wet instance config (host-owned, spec §4) — copy to config.toml and edit.
 # Loaded by hull_core.config.settings; per-task provider cells are OpenAI-spec
 # (base_url + api_key + model). Values below are EXAMPLES (OpenRouter default
 # pre-wiring), not recommendations — point each cell at any OpenAI-compatible

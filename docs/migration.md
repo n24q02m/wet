@@ -1,7 +1,7 @@
 # Migration: wet v1.x.y -> v2.0.0
 
 This guide covers what changed in the v2.0.0 BREAKING release and how
-to upgrade existing wet-mcp deployments cleanly.
+to upgrade existing wet deployments cleanly.
 
 ## What's removed
 
@@ -18,7 +18,7 @@ analysis. Valid wet media actions: list (discover media on page),
 download (save to local).
 ```
 
-The `wet_mcp.llm.analyze_media` helper itself is preserved for tests
+The `wet.llm.analyze_media` helper itself is preserved for tests
 that exercise it directly, but it is no longer reachable from any MCP
 tool surface.
 
@@ -49,7 +49,7 @@ Requires one configured LLM provider (`GEMINI_API_KEY` /
 `Error: no LLM provider detected` string when none is set instead of
 crashing the SDK.
 
-See `src/wet_mcp/docs/extract.md` for full parameter reference.
+See `src/wet/docs/extract.md` for full parameter reference.
 
 ### `extract(action="interact", url=..., actions=...)`
 
@@ -71,7 +71,7 @@ migration when the feature lands.
 
 ## Auto-migrate-on-startup
 
-wet-mcp ships an Alembic-based auto-migrate runner that runs on server
+wet ships an Alembic-based auto-migrate runner that runs on server
 startup before the FastMCP lifespan completes. The runner:
 
 1. Detects the current Alembic revision (or stamps an unstamped DB).
@@ -89,10 +89,10 @@ safety net or delete older ones manually.
 If you need to roll back from v2.0.0 to v1.x.y for any reason:
 
 ```bash
-# Stop the wet-mcp process, then:
-mv ~/.wet-mcp/docs.db ~/.wet-mcp/docs.db.v2-attempt
-cp ~/.wet-mcp/docs.db.v003.backup ~/.wet-mcp/docs.db
-# Pin wet-mcp back to the previous version (e.g. uvx wet-mcp@2.31.0)
+# Stop the wet process, then:
+mv ~/.wet/docs.db ~/.wet/docs.db.v2-attempt
+cp ~/.wet/docs.db.v003.backup ~/.wet/docs.db
+# Pin wet back to the previous version (e.g. uvx wet-mcp@2.31.0)
 ```
 
 The `summary` + `summary_provider` columns from `docs_004` cannot be

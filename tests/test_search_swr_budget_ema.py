@@ -3,9 +3,9 @@ from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 
-from wet_mcp import search_metrics
-from wet_mcp.cache import WebCache
-from wet_mcp.sources.search_backends import run_search_chain
+from wet import search_metrics
+from wet.cache import WebCache
+from wet.sources.search_backends import run_search_chain
 
 
 def test_cache_get_stale_with_age(tmp_path):
@@ -99,9 +99,9 @@ async def test_search_budget_enforcement():
         return_value=json.dumps({"results": [{"url": "https://b2/1", "title": "B2"}]})
     )
 
-    with patch("wet_mcp.sources.search_backends.settings.wet_search_budget", 1):
+    with patch("wet.sources.search_backends.settings.wet_search_budget", 1):
         with patch(
-            "wet_mcp.sources.search_backends.search_backends_from_env",
+            "wet.sources.search_backends.search_backends_from_env",
             return_value=[b1, b2],
         ):
             # 1st call: b1 should be used
@@ -129,8 +129,8 @@ async def test_search_budget_enforcement():
 
 @pytest.mark.asyncio
 async def test_config_status_and_set_metrics():
-    from wet_mcp.config import settings
-    from wet_mcp.server import _handle_config_set, _handle_config_status
+    from wet.config import settings
+    from wet.server import _handle_config_set, _handle_config_status
 
     search_metrics.record_query("tavily")
     status = await _handle_config_status()
