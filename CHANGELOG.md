@@ -2,6 +2,63 @@
 
 <!-- version list -->
 
+## v3.19.0-beta.2 (2026-10-04)
+
+### Bug Fixes
+
+- Drop bolt scratch-note changes from PR ([#1849](https://github.com/n24q02m/wet/pull/1849),
+  [`1c54825`](https://github.com/n24q02m/wet/commit/1c5482582270014aabfee99b6a0167532a968ef6))
+
+- Drop sentinel scratch-note changes from PR ([#1850](https://github.com/n24q02m/wet/pull/1850),
+  [`446f69c`](https://github.com/n24q02m/wet/commit/446f69c8b9884bde5d0fc6b074d123ed2869cb09))
+
+- Fast-path http(s) domain extraction in _source_domain
+  ([#1851](https://github.com/n24q02m/wet/pull/1851),
+  [`6dc8aa1`](https://github.com/n24q02m/wet/commit/6dc8aa10071c97355ed7cbcb72047dc258b8d245))
+
+- Fix path hijacking in taskkill ([#1850](https://github.com/n24q02m/wet/pull/1850),
+  [`446f69c`](https://github.com/n24q02m/wet/commit/446f69c8b9884bde5d0fc6b074d123ed2869cb09))
+
+- Rename module wet_mcp -> wet across code, docs, config
+  ([#1848](https://github.com/n24q02m/wet/pull/1848),
+  [`67526f2`](https://github.com/n24q02m/wet/commit/67526f2b962261d4218a82d1ace9d2741eda98d6))
+
+- ⚡ bolt: optimize repeated character check to avoid set allocation
+  ([#1849](https://github.com/n24q02m/wet/pull/1849),
+  [`1c54825`](https://github.com/n24q02m/wet/commit/1c5482582270014aabfee99b6a0167532a968ef6))
+
+- 🛡️ sentinel: [high] fix path hijacking in taskkill
+  ([#1850](https://github.com/n24q02m/wet/pull/1850),
+  [`446f69c`](https://github.com/n24q02m/wet/commit/446f69c8b9884bde5d0fc6b074d123ed2869cb09))
+
+- **deps**: Update ghcr.io/astral-sh/uv:latest Docker digest to f513a91
+  ([#1819](https://github.com/n24q02m/wet/pull/1819),
+  [`50eb3ae`](https://github.com/n24q02m/wet/commit/50eb3ae8838640341abd3c0d7fcee5dd6ea53c04))
+
+- **deps**: Update minor dependencies ([#1821](https://github.com/n24q02m/wet/pull/1821),
+  [`fd404ba`](https://github.com/n24q02m/wet/commit/fd404ba2d484de4050e1fb1e920fb47f0274a9e4))
+
+- **deps**: Update patch dependencies ([#1820](https://github.com/n24q02m/wet/pull/1820),
+  [`80f9c90`](https://github.com/n24q02m/wet/commit/80f9c90e1d83dc702b358ab8b7aded0a877f4893))
+
+### Chores
+
+- **deps**: Bump pyjwt ([#1839](https://github.com/n24q02m/wet/pull/1839),
+  [`0a1dc52`](https://github.com/n24q02m/wet/commit/0a1dc52a5f5f04d7d012f5fc9c67647cddd5f334))
+
+### Code Style
+
+- Ruff format after rename (line-length collapse)
+  ([#1848](https://github.com/n24q02m/wet/pull/1848),
+  [`67526f2`](https://github.com/n24q02m/wet/commit/67526f2b962261d4218a82d1ace9d2741eda98d6))
+
+### Documentation
+
+- Resync CLAUDE.md with AGENTS.md (skret namespace keep)
+  ([#1848](https://github.com/n24q02m/wet/pull/1848),
+  [`67526f2`](https://github.com/n24q02m/wet/commit/67526f2b962261d4218a82d1ace9d2741eda98d6))
+
+
 ## v3.19.0-beta.1 (2026-10-03)
 
 ### Bug Fixes
