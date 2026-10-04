@@ -276,7 +276,16 @@ def _cmd_server_start(args: argparse.Namespace) -> int:
 def _terminate(pid: int) -> None:
     """Graceful first pass."""
     if os.name == "nt":
-        subprocess.run(["taskkill", "/PID", str(pid)], check=False)  # nosec B603 B607
+        subprocess.run(
+            [
+                os.path.join(
+                    os.environ.get("WINDIR", "C:\\Windows"), "System32", "taskkill.exe"
+                ),
+                "/PID",
+                str(pid),
+            ],
+            check=False,
+        )  # nosec B603 B607
     else:
         os.kill(pid, signal.SIGTERM)
 
@@ -284,7 +293,16 @@ def _terminate(pid: int) -> None:
 def _force_kill(pid: int) -> None:
     if os.name == "nt":
         subprocess.run(  # nosec B603 B607
-            ["taskkill", "/PID", str(pid), "/T", "/F"], check=False
+            [
+                os.path.join(
+                    os.environ.get("WINDIR", "C:\\Windows"), "System32", "taskkill.exe"
+                ),
+                "/PID",
+                str(pid),
+                "/T",
+                "/F",
+            ],
+            check=False,
         )
     else:
         os.kill(pid, signal.SIGKILL)
