@@ -71,6 +71,26 @@ def _source_domain(url: str) -> str:
     """Extract the registrable domain (netloc) from a URL."""
     if not url:
         return ""
+
+    # Fast path for http(s) URLs using string slicing to avoid urlparse
+    # allocation. Netlocs containing userinfo ("user@host") or an IPv6
+    # literal ("[::1]") fall through to urlparse, which handles them
+    # correctly.
+    if url.startswith("http://") or url.startswith("https://"):
+        start = url.find("://") + 3
+        end = len(url)
+        for char in ("/", "?", "#"):
+            idx = url.find(char, start, end)
+            if idx != -1:
+                end = idx
+
+        if url.find("@", start, end) == -1 and url.find("[", start, end) == -1:
+            netloc = url[start:end]
+            colon_idx = netloc.find(":")
+            if colon_idx != -1:
+                netloc = netloc[:colon_idx]
+            return netloc[4:] if netloc.startswith("www.") else netloc
+
     try:
         netloc = urlparse(url).netloc
     except (ValueError, TypeError):

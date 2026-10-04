@@ -15,6 +15,7 @@ import pytest
 
 from wet.cache import WebCache
 from wet.sources._search_polish import (
+    _source_domain,
     cap_snippet_tokens,
     freshness_signal,
     normalize_query,
@@ -248,6 +249,37 @@ def test_cache_get_with_age_miss_returns_none(tmp_path) -> None:
     cache = WebCache(tmp_path / "cache.db")
     assert cache.get_with_age("search", {"q": "missing"}) is None
     cache.close()
+
+
+# ---------------------------------------------------------------------------
+# _source_domain fast path parity
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("url", "expected"),
+    [
+        ("https://example.com/path?q=1#frag", "example.com"),
+        ("http://www.example.com", "example.com"),
+        ("https://example.com:8443/api", "example.com"),
+        ("https://sub.example.co.uk/x", "sub.example.co.uk"),
+        ("mailto:user@example.com", ""),
+        ("not a url", ""),
+        ("", ""),
+    ],
+)
+def test_source_domain_fast_path(url: str, expected: str) -> None:
+    assert _source_domain(url) == expected
+
+
+def test_source_domain_userinfo_falls_back_to_urlparse() -> None:
+    # "user@" inside the authority is left to urlparse (whose netloc includes
+    # it verbatim), keeping parity with the previous implementation.
+    assert _source_domain("https://user@example.com/") == "user@example.com"
+
+
+def test_source_domain_no_netloc_returns_empty() -> None:
+    assert _source_domain("https://") == ""
 
 
 # Pytest sanity: smoke ensure the module imports.
