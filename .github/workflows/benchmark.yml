@@ -17,6 +17,11 @@ jobs:
     timeout-minutes: 300
     env:
       OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+      # The benchmark server runs under an isolated HOME, so patchright cannot
+      # see the default ~/.cache/ms-playwright browsers. Pin the browser path
+      # via env: it flows through wet_server_env's `**os.environ` into the
+      # spawned server regardless of the isolated home.
+      PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/.ms-playwright
     steps:
       - name: Harden Runner
         uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
@@ -39,6 +44,12 @@ jobs:
 
       - name: Install dependencies
         run: uv sync --group dev
+
+      - name: Install headless browser binaries
+        # The extract suite's `headless` fallback (patchright/chromium) is
+        # exercised by anti-bot fixture URLs; browser binaries are not part
+        # of `uv sync` and must be fetched once per job.
+        run: uv run python -m patchright install chromium
 
       - name: Require a real provider credential
         shell: bash
