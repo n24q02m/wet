@@ -2,7 +2,7 @@
 
 > **Renamed (2026-09-13):** repo is now `wet` — CLI-first (`wet` command). PyPI package stays `wet` (PyPI policy blocks new project `wet`); MCP server is a secondary surface: run `wet` with no subcommand.
 
-mcp-name: io.github.n24q02m/wet-mcp
+mcp-name: io.github.n24q02m/wet
 
 > **Renamed:** the repo, CLI and Python module are now `wet`. The PyPI distribution stays **`wet-mcp`** (install `pip install wet-mcp` / `uvx wet-mcp`). The MCP server remains available: run `wet` with no subcommand (bare = MCP passthrough); the legacy `wet-mcp` console alias still works.
 
