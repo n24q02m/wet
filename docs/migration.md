@@ -44,8 +44,8 @@ Multi-step research orchestration in a single tool call: SearXNG search
 round -> concurrent extracts of the top hits -> LLM synthesis with
 numbered `[N]` citations matching the returned `sources` array.
 
-Requires one configured LLM provider (`GEMINI_API_KEY` /
-`OPENAI_API_KEY` / `XAI_API_KEY`). Returns a clear
+Requires a configured `[models.chat]` cell in `~/.wet/config.toml` (or the
+`HULL_CHAT_API_KEY` / `OPENROUTER_API_KEY` env credentials). Returns a clear
 `Error: no LLM provider detected` string when none is set instead of
 crashing the SDK.
 
@@ -107,8 +107,8 @@ pre-existing actions), and `media.list` / `media.download`. Only
 `media.analyze` is removed.
 
 **Q: Will the new `agent` and `interact` actions cost me LLM tokens?**
-A: Only when you call them. `agent` requires an LLM provider key (one
-LLM call per invocation). `interact` does NOT call an LLM by default;
+A: Only when you call them. `agent` requires a configured `[models.chat]`
+cell (one LLM call per invocation). `interact` does NOT call an LLM by default;
 when you supply `description` instead of `selector`, a future web-core
 upgrade will route through LLM-based selector inference. The wet-local
 implementation in v2.0.0 uses a simple `text=...` heuristic.

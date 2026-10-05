@@ -52,8 +52,8 @@ uv run ruff format --check .
 # Run the server (SearXNG will auto-start as embedded subprocess)
 uv run wet
 
-# For LLM-based media analysis, set API keys:
-export API_KEYS="GOOGLE_API_KEY:your-key"
+# For LLM-based features, configure the [models.chat] cell or set:
+export OPENROUTER_API_KEY="your-key"
 ```
 
 ### Making Changes
@@ -156,7 +156,7 @@ wet/
 │       ├── server.py          # MCP server
 │       ├── searxng_runner.py   # Embedded SearXNG subprocess
 │       ├── setup.py           # Auto-setup (SearXNG + Playwright)
-│       ├── llm.py             # LLM utilities (litellm passthrough via mcp-core[llm])
+│       ├── llm.py             # Chat utilities via the [models.chat] provider cell (hull-core OpenAI-spec client)
 │       ├── security.py        # URL security validation
 │       ├── docs/              # Tool documentation (Markdown)
 │       └── sources/

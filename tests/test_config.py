@@ -447,6 +447,7 @@ def test_no_llm_provider_cells_among_settings_fields():
             "gemini_api_key",
             "google_api_key",
             "jina_ai_api_key",
+            "cohere_api_key",
             "anthropic_api_key",
             "embedding_models",
             "rerank_models",

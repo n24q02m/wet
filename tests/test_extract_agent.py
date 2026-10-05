@@ -13,14 +13,14 @@ from wet.sources import agent_orchestrator as ao
 @pytest.fixture(autouse=True)
 def _clear_provider_env(monkeypatch):
     """Default to NO LLM provider key set; per-test sets what they need."""
-    for key in ao._PROVIDER_KEYS + ("ANTHROPIC_API_KEY",):
+    for key in ao._PROVIDER_KEYS:
         monkeypatch.delenv(key, raising=False)
     yield
 
 
 @pytest.fixture
-def _gemini_env(monkeypatch):
-    monkeypatch.setenv("GEMINI_API_KEY", "test-key")
+def _openrouter_env(monkeypatch):
+    monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
 
 
 def _make_search_payload(urls: list[str]) -> str:
@@ -41,7 +41,7 @@ def _make_search_payload(urls: list[str]) -> str:
 
 @pytest.mark.asyncio
 async def test_agent_uses_later_search_backend_and_keeps_provenance(
-    _gemini_env,
+    _openrouter_env,
 ) -> None:
     first = MagicMock(name="searxng")
     first.name = "searxng"
@@ -98,7 +98,7 @@ async def test_agent_uses_later_search_backend_and_keeps_provenance(
 
 
 @pytest.mark.asyncio
-async def test_agent_uses_later_search_backend_after_error(_gemini_env) -> None:
+async def test_agent_uses_later_search_backend_after_error(_openrouter_env) -> None:
     first = MagicMock(name="searxng")
     first.name = "searxng"
     first.search = AsyncMock(side_effect=RuntimeError("first backend down"))
@@ -145,7 +145,7 @@ async def test_agent_uses_later_search_backend_after_error(_gemini_env) -> None:
 
 
 @pytest.mark.asyncio
-async def test_agent_all_empty_search_keeps_no_results_contract(_gemini_env):
+async def test_agent_all_empty_search_keeps_no_results_contract(_openrouter_env):
     first = MagicMock(name="searxng")
     first.name = "searxng"
     first.search = AsyncMock(
@@ -175,7 +175,7 @@ async def test_agent_all_empty_search_keeps_no_results_contract(_gemini_env):
 
 
 @pytest.mark.asyncio
-async def test_agent_all_failed_search_is_hard_failure(_gemini_env):
+async def test_agent_all_failed_search_is_hard_failure(_openrouter_env):
     first = MagicMock(name="searxng")
     first.name = "searxng"
     first.search = AsyncMock(side_effect=RuntimeError("first backend down"))
@@ -200,7 +200,7 @@ async def test_agent_all_failed_search_is_hard_failure(_gemini_env):
 
 
 @pytest.mark.asyncio
-async def test_agent_uses_later_search_backend_after_malformed_results(_gemini_env):
+async def test_agent_uses_later_search_backend_after_malformed_results(_openrouter_env):
     first = MagicMock(name="searxng")
     first.name = "searxng"
     first.search = AsyncMock(
@@ -250,7 +250,7 @@ async def test_agent_uses_later_search_backend_after_malformed_results(_gemini_e
 
 @pytest.mark.asyncio
 async def test_agent_preserves_multi_result_order_and_search_title_fallback(
-    _gemini_env,
+    _openrouter_env,
 ):
     first_url = "https://example.com/first"
     second_url = "https://example.com/second"
@@ -331,7 +331,7 @@ async def test_agent_preserves_multi_result_order_and_search_title_fallback(
 
 
 @pytest.mark.asyncio
-async def test_agent_search_error_envelope_is_hard_failure(_gemini_env) -> None:
+async def test_agent_search_error_envelope_is_hard_failure(_openrouter_env) -> None:
     error_payload = json.dumps({"results": [], "error": "unavailable"})
     with (
         patch.object(
@@ -350,7 +350,7 @@ async def test_agent_search_error_envelope_is_hard_failure(_gemini_env) -> None:
 
 
 @pytest.mark.asyncio
-async def test_agent_invalid_search_payload_is_hard_failure(_gemini_env) -> None:
+async def test_agent_invalid_search_payload_is_hard_failure(_openrouter_env) -> None:
     with (
         patch.object(
             ao,
@@ -368,7 +368,7 @@ async def test_agent_invalid_search_payload_is_hard_failure(_gemini_env) -> None
 
 
 @pytest.mark.asyncio
-async def test_agent_legitimate_empty_search_keeps_no_results_contract(_gemini_env):
+async def test_agent_legitimate_empty_search_keeps_no_results_contract(_openrouter_env):
     empty_payload = json.dumps({"results": [], "total": 0, "query": "q"})
     with (
         patch.object(
@@ -410,18 +410,18 @@ async def test_no_provider_returns_structured_error() -> None:
     result = await ao.run_agent(query="anything")
     assert isinstance(result, str)
     assert result.startswith("Error: no LLM provider detected")
-    assert "GEMINI_API_KEY" in result
+    assert "OPENROUTER_API_KEY" in result
 
 
 @pytest.mark.asyncio
-async def test_empty_query_returns_error(_gemini_env) -> None:
+async def test_empty_query_returns_error(_openrouter_env) -> None:
     result = await ao.run_agent(query="   ")
     assert isinstance(result, str)
     assert result.startswith("Error: query is required")
 
 
 @pytest.mark.asyncio
-async def test_pipeline_search_then_extract_then_synthesize(_gemini_env) -> None:
+async def test_pipeline_search_then_extract_then_synthesize(_openrouter_env) -> None:
     urls = [f"https://example.com/{i}" for i in range(5)]
     with (
         patch.object(
@@ -456,7 +456,7 @@ async def test_pipeline_search_then_extract_then_synthesize(_gemini_env) -> None
 
 
 @pytest.mark.asyncio
-async def test_token_budget_caps_per_extract_size(_gemini_env) -> None:
+async def test_token_budget_caps_per_extract_size(_openrouter_env) -> None:
     huge = "x" * 50000
     extracts = [
         {"url": f"https://e.com/{i}", "markdown": huge, "metadata": {"title": "T"}}
@@ -469,7 +469,7 @@ async def test_token_budget_caps_per_extract_size(_gemini_env) -> None:
 
 
 @pytest.mark.asyncio
-async def test_max_urls_default_5_cap_20(_gemini_env) -> None:
+async def test_max_urls_default_5_cap_20(_openrouter_env) -> None:
     # Default
     assert ao._clamp_max_urls(0) == 1
     assert ao._clamp_max_urls(5) == 5
@@ -478,7 +478,7 @@ async def test_max_urls_default_5_cap_20(_gemini_env) -> None:
 
 
 @pytest.mark.asyncio
-async def test_synthesis_prompt_includes_numbered_citations(_gemini_env) -> None:
+async def test_synthesis_prompt_includes_numbered_citations(_openrouter_env) -> None:
     extracts = [
         {"url": "https://a.com", "markdown": "Alpha", "metadata": {"title": "A"}},
         {"url": "https://b.com", "markdown": "Beta", "metadata": {"title": "B"}},
@@ -494,7 +494,7 @@ async def test_synthesis_prompt_includes_numbered_citations(_gemini_env) -> None
 
 
 @pytest.mark.asyncio
-async def test_search_failure_returns_error_string(_gemini_env) -> None:
+async def test_search_failure_returns_error_string(_openrouter_env) -> None:
     with patch.object(
         ao,
         "run_search_chain",
@@ -507,7 +507,7 @@ async def test_search_failure_returns_error_string(_gemini_env) -> None:
 
 
 @pytest.mark.asyncio
-async def test_no_search_results_returns_empty_synthesis(_gemini_env) -> None:
+async def test_no_search_results_returns_empty_synthesis(_openrouter_env) -> None:
     with patch.object(
         ao,
         "run_search_chain",
@@ -521,7 +521,7 @@ async def test_no_search_results_returns_empty_synthesis(_gemini_env) -> None:
 
 
 @pytest.mark.asyncio
-async def test_synthesis_failure_returns_error_string(_gemini_env) -> None:
+async def test_synthesis_failure_returns_error_string(_openrouter_env) -> None:
     urls = ["https://example.com/1"]
     with (
         patch.object(
@@ -547,7 +547,7 @@ async def test_synthesis_failure_returns_error_string(_gemini_env) -> None:
 
 
 @pytest.mark.asyncio
-async def test_extract_error_propagates_to_per_url_metadata(_gemini_env) -> None:
+async def test_extract_error_propagates_to_per_url_metadata(_openrouter_env) -> None:
     urls = ["https://broken.com/1"]
     with (
         patch.object(
@@ -573,15 +573,20 @@ async def test_extract_error_propagates_to_per_url_metadata(_gemini_env) -> None
 
 
 @pytest.mark.asyncio
-async def test_provider_detection_priority(_gemini_env, monkeypatch) -> None:
-    # Gemini wins when set
-    assert ao.detect_llm_provider() == "GEMINI_API_KEY"
-    monkeypatch.delenv("GEMINI_API_KEY")
-    monkeypatch.setenv("OPENAI_API_KEY", "x")
-    assert ao.detect_llm_provider() == "OPENAI_API_KEY"
-    monkeypatch.setenv("XAI_API_KEY", "x")
-    monkeypatch.delenv("OPENAI_API_KEY")
-    assert ao.detect_llm_provider() == "XAI_API_KEY"
-    monkeypatch.delenv("XAI_API_KEY")
-    monkeypatch.setenv("GOOGLE_API_KEY", "x")
-    assert ao.detect_llm_provider() == "GOOGLE_API_KEY"
+async def test_provider_detection_priority(_openrouter_env, monkeypatch) -> None:
+    # OPENROUTER_API_KEY (env credential) wins over the env cell injection
+    assert ao.detect_llm_provider() == "OPENROUTER_API_KEY"
+    monkeypatch.delenv("OPENROUTER_API_KEY")
+    # HULL_CHAT_API_KEY is the per-task host-injection path
+    monkeypatch.setenv("HULL_CHAT_API_KEY", "x")
+    assert ao.detect_llm_provider() == "HULL_CHAT_API_KEY"
+    monkeypatch.delenv("HULL_CHAT_API_KEY")
+    # With no env credential and no [models.chat] cell key the gate is closed
+    monkeypatch.setattr("wet.runtime.cell_configured", lambda *a, **k: False)
+    assert ao.detect_llm_provider() is None
+    # A config-file [models.chat].api_key flips the gate without any env key
+    monkeypatch.setattr(
+        "wet.runtime.cell_configured",
+        lambda task, settings=None: task == "chat",
+    )
+    assert ao.detect_llm_provider() == "[models.chat]"

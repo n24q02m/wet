@@ -159,7 +159,7 @@ Multi-step research orchestration -- search the web, extract the top results, th
 **Parameters:**
 - `query` (required): Research question to answer
 - `max_urls`: Number of search hits to extract and cite (default: 5, hard cap: 20)
-- `synthesis_model`: Override the LLM model used for the synthesis step (e.g. `"openai/gpt-5"`); falls back to `LLM_MODELS` config
+- `synthesis_model`: Override the LLM model used for the synthesis step; falls back to the `[models.chat]` cell's model
 - `token_budget`: Soft cap on prompt tokens for the synthesis call (default: 10000). Each extract gets `(token_budget - 200) / N` tokens of room and is truncated above that.
 
 **Example:**
@@ -180,7 +180,7 @@ Multi-step research orchestration -- search the web, extract the top results, th
 }
 ```
 
-**Requires:** an LLM provider key (`GEMINI_API_KEY` / `OPENAI_API_KEY` / `XAI_API_KEY`). Returns a clear "no LLM provider detected" error string when none is set instead of crashing the SDK.
+**Requires:** a configured `[models.chat]` cell in `~/.wet/config.toml` (or the `HULL_CHAT_API_KEY` / `OPENROUTER_API_KEY` env credentials). Returns a clear "no LLM provider detected" error string when none is set instead of crashing the SDK.
 
 ---
 

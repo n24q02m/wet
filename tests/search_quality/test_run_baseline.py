@@ -155,20 +155,24 @@ def test_server_env_disables_legacy_drive_pair_for_search_baseline(tmp_path):
     assert env["GOOGLE_DRIVE_CLIENT_SECRET"] == ""
 
 
-def test_provenance_distinguishes_code_config_provider_and_command():
+def test_provenance_distinguishes_code_config_provider_and_command(monkeypatch):
     query_path = Path(__file__).with_name("queries.jsonl")
     command = ["python", "run_baseline.py", "--limit", "2"]
+    monkeypatch.setattr(
+        baseline,
+        "_rerank_models_provenance",
+        lambda: ["provider_a/rerank-v1"],
+    )
     env = {
         "SEARCH_BACKENDS": "brave,searxng",
         "SEARXNG_URL": (
             "https://user:super-secret@search.example.test:8443/private?q=token"
         ),
-        "RERANK_MODELS": "cohere/rerank-v3.5,jina_ai/jina-reranker-v3",
         "RERANK_ENABLED": "true",
         "RERANK_TOP_N": "10",
         "DISABLE_LOCAL_RERANK": "true",
-        "COHERE_API_KEY": "credential-secret-must-not-leak",
-        "JINA_AI_API_KEY": "second-secret-must-not-leak",
+        "PROVIDER_A_API_KEY": "credential-secret-must-not-leak",
+        "PROVIDER_B_API_KEY": "second-secret-must-not-leak",
     }
 
     provenance = baseline.build_provenance(
@@ -189,10 +193,7 @@ def test_provenance_distinguishes_code_config_provider_and_command():
     assert provenance["provider"] == {
         "search_backends": ["brave", "searxng"],
         "searxng_origin": "https://search.example.test:8443",
-        "rerank_models": [
-            "cohere/rerank-v3.5",
-            "jina_ai/jina-reranker-v3",
-        ],
+        "rerank_models": ["provider_a/rerank-v1"],
     }
     assert provenance["config"] == {
         "rerank_enabled": "true",

@@ -175,13 +175,16 @@ def test_estimate_cost():
     cost_free = estimate_cost(backend="searxng", tokens_in=0, tokens_out=0)
     assert cost_free == 0.0
 
-    cost_llm = estimate_cost(
+    cost_tavily = estimate_cost(backend="tavily")
+    assert cost_tavily > 0.0
+
+    cost_unknown = estimate_cost(
         backend="searxng",
-        model="jina_ai/jina-embeddings-v5-text-small",
+        model="provider_a/model-x",
         tokens_in=1000,
         tokens_out=0,
     )
-    assert cost_llm >= 0.0
+    assert cost_unknown == 0.0
 
 
 def test_validate_corpus_fixture():
@@ -252,11 +255,8 @@ async def test_non_stdio_mode_fails_closed():
 
 def test_benchmark_environment_scoped(monkeypatch):
     monkeypatch.setenv("SEARCH_BACKENDS", "searxng")
-    monkeypatch.setenv("LLM_MODELS", "old/model")
 
     with benchmark_environment("tavily", "none"):
         assert os.environ["SEARCH_BACKENDS"] == "tavily"
-        assert "LLM_MODELS" not in os.environ
 
     assert os.environ["SEARCH_BACKENDS"] == "searxng"
-    assert os.environ["LLM_MODELS"] == "old/model"

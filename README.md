@@ -89,14 +89,14 @@ mcp-name: io.github.n24q02m/wet
 
 ## Features
 
-- **Web Search** -- Embedded SearXNG metasearch (Google, Bing, DuckDuckGo, Brave) with query expansion, TTL cache (1 h general / 5 min time-sensitive), standardized citation format, and 200-token snippet cap. Optional cloud search backends (Tavily, Brave, Exa, OpenRouter) as a fallback chain via `SEARCH_BACKENDS`, plus optional Cohere rerank (`WET_SEARCH_RERANK`)
+- **Web Search** -- Embedded SearXNG metasearch (Google, Bing, DuckDuckGo, Brave) with query expansion, TTL cache (1 h general / 5 min time-sensitive), standardized citation format, and 200-token snippet cap. Optional cloud search backends (Tavily, Brave, Exa, Kagi, OpenRouter, Firecrawl) as a fallback chain via `SEARCH_BACKENDS`
 - **Academic Research** -- Search Google Scholar, Semantic Scholar, arXiv, PubMed, CrossRef, BASE
 - **Library Docs** -- Auto-discover and index documentation with FTS5 hybrid search, HyDE-enhanced retrieval, and version-specific docs
 - **Content Extract** -- 5-strategy escalation chain via `n24q02m-web-core` `ScrapingAgent` (`basic_http` -> `tls_spoof` -> render backends from `BROWSER_BACKENDS` (`native` / `browserless` / `cf-browser-rendering`) -> optional key-gated `captcha`), markitdown bridge for low-tier HTML/MD fallback, smart chunks structured output (clean text + markdown + JSON-LD + code blocks + metadata), batch processing (up to 50 URLs), deep crawling, site mapping
 - **Local File Conversion** -- Convert PDF, DOCX, XLSX, CSV, HTML, EPUB, PPTX to Markdown
 - **Media** -- List + download images / videos / audio files. `analyze` was removed in v2.0.0 -- use `imagine-mcp.understand` for vision/audio inference
 - **Anti-bot** -- Stealth strategies bypass Cloudflare, Medium, LinkedIn, Twitter
-- **Zero Config** -- Built-in local reference embedding + reranking through fastretrieval, no API keys needed. Optional cloud providers (Jina AI, Gemini, OpenAI, Cohere, xAI, Anthropic) selected per task via the `EMBEDDING_MODELS` / `RERANK_MODELS` / `LLM_MODELS` model chains for higher-quality vectors and LLM features
+- **Zero Config** -- Built-in local reference embedding + reranking through fastretrieval, no API keys needed. Optional cloud models configured per task via the `[models.embed|rerank|chat|jev_score]` cells in `~/.wet/config.toml` (OpenRouter default; one `OPENROUTER_API_KEY` serves every cell)
 - **Sync** -- Cross-machine sync of indexed docs via Google Drive (OAuth Device Code, no browser redirect)
 
 ## Quick install
@@ -225,36 +225,20 @@ via `HULL_EMBED_API_KEY` / `HULL_RERANK_API_KEY` / `HULL_CHAT_API_KEY` /
 
 wet runs zero-config out of the box: web search uses an embedded local SearXNG,
 and embedding/reranking fall back to the bundled local ONNX models through
-fastretrieval when no cloud keys are set. For higher-quality results, point each task at a cloud model
-chain. All settings are plain environment variables (no app prefix) -- in the
-HTTP self-host mode they are entered through the browser setup form instead.
+fastretrieval when no cloud keys are set. For higher-quality results, configure
+the per-task provider cells in `~/.wet/config.toml`. Operational settings are
+plain environment variables (no app prefix) -- in the HTTP self-host mode they
+are entered through the browser setup form instead.
 
-**Model chains** (CSV `provider/model,provider/model`; order = fallback). Leave a
-chain empty to use the local ONNX models (embedding/rerank) or to disable LLM
-features (LLM):
-
-| Env var | Task | Empty default |
-|---|---|---|
-| `EMBEDDING_MODELS` | Embeddings for docs search | Local fastretrieval ONNX |
-| `RERANK_MODELS` | Result reranking | Local fastretrieval cross-encoder |
-| `LLM_MODELS` | `extract(action="agent")` synthesis | LLM features disabled |
-
-**Provider keys** -- the provider is inferred from each model's prefix; supply the
-matching key (litellm `<PROVIDER>_API_KEY` convention):
-
-| Model prefix | Key env var | Get it at |
-|---|---|---|
-| `jina_ai/` | `JINA_AI_API_KEY` | jina.ai/api-key |
-| `gemini/` | `GEMINI_API_KEY` | aistudio.google.com/apikey |
-| `vertex_express/` | `GOOGLE_VERTEX_EXPRESS_API_KEY` | cloud.google.com/vertex-ai/generative-ai/docs/start/express-mode/overview |
-| `openai/` (or bare) | `OPENAI_API_KEY` | platform.openai.com |
-| `openrouter/` | `OPENROUTER_API_KEY` | openrouter.ai/settings/keys |
-| `cohere/` | `COHERE_API_KEY` | dashboard.cohere.com |
-| `xai/` | `XAI_API_KEY` | console.x.ai |
-| `anthropic/` | `ANTHROPIC_API_KEY` | console.anthropic.com |
-
-Any other litellm provider works via env passthrough -- see
-[litellm provider docs](https://docs.litellm.ai/docs/providers) for its key name.
+**Provider cells** -- `[models.embed|rerank|chat|jev_score]` each take their own
+`base_url` + `api_key` + `model` (OpenAI-spec). OpenRouter is the pre-wired
+default for every cell; any OpenAI-compatible endpoint works. Cell keys may be
+left empty in the file and injected at start via `HULL_EMBED_API_KEY` /
+`HULL_RERANK_API_KEY` / `HULL_CHAT_API_KEY` / `HULL_JEV_SCORE_API_KEY`. When a
+cell keeps the OpenRouter default `base_url`, `OPENROUTER_API_KEY` in the
+environment serves it as a last-resort credential — one OpenRouter key can
+power every task. Empty embed/rerank cells fall back to the local ONNX models;
+an unkeyed chat cell disables LLM features (e.g. `extract(action="agent")`).
 
 `FASTRETRIEVAL_CACHE_PATH` controls the local model cache.
 
@@ -270,15 +254,10 @@ free-tier model), `OPENROUTER_BASE_URL`, and `OPENROUTER_SEARCH_ENGINE`
 override its behavior. Firecrawl attempts a keyless request when `FIRECRAWL_API_KEY`
 is absent; rejection or a DuckDuckGo/Startpage bot challenge advances the chain.
 
-**Cohere rerank (optional, paid)** -- when `WET_SEARCH_RERANK=1` AND
-`COHERE_API_KEY` are both set, a successful chain result is re-ranked through
-Cohere `/v2/rerank` (`COHERE_RERANK_MODEL`, default `rerank-v4.0-fast`;
-`COHERE_BASE_URL` for gateway routes): results are reordered best-first and
-tagged `reranked_by: cohere` with per-result `rerank_score`. Without either
-variable the chain never calls Cohere; a rerank failure keeps the original
-ordering. The same chain serves web search, research, similar-page search,
-agent search,
-and docs discovery/indexing fallbacks. SearXNG retains its science-category
+Result reranking uses the configured rerank cell ([models.rerank] — cloud via
+OpenRouter by default, or local ONNX when unkeyed); the same chain serves web
+search, research, similar-page search, agent search, and docs
+discovery/indexing fallbacks. SearXNG retains its science-category
 filter for research; other providers use their own search capabilities.
 Hosted users configure the chain and keys in their own relay record. An empty
 hosted record never inherits an operator's provider key or local SearXNG URL;
@@ -327,7 +306,7 @@ form is gated by `MCP_RELAY_PASSWORD`; multi-user deployments require
 `CREDENTIAL_SECRET` (per-user vault key), `MCP_JWT_SIGNING_SECRET` (rotatable
 OAuth JWT key), and `MCP_DCR_SERVER_SECRET`.
 
-Example stdio config (cloud chains):
+Example stdio config (one OpenRouter key powers every provider cell):
 
 ```json
 {
@@ -336,16 +315,17 @@ Example stdio config (cloud chains):
       "command": "uvx",
       "args": ["wet-mcp"],
       "env": {
-        "EMBEDDING_MODELS": "jina_ai/jina-embeddings-v5-text-small",
-        "RERANK_MODELS": "jina_ai/jina-reranker-v3",
-        "LLM_MODELS": "gemini/gemini-3-flash-preview",
-        "JINA_AI_API_KEY": "jina_xxx",
-        "GEMINI_API_KEY": "AIza_xxx"
+        "OPENROUTER_API_KEY": "sk-or-xxx"
       }
     }
   }
 }
 ```
+
+To use a different endpoint or model per task, edit the `[models.*]` cells in
+`~/.wet/config.toml`, or inject `HULL_EMBED_API_KEY` / `HULL_RERANK_API_KEY` /
+`HULL_CHAT_API_KEY` / `HULL_JEV_SCORE_API_KEY` at start instead of storing keys
+in the file.
 
 ## Status
 
@@ -486,27 +466,14 @@ ONNX fallbacks are disabled in the slim image; configure search and cloud
 retrieval through each authenticated subject's relay record. Worker-wide
 search/model chains and provider keys are not forwarded to the container.
 
-For a Cloudflare AI Gateway route, enter the following values in that subject's
-relay form (`<CF_AIG_BASE>` is the account/gateway base URL):
-
-| Relay field | Value |
-|---|---|
-| `SEARCH_BACKENDS` | `tavily,duckduckgo,startpage` |
-| `LLM_MODELS` | `openrouter/minimax/minimax-m3:free` |
-| `LLM_API_BASE` | `<CF_AIG_BASE>/openrouter/v1` |
-| `EMBEDDING_MODELS` | `cohere/embed-v4.0` |
-| `EMBEDDING_API_BASE` | `<CF_AIG_BASE>/cohere/v2/embed` |
-| `RERANK_MODELS` | `cohere/rerank-v4.0-fast` |
-| `RERANK_API_BASE` | `<CF_AIG_BASE>/cohere` |
-
-Store the matching OpenRouter/Cohere credentials and any keyed search-provider
-credentials (such as `TAVILY_API_KEY`) in the same subject record.
-All Wet synthesis and summaries use `LLM_MODELS`; there is no separate
-`SUMMARY_MODELS` field. This completion chain has no paid or alternate-model
-fallback. Cohere embedding/reranking and Browser Run may incur charges; obtain
-the required budget authorization before exercising them. Provision Vectorize
-and `EMBEDDING_DIMS` for a dimension supported by the selected embedding model.
-The earlier 768-dimension example is not a Cohere v4 compatibility guarantee.
+The per-task `[models.*]` cells (in `config.toml`) configure cloud
+embed/rerank/chat: point each cell's `base_url` at any OpenAI-compatible
+endpoint — OpenRouter is the default — and supply the key via the cell's
+`api_key` or the matching `HULL_<TASK>_API_KEY` env. One `OPENROUTER_API_KEY`
+serves every cell that keeps the OpenRouter default `base_url`.
+Store keyed search-provider credentials (such as `TAVILY_API_KEY`) in the same
+subject record. Provision Vectorize and `EMBEDDING_DIMS` for a dimension
+supported by the selected embedding model.
 
 ### Deployment (maintained instance)
 

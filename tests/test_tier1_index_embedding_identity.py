@@ -42,6 +42,9 @@ _CELL_KEYS = (
     "HULL_RERANK_API_KEY",
     "HULL_CHAT_API_KEY",
     "HULL_JEV_SCORE_API_KEY",
+    # OPENROUTER_API_KEY is the fallback credential for OpenRouter-default
+    # cells; a developer shell exporting it configures every cell.
+    "OPENROUTER_API_KEY",
 )
 
 

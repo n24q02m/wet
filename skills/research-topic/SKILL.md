@@ -36,8 +36,8 @@ Do NOT use this skill when:
    - Hard ceiling is 20 (cost guard).
 
 3. **Pick `synthesis_model`** only if the user asked for a specific
-   model. Otherwise omit and let wet auto-detect from
-   `LLM_MODELS` / `GEMINI_API_KEY` / `OPENAI_API_KEY` / `XAI_API_KEY`.
+   model. Otherwise omit and let wet resolve it from the `[models.chat]`
+   cell (`~/.wet/config.toml`, or `HULL_CHAT_API_KEY` / `OPENROUTER_API_KEY`).
 
 4. **Call**
    ```text

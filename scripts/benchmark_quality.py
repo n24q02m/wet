@@ -138,9 +138,6 @@ def benchmark_environment(backend: str, model_chain: str) -> Iterator[None]:
     """Apply one benchmark configuration and restore the process environment."""
     overrides: dict[str, str | None] = {
         "SEARCH_BACKENDS": backend,
-        "EMBEDDING_MODELS": None if model_chain == "none" else model_chain,
-        "RERANK_MODELS": None if model_chain == "none" else model_chain,
-        "LLM_MODELS": None if model_chain == "none" else model_chain,
     }
     previous = {key: os.environ.get(key) for key in overrides}
     try:
@@ -210,12 +207,6 @@ def estimate_cost(
     """Rough request cost estimate in USD based on observed tokens/backend."""
     if backend == "searxng" and not model:
         return 0.0
-    # Jina embedding: ~$0.02 / 1M tokens
-    if "jina-embeddings" in model or "jina" in model:
-        return (tokens_in / 1_000_000) * 0.02
-    # OpenRouter/Minimax: ~$0.20 / 1M input, $1.10 / 1M output
-    if "minimax" in model:
-        return (tokens_in / 1_000_000) * 0.20 + (tokens_out / 1_000_000) * 1.10
     # Tavily API: ~$0.005 / request
     if backend == "tavily":
         return 0.005

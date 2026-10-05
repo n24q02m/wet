@@ -22,10 +22,10 @@
       },
       "environmentVariables": [
         {
-          "description": "Provider API keys (format: PROVIDER_API_KEY:key,...). Select models per task with EMBEDDING_MODELS / RERANK_MODELS / LLM_MODELS (CSV provider/model, order = litellm fallback); provider is inferred from the model prefix. Empty embedding/rerank chain falls back to fastretrieval's built-in local reference model.",
+          "description": "OpenRouter API key — the single default credential for the [models.embed|rerank|chat|jev_score] provider cells and the openrouter search backend. Per-task overrides live in ~/.wet/config.toml; keys may also be injected via HULL_EMBED_API_KEY / HULL_RERANK_API_KEY / HULL_CHAT_API_KEY / HULL_JEV_SCORE_API_KEY. Empty cells fall back to local ONNX models.",
           "isRequired": false,
           "isSecret": true,
-          "name": "API_KEYS"
+          "name": "OPENROUTER_API_KEY"
         },
         {
           "description": "GitHub personal access token for higher rate limits on library discovery",
