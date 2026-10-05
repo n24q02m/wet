@@ -174,10 +174,11 @@ def _server_environment(temp_root: Path, docs_db_path: Path) -> dict[str, str]:
             # OPENROUTER_API_KEY — so the web suite runs the openrouter
             # backend chain; the default searxng chain cannot exist in CI.
             "SEARCH_BACKENDS": WEB_SEARCH_BACKEND,
-            # Spend discipline (user directive 2026-10-05, sau vụ benchmark
-            # đốt $5.17 paid slug ngầm): KHÔNG có default model. Model là
-            # quyết định của user — benchmark.yml đọc vars.OPENROUTER_MODEL
-            # và fail nhanh nếu thiếu; run local phải set env tường minh.
+            # Spend discipline (user directive 2026-10-05, after a benchmark
+            # run silently burned $5.17 on a paid slug): there is NO default
+            # model. The model is the user's decision — benchmark.yml reads
+            # vars.OPENROUTER_MODEL and fails fast when unset; local runs
+            # must set the env explicitly.
             "OPENROUTER_MODEL": _require_openrouter_model(),
             # Drive is no longer a wet storage backend. Blank stale local
             # OAuth values so they cannot change this isolated protocol
