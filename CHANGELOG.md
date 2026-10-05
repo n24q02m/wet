@@ -2,6 +2,15 @@
 
 <!-- version list -->
 
+## v3.19.2-beta.1 (2026-10-05)
+
+### Bug Fixes
+
+- Detect keyless search bot-blocks correctly (DDG 202-anomaly order + browser UA, Startpage
+  access-denied marker)
+  ([`8b70e11`](https://github.com/n24q02m/wet/commit/8b70e11ee086dae7067f9ec69159f7ba0b031955))
+
+
 ## v3.19.1 (2026-10-05)
 
 
