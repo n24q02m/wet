@@ -2,6 +2,14 @@
 
 <!-- version list -->
 
+## v3.19.1-beta.1 (2026-10-05)
+
+### Bug Fixes
+
+- Correct mcp-name ownership marker to io.github.n24q02m/wet for MCP registry boundary validation
+  ([`00cea60`](https://github.com/n24q02m/wet/commit/00cea604548648f8589ec6a32d530b8286c0bb56))
+
+
 ## v3.19.0 (2026-10-05)
 
 
