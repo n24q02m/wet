@@ -1,0 +1,74 @@
+name: Benchmark Contract
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: benchmark-contract-${{ github.sha }}
+  cancel-in-progress: false
+
+jobs:
+  benchmark:
+    name: Live MCP benchmark (200/500/200)
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    env:
+      JINA_AI_API_KEY: ${{ secrets.JINA_AI_API_KEY }}
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      COHERE_API_KEY: ${{ secrets.COHERE_API_KEY }}
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+        with:
+          egress-policy: audit
+
+      - name: Checkout exact dispatch SHA
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@ae62891fec2bb8e7d6c99fc78c9fec3a63790f8d # v10.0.0
+
+      - name: Setup Python 3.13
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.13"
+
+      - name: Install dependencies
+        run: uv sync --group dev
+
+      - name: Require a real provider credential
+        shell: bash
+        run: |
+          if [ -z "${JINA_AI_API_KEY}" ] && [ -z "${GEMINI_API_KEY}" ] && [ -z "${OPENAI_API_KEY}" ] && [ -z "${COHERE_API_KEY}" ]; then
+            echo "::error::No real wet provider credential is projected into this run. Sync it from skret; the benchmark never mocks credentials."
+            exit 1
+          fi
+
+      - name: Validate immutable fixtures
+        run: uv run python tests/search_quality/run_contract.py validate-fixtures
+
+      - name: Execute live MCP benchmark
+        env:
+          BENCHMARK_ARTIFACT: ${{ runner.temp }}/wet-benchmark-contract.json
+        run: uv run python tests/search_quality/run_contract.py run --output "${BENCHMARK_ARTIFACT}"
+
+      - name: Gate measured artifact against exact SHA
+        env:
+          BENCHMARK_ARTIFACT: ${{ runner.temp }}/wet-benchmark-contract.json
+          GIT_SHA: ${{ github.sha }}
+        run: uv run python tests/search_quality/run_contract.py gate --artifact "${BENCHMARK_ARTIFACT}" --expected-commit "${GIT_SHA}"
+
+      - name: Upload exact-SHA benchmark artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: wet-benchmark-contract-${{ github.sha }}
+          path: ${{ runner.temp }}/wet-benchmark-contract.json
+          if-no-files-found: error
+          retention-days: 90
