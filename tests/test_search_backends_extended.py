@@ -10,6 +10,7 @@ import json
 import unittest.mock
 from urllib.parse import urlsplit
 
+from wet.sources import search_backends
 from wet.sources.search_backends import (
     DuckDuckGoBackend,
     FirecrawlBackend,
@@ -98,6 +99,19 @@ async def test_ddg_bot_challenge_returns_error_envelope():
     assert "error" in out  # safe "<Provider> HTTP <code>", chain advances
 
 
+async def test_ddg_challenge_on_202_reports_429_not_202_and_sends_browser_ua():
+    # Regression: DuckDuckGo serves the anomaly page with HTTP 202; the old
+    # order (status guard first) surfaced a misleading "DuckDuckGo HTTP 202"
+    # and never reported the challenge. The browser UA is sent because the
+    # default httpx UA is throttled harder from datacenter egress.
+    with unittest.mock.patch("httpx.AsyncClient.post") as post:
+        post.return_value = _resp(status_code=202, text=DDG_ANOMALY_PAGE)
+        out = json.loads(await DuckDuckGoBackend().search("q"))
+    assert out["error"] == "DuckDuckGo HTTP 429"
+    headers = post.call_args.kwargs["headers"]
+    assert headers["User-Agent"] == search_backends._BROWSER_UA
+
+
 async def test_ddg_recency_maps_to_df_form_field():
     with unittest.mock.patch("httpx.AsyncClient.post") as post:
         post.return_value = _resp(text=DDG_PAGE)
@@ -127,6 +141,36 @@ async def test_startpage_captcha_returns_error_envelope():
         get.return_value = _resp(text=STARTPAGE_CAPTCHA_PAGE)
         out = json.loads(await StartpageBackend().search("q"))
     assert "error" in out
+
+
+async def test_startpage_access_denied_block_page_reports_429():
+    # Regression: the live Startpage block page is HTTP 200, titled
+    # "Access Denied - Startpage", contains no "captcha" string and zero
+    # result links — it used to parse as a legitimate empty success.
+    block_page = (
+        "<!doctype html><html><head><title>Access Denied - Startpage</title></head>"
+        "<body><p>You do not have permission to view this page.</p></body></html>"
+    )
+    with unittest.mock.patch("httpx.AsyncClient.get") as get:
+        get.return_value = _resp(status_code=200, text=block_page)
+        out = json.loads(await StartpageBackend().search("q"))
+    assert out["error"] == "Startpage HTTP 429"
+
+
+async def test_startpage_sends_browser_ua():
+    with unittest.mock.patch("httpx.AsyncClient.get") as get:
+        get.return_value = _resp(text=STARTPAGE_PAGE)
+        await StartpageBackend().search("q")
+        headers = get.call_args.kwargs["headers"]
+    assert headers["User-Agent"] == search_backends._BROWSER_UA
+
+
+async def test_startpage_http_error_still_surfaces_status():
+    # Non-block non-200 responses keep surfacing their real status code.
+    with unittest.mock.patch("httpx.AsyncClient.get") as get:
+        get.return_value = _resp(status_code=503, text="<html>down</html>")
+        out = json.loads(await StartpageBackend().search("q"))
+    assert out["error"] == "Startpage HTTP 503"
 
 
 async def test_startpage_recency_maps_to_with_date_param():

@@ -182,6 +182,13 @@ async def _search_keyless(
 # value silently: the chain skips it with a warning naming it, and when no
 # configured backend supports it the caller gets a structured error naming
 # them. The region is never silently dropped.
+# Browser-like UA for keyless HTML backends: DuckDuckGo/Startpage throttle the
+# default httpx UA from datacenter/shared egress harder than a real browser UA.
+_BROWSER_UA = (
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+    "(KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36"
+)
+
 _REGION_SUPPORTED_BACKENDS = frozenset({"searxng", "brave", "tavily"})
 
 
@@ -696,17 +703,23 @@ class DuckDuckGoBackend:
             resp = await client.post(
                 self._URL,
                 data=form,
-                headers={"Referer": "https://html.duckduckgo.com/"},
+                headers={
+                    "Referer": "https://html.duckduckgo.com/",
+                    "User-Agent": _BROWSER_UA,
+                },
             )
-            if resp.status_code != 200:
-                raise _SearchHTTPError("DuckDuckGo", resp.status_code)
             page = resp.text
+        # Challenge check BEFORE the status guard: DuckDuckGo serves the anomaly
+        # page with HTTP 202, which used to surface as a misleading
+        # "DuckDuckGo HTTP 202" without ever reporting the real cause.
         if "anomaly-modal" in page or "anomaly.js" in page:
             logger.warning(
                 "DuckDuckGo bot-challenge received (datacenter/shared-egress IPs are "
                 "throttled) — configure a credentialed backend for reliable search."
             )
             raise _SearchHTTPError("DuckDuckGo", 429)
+        if resp.status_code != 200:
+            raise _SearchHTTPError("DuckDuckGo", resp.status_code)
         return self._parse(page, query, max_results)
 
     @staticmethod
@@ -802,16 +815,21 @@ class StartpageBackend:
                 headers={
                     "Referer": "https://www.startpage.com/",
                     "Accept-Language": "en",
+                    "User-Agent": _BROWSER_UA,
                 },
             )
-            if resp.status_code != 200:
-                raise _SearchHTTPError("Startpage", resp.status_code)
             page = resp.text
-        if "captcha" in page.lower():
+        low = page.lower()
+        # "access denied": live-reproduced Startpage block page is HTTP 200,
+        # titled "Access Denied - Startpage", contains no "captcha" string and
+        # zero result links — previously parsed as a legitimate empty result.
+        if "captcha" in low or "access denied" in low:
             logger.warning(
-                "Startpage CAPTCHA received — chain should advance to the next backend."
+                "Startpage bot-block received — chain should advance to the next backend."
             )
             raise _SearchHTTPError("Startpage", 429)
+        if resp.status_code != 200:
+            raise _SearchHTTPError("Startpage", resp.status_code)
         return self._parse(page, query, max_results)
 
     @staticmethod
