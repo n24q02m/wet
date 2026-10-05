@@ -26,6 +26,11 @@ if str(TESTS_ROOT) not in sys.path:
 
 from live_http import mcp_client_session, wet_http_server, wet_server_env  # noqa: E402
 
+# The release gate injects exactly one real credential (OPENROUTER_API_KEY),
+# so the web suite always measures the openrouter chain. One name, two uses:
+# the spawned server's env and the backend recorded on the web_search suite.
+WEB_SEARCH_BACKEND = "openrouter"
+
 
 def _load_fixture_records() -> dict[str, list[dict[str, Any]]]:
     return {
@@ -99,7 +104,7 @@ def _server_environment(temp_root: Path, docs_db_path: Path) -> dict[str, str]:
             # The release gate injects exactly one real credential —
             # OPENROUTER_API_KEY — so the web suite runs the openrouter
             # backend chain; the default searxng chain cannot exist in CI.
-            "SEARCH_BACKENDS": "openrouter",
+            "SEARCH_BACKENDS": WEB_SEARCH_BACKEND,
             # The repo default ":free" slug 404s upstream (dropped from the
             # free tier); pin the paid slug the same key actually serves.
             "OPENROUTER_MODEL": os.environ.get(
@@ -150,9 +155,13 @@ async def _run_protocol(
     finally:
         _remove_tree(temp_root)
 
+    web_summary = contract.summarize_suite("web_search", web_records)
+    # Record the measured backend so the gate can pick the effective p95
+    # bound (see contract.web_search_p95_threshold).
+    web_summary["backend"] = WEB_SEARCH_BACKEND
     return {
         "extract": contract.summarize_suite("extract", extract_records),
-        "web_search": contract.summarize_suite("web_search", web_records),
+        "web_search": web_summary,
         "docs_recall": contract.summarize_suite("docs_recall", docs_records),
     }
 
@@ -273,7 +282,7 @@ def main(argv: list[str] | None = None) -> int:
             artifact = json.loads(args.artifact.read_text(encoding="utf-8"))
             if not isinstance(artifact, dict):
                 raise contract.ContractError("artifact must be a JSON object")
-            contract.validate_release_artifact(
+            warnings = contract.validate_release_artifact(
                 artifact,
                 expected_commit=args.expected_commit,
                 fixture_root=contract.DEFAULT_FIXTURE_ROOT,
@@ -282,6 +291,7 @@ def main(argv: list[str] | None = None) -> int:
                 "status": "pass",
                 "artifact": str(args.artifact),
                 "expected_commit": args.expected_commit,
+                "warnings": warnings,
             }
     except (OSError, ValueError, json.JSONDecodeError) as exc:
         print(f"benchmark contract failed: {exc}", file=sys.stderr)

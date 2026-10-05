@@ -179,7 +179,9 @@ async def test_case_runners_call_public_mcp_tools_through_session():
     assert docs_record["recall_at_10"] == 1.0
 
 
-def _passing_artifact(fixture_proof: dict, commit_sha: str) -> dict:
+def _passing_artifact(
+    fixture_proof: dict, commit_sha: str, *, backend: str = "searxng"
+) -> dict:
     return {
         "schema_version": contract.ARTIFACT_SCHEMA_VERSION,
         "contract_version": contract.CONTRACT_VERSION,
@@ -193,6 +195,10 @@ def _passing_artifact(fixture_proof: dict, commit_sha: str) -> dict:
             },
             "command": ["uv", "run", "python", "tests/search_quality/run_contract.py"],
             "environment": {"config_sha256": "a" * 64},
+            "thresholds_effective": {
+                "web_search_p95_ms": contract.web_search_p95_threshold(backend),
+                "web_search_backend": backend,
+            },
         },
         "suites": {
             "extract": {
@@ -207,6 +213,7 @@ def _passing_artifact(fixture_proof: dict, commit_sha: str) -> dict:
                 "records": [{"id": f"extract-{index}"} for index in range(200)],
             },
             "web_search": {
+                "backend": backend,
                 "case_count": 500,
                 "metrics": {
                     "p50_latency_ms": 400.0,
@@ -262,6 +269,62 @@ def test_release_gate_is_fail_closed_for_null_incomplete_or_wrong_sha():
         contract.validate_release_artifact(
             artifact,
             expected_commit="c" * 40,
+            fixture_root=contract.DEFAULT_FIXTURE_ROOT,
+        )
+
+
+def test_release_gate_enforces_p95_for_direct_search_backends():
+    fixture_proof = contract.validate_fixture_set(contract.DEFAULT_FIXTURE_ROOT)
+
+    passing = _passing_artifact(fixture_proof, "b" * 40, backend="searxng")
+    warnings = contract.validate_release_artifact(
+        passing,
+        expected_commit="b" * 40,
+        fixture_root=contract.DEFAULT_FIXTURE_ROOT,
+    )
+    assert warnings == []
+
+    slow = json.loads(json.dumps(passing))
+    slow["suites"]["web_search"]["metrics"]["p95_latency_ms"] = 5000.0
+    with pytest.raises(contract.ContractError, match="p95_latency_ms"):
+        contract.validate_release_artifact(
+            slow,
+            expected_commit="b" * 40,
+            fixture_root=contract.DEFAULT_FIXTURE_ROOT,
+        )
+
+
+def test_release_gate_reports_but_skips_p95_for_llm_mediated_backends():
+    fixture_proof = contract.validate_fixture_set(contract.DEFAULT_FIXTURE_ROOT)
+
+    slow_llm = _passing_artifact(fixture_proof, "b" * 40, backend="openrouter")
+    slow_llm["suites"]["web_search"]["metrics"]["p95_latency_ms"] = 45000.0
+    warnings = contract.validate_release_artifact(
+        slow_llm,
+        expected_commit="b" * 40,
+        fixture_root=contract.DEFAULT_FIXTURE_ROOT,
+    )
+    assert len(warnings) == 1
+    assert "45000.0" in warnings[0]
+    assert "openrouter" in warnings[0]
+
+    # A direct backend artifact must not smuggle a skipped ceiling.
+    mismatched = _passing_artifact(fixture_proof, "b" * 40, backend="searxng")
+    mismatched["provenance"]["thresholds_effective"]["web_search_p95_ms"] = None
+    with pytest.raises(contract.ContractError, match="inconsistent"):
+        contract.validate_release_artifact(
+            mismatched,
+            expected_commit="b" * 40,
+            fixture_root=contract.DEFAULT_FIXTURE_ROOT,
+        )
+
+    # Declared backend and recorded backend must agree.
+    lying = _passing_artifact(fixture_proof, "b" * 40, backend="openrouter")
+    lying["provenance"]["thresholds_effective"]["web_search_backend"] = "searxng"
+    with pytest.raises(contract.ContractError, match="does not match"):
+        contract.validate_release_artifact(
+            lying,
+            expected_commit="b" * 40,
             fixture_root=contract.DEFAULT_FIXTURE_ROOT,
         )
 

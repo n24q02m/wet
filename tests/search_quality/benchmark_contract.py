@@ -79,6 +79,24 @@ THRESHOLDS = {
     },
 }
 
+# Backends whose web_search call is LLM-mediated (a chat completion carrying
+# the provider's server-side search tool). Their per-call latency is seconds
+# by construction, so the 2000 ms p95 ceiling — calibrated for direct HTTP
+# search APIs (searxng/tavily/brave/exa/kagi/firecrawl/ddg/startpage) — can
+# never pass; the gate measures and reports p95 but does not hard-fail on it.
+LLM_MEDIATED_WEB_BACKENDS = frozenset({"openrouter"})
+
+
+def web_search_p95_threshold(backend: str) -> float | None:
+    """Effective p95 ceiling for ``web_search`` given the measured backend.
+
+    Returns ``None`` (gate skipped, still reported) for LLM-mediated backends.
+    """
+    if backend in LLM_MEDIATED_WEB_BACKENDS:
+        return None
+    return THRESHOLDS["web_search"]["p95_latency_ms_max"]
+
+
 _WORD_RE = re.compile(r"[a-z0-9][a-z0-9_+#.-]*", re.IGNORECASE)
 _ID_RE = re.compile(r"^[a-z0-9][a-z0-9._-]*$")
 _STOPWORDS = frozenset(
@@ -969,6 +987,17 @@ def build_artifact(
     complete = set(suites) == set(expected) and all(
         suites[name].get("case_count") == count for name, count in expected.items()
     )
+    # Record the effective web_search p95 ceiling derived from the backend the
+    # suite actually ran, so the gate and auditors can see exactly which bound
+    # was (or was not) enforced.
+    web_backend = suites.get("web_search", {}).get("backend", "")
+    provenance = {
+        **provenance,
+        "thresholds_effective": {
+            "web_search_p95_ms": web_search_p95_threshold(web_backend),
+            "web_search_backend": web_backend,
+        },
+    }
     return {
         "schema_version": ARTIFACT_SCHEMA_VERSION,
         "contract_version": CONTRACT_VERSION,
@@ -993,7 +1022,7 @@ def validate_release_artifact(
     *,
     expected_commit: str,
     fixture_root: Path = DEFAULT_FIXTURE_ROOT,
-) -> None:
+) -> list[str]:
     if artifact.get("schema_version") != ARTIFACT_SCHEMA_VERSION:
         raise ContractError("artifact schema_version mismatch")
     if artifact.get("contract_version") != CONTRACT_VERSION:
@@ -1022,6 +1051,19 @@ def validate_release_artifact(
         raise ContractError("artifact config provenance missing")
     if not isinstance(provenance.get("command"), list) or not provenance["command"]:
         raise ContractError("artifact command provenance missing")
+    thresholds_effective = provenance.get("thresholds_effective")
+    if not isinstance(thresholds_effective, dict) or "web_search_p95_ms" not in (
+        thresholds_effective
+    ):
+        raise ContractError("artifact thresholds_effective provenance missing")
+    declared_web_p95 = thresholds_effective["web_search_p95_ms"]
+    if declared_web_p95 is not None and not (
+        isinstance(declared_web_p95, (int, float))
+        and not isinstance(declared_web_p95, bool)
+    ):
+        raise ContractError(
+            "thresholds_effective.web_search_p95_ms must be null or numeric"
+        )
 
     suites = artifact.get("suites")
     if not isinstance(suites, dict):
@@ -1073,6 +1115,19 @@ def validate_release_artifact(
         for metric_name in required_metrics[suite_name]:
             _require_number(metrics.get(metric_name), f"{suite_name}.{metric_name}")
 
+    web_backend = suites["web_search"].get("backend")
+    if not isinstance(web_backend, str) or not web_backend:
+        raise ContractError("web_search suite must record the measured backend")
+    if declared_web_p95 != web_search_p95_threshold(web_backend):
+        raise ContractError(
+            "thresholds_effective.web_search_p95_ms inconsistent with "
+            f"web_search backend {web_backend!r}"
+        )
+    if thresholds_effective.get("web_search_backend") != web_backend:
+        raise ContractError(
+            "thresholds_effective.web_search_backend does not match web_search.backend"
+        )
+
     extract_metrics = suites["extract"]["metrics"]
     web_metrics = suites["web_search"]["metrics"]
     docs_metrics = suites["docs_recall"]["metrics"]
@@ -1095,11 +1150,6 @@ def validate_release_artifact(
             )
             >= THRESHOLDS["extract"]["mean_clean_ratio"],
             "extract mean_clean_ratio",
-        ),
-        (
-            _require_number(web_metrics["p95_latency_ms"], "web_search.p95_latency_ms")
-            <= THRESHOLDS["web_search"]["p95_latency_ms_max"],
-            "web_search p95_latency_ms",
         ),
         (
             _require_number(web_metrics["success_rate"], "web_search.success_rate")
@@ -1138,9 +1188,23 @@ def validate_release_artifact(
             "docs_recall recall_at_10",
         ),
     )
+    warnings: list[str] = []
+    web_p95 = _require_number(
+        web_metrics["p95_latency_ms"], "web_search.p95_latency_ms"
+    )
+    if declared_web_p95 is None:
+        warnings.append(
+            f"web_search p95_latency_ms={web_p95:.1f} measured but not gated: "
+            f"backend {web_backend!r} is LLM-mediated (no fixed ceiling; "
+            f"the {THRESHOLDS['web_search']['p95_latency_ms_max']:.0f} ms bound "
+            "only applies to direct search APIs)"
+        )
+    else:
+        checks = (*checks, (web_p95 <= declared_web_p95, "web_search p95_latency_ms"))
     failed = [name for passed, name in checks if not passed]
     if failed:
         raise ContractError("benchmark thresholds failed: " + ", ".join(failed))
+    return warnings
 
 
 def current_command() -> list[str]:
