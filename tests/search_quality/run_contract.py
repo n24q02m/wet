@@ -138,6 +138,27 @@ def _seed_docs_database(
         database.close()
 
 
+def _require_openrouter_model() -> str:
+    """Return the explicitly-provided benchmark model, or fail loudly.
+
+    The benchmark makes ~200 paid chat completions, each carrying the
+    ``openrouter:web_search`` server tool whose fetched results are injected
+    into context — spend scales with model price × injected-context volume.
+    A silent default therefore spends real credit on an unapproved model,
+    which is exactly what the 2026-10-05 incident did. Model choice is a
+    user decision, never a harness default.
+    """
+    model = os.environ.get("OPENROUTER_MODEL", "").strip()
+    if not model:
+        raise SystemExit(
+            "OPENROUTER_MODEL is required and has no default: the benchmark "
+            "never picks a paid model silently. Set the env (local) or the "
+            "vars.OPENROUTER_MODEL repo variable (CI) to a user-approved "
+            "OpenRouter slug."
+        )
+    return model
+
+
 def _server_environment(temp_root: Path, docs_db_path: Path) -> dict[str, str]:
     """Benchmark server env: wave-R8 isolation plus the seeded corpus paths."""
     env = wet_server_env(temp_root)
@@ -153,11 +174,11 @@ def _server_environment(temp_root: Path, docs_db_path: Path) -> dict[str, str]:
             # OPENROUTER_API_KEY — so the web suite runs the openrouter
             # backend chain; the default searxng chain cannot exist in CI.
             "SEARCH_BACKENDS": WEB_SEARCH_BACKEND,
-            # The repo default ":free" slug 404s upstream (dropped from the
-            # free tier); pin the paid slug the same key actually serves.
-            "OPENROUTER_MODEL": os.environ.get(
-                "OPENROUTER_MODEL", "meta-llama/llama-3.3-70b-instruct"
-            ),
+            # Spend discipline (user directive 2026-10-05, sau vụ benchmark
+            # đốt $5.17 paid slug ngầm): KHÔNG có default model. Model là
+            # quyết định của user — benchmark.yml đọc vars.OPENROUTER_MODEL
+            # và fail nhanh nếu thiếu; run local phải set env tường minh.
+            "OPENROUTER_MODEL": _require_openrouter_model(),
             # Drive is no longer a wet storage backend. Blank stale local
             # OAuth values so they cannot change this isolated protocol
             # benchmark.

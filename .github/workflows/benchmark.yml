@@ -59,12 +59,41 @@ jobs:
             exit 1
           fi
 
+      - name: Require explicit benchmark model
+        shell: bash
+        env:
+          OPENROUTER_MODEL: ${{ vars.OPENROUTER_MODEL }}
+        run: |
+          if [ -z "${OPENROUTER_MODEL}" ]; then
+            echo "::error::vars.OPENROUTER_MODEL is not set. The benchmark never picks a paid model silently — set the repo variable to a user-approved OpenRouter slug before dispatching."
+            exit 1
+          fi
+
+      - name: Pre-flight provider spend gate
+        shell: bash
+        env:
+          OPENROUTER_MODEL: ${{ vars.OPENROUTER_MODEL }}
+          OPENROUTER_SPEND_CAP_USD: ${{ vars.OPENROUTER_SPEND_CAP_USD }}
+        run: |
+          cap="${OPENROUTER_SPEND_CAP_USD:-5}"
+          resp="$(curl -sf -H "Authorization: Bearer ${OPENROUTER_API_KEY}" https://openrouter.ai/api/v1/credits)" || {
+            echo "::error::Cannot read OpenRouter credits endpoint — failing closed before spending."
+            exit 1
+          }
+          avail="$(printf '%s' "$resp" | python3 -c 'import json,sys;d=json.load(sys.stdin)["data"];print(round(d["total_credits"]-d["total_usage"],2))')"
+          echo "Pre-flight: available credit ${avail} USD; run cap ${cap} USD; model ${OPENROUTER_MODEL}"
+          awk -v a="$avail" -v c="$cap" 'BEGIN{exit (a>=c)?0:1}' || {
+            echo "::error::Available OpenRouter credit (${avail} USD) is below this run's cap (${cap} USD). Top up or raise vars.OPENROUTER_SPEND_CAP_USD consciously."
+            exit 1
+          }
+
       - name: Validate immutable fixtures
         run: uv run python tests/search_quality/run_contract.py validate-fixtures
 
       - name: Execute live MCP benchmark
         env:
           BENCHMARK_ARTIFACT: ${{ runner.temp }}/wet-benchmark-contract.json
+          OPENROUTER_MODEL: ${{ vars.OPENROUTER_MODEL }}
         run: uv run python tests/search_quality/run_contract.py run --output "${BENCHMARK_ARTIFACT}"
 
       - name: Gate measured artifact against exact SHA
