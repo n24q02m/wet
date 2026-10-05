@@ -6,20 +6,25 @@ import argparse
 import asyncio
 import json
 import os
+import shutil
 import sys
 import tempfile
+import time
 from collections import defaultdict
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 import benchmark_contract as contract
-from mcp import StdioServerParameters
-from mcp.client.session import ClientSession
-from mcp.client.stdio import stdio_client
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-MCP_COMMAND = ("uv", "run", "wet-mcp")
+TESTS_ROOT = Path(__file__).resolve().parents[1]
+# ``live_http`` is the merged wave-R8 HTTP spawn helper; run_contract executes
+# as a script (CI calls it by path), so tests/ is not on sys.path there.
+if str(TESTS_ROOT) not in sys.path:
+    sys.path.insert(0, str(TESTS_ROOT))
+
+from live_http import mcp_client_session, wet_http_server, wet_server_env  # noqa: E402
 
 
 def _load_fixture_records() -> dict[str, list[dict[str, Any]]]:
@@ -81,19 +86,32 @@ def _seed_docs_database(path: Path, corpus: list[dict[str, Any]]) -> None:
 
 
 def _server_environment(temp_root: Path, docs_db_path: Path) -> dict[str, str]:
-    env = {
-        **os.environ,
-        "CACHE_DIR": str(temp_root / "cache"),
-        "DOCS_DB_BACKEND": "sqlite",
-        "DOCS_DB_PATH": str(docs_db_path),
-        "WET_DOCS_DB_PATH": str(docs_db_path),
-        "DOWNLOAD_DIR": str(temp_root / "downloads"),
-        "LOG_LEVEL": os.environ.get("LOG_LEVEL", "WARNING"),
-        # Drive is no longer a wet storage backend. Blank stale local OAuth
-        # values so they cannot change this isolated protocol benchmark.
-        "GOOGLE_DRIVE_CLIENT_ID": "",
-        "GOOGLE_DRIVE_CLIENT_SECRET": "",
-    }
+    """Benchmark server env: wave-R8 isolation plus the seeded corpus paths."""
+    env = wet_server_env(temp_root)
+    env.update(
+        {
+            "CACHE_DIR": str(temp_root / "cache"),
+            "DOCS_DB_BACKEND": "sqlite",
+            "DOCS_DB_PATH": str(docs_db_path),
+            "WET_DOCS_DB_PATH": str(docs_db_path),
+            "DOWNLOAD_DIR": str(temp_root / "downloads"),
+            "LOG_LEVEL": os.environ.get("LOG_LEVEL", "WARNING"),
+            # The release gate injects exactly one real credential —
+            # OPENROUTER_API_KEY — so the web suite runs the openrouter
+            # backend chain; the default searxng chain cannot exist in CI.
+            "SEARCH_BACKENDS": "openrouter",
+            # The repo default ":free" slug 404s upstream (dropped from the
+            # free tier); pin the paid slug the same key actually serves.
+            "OPENROUTER_MODEL": os.environ.get(
+                "OPENROUTER_MODEL", "meta-llama/llama-3.3-70b-instruct"
+            ),
+            # Drive is no longer a wet storage backend. Blank stale local
+            # OAuth values so they cannot change this isolated protocol
+            # benchmark.
+            "GOOGLE_DRIVE_CLIENT_ID": "",
+            "GOOGLE_DRIVE_CLIENT_SECRET": "",
+        }
+    )
     return env
 
 
@@ -102,17 +120,19 @@ async def _run_protocol(
     *,
     smoke_limit: int | None,
 ) -> dict[str, dict[str, Any]]:
-    with tempfile.TemporaryDirectory(prefix="wet-benchmark-v1-") as temp_dir:
-        temp_root = Path(temp_dir)
+    # mkdtemp + manual rmtree instead of TemporaryDirectory: on Windows the
+    # spawned server's LifecycleLock byte-range lock can outlive
+    # proc.terminate() by a beat, and a single rmtree then loses to
+    # WinError 32. Retrying absorbs the OS handle-teardown window.
+    temp_root = Path(tempfile.mkdtemp(prefix="wet-benchmark-v1-"))
+    try:
         docs_db_path = temp_root / "docs.db"
         _seed_docs_database(docs_db_path, fixtures["docs_corpus"])
-        params = StdioServerParameters(
-            command=MCP_COMMAND[0],
-            args=list(MCP_COMMAND[1:]),
-            env=_server_environment(temp_root, docs_db_path),
-        )
-        async with stdio_client(params) as (read_stream, write_stream):
-            async with ClientSession(read_stream, write_stream) as session:
+        async with wet_http_server(
+            _server_environment(temp_root, docs_db_path),
+            temp_root / "server.log",
+        ) as port:
+            async with mcp_client_session(port, timeout=600.0) as session:
                 await session.initialize()
                 extract_cases = fixtures["extract_urls"][:smoke_limit]
                 web_cases = fixtures["web_search_queries"][:smoke_limit]
@@ -127,12 +147,27 @@ async def _run_protocol(
                 docs_records = [
                     await contract.run_docs_case(session, case) for case in docs_cases
                 ]
+    finally:
+        _remove_tree(temp_root)
 
     return {
         "extract": contract.summarize_suite("extract", extract_records),
         "web_search": contract.summarize_suite("web_search", web_records),
         "docs_recall": contract.summarize_suite("docs_recall", docs_records),
     }
+
+
+def _remove_tree(root: Path, *, attempts: int = 10) -> None:
+    for attempt in range(attempts):
+        try:
+            shutil.rmtree(root)
+            return
+        except OSError:
+            if attempt == attempts - 1:
+                # Cleanup must never mask the measured protocol result.
+                shutil.rmtree(root, ignore_errors=True)
+                return
+            time.sleep(0.5)
 
 
 def _check_generated() -> None:

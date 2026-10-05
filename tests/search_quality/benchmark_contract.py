@@ -28,6 +28,9 @@ CONTRACT_VERSION = "wet-benchmark-contract-v1"
 FIXTURE_SCHEMA_VERSION = "wet-benchmark-fixture-v1"
 ARTIFACT_SCHEMA_VERSION = "wet-benchmark-artifact-v1"
 DEFAULT_FIXTURE_ROOT = Path(__file__).with_name("fixtures") / "v1"
+# Post de-host wet is HTTP-only: the live harness spawns ``python -m
+# wet.server`` and the client talks streamable-HTTP to ``/mcp``.
+PROTOCOL_TRANSPORT = "streamable-http"
 
 TARGET_COUNTS = {
     "extract_urls": 200,
@@ -925,7 +928,7 @@ def build_provenance(
         ],
         "rerank_provider": os.environ.get("RERANK_PROVIDER", "auto"),
         "docs_db_backend": os.environ.get("DOCS_DB_BACKEND", "sqlite"),
-        "mcp_transport": "stdio",
+        "mcp_transport": PROTOCOL_TRANSPORT,
     }
     for key, value in safe_config.items():
         if _SECRET_NAME_RE.search(key) or _SECRET_NAME_RE.search(str(value)):
@@ -947,7 +950,7 @@ def build_provenance(
             "dirty": bool(_git(repo_root, "status", "--porcelain")),
         },
         "fixtures": fixture_proof,
-        "protocol": {"client": "mcp.ClientSession", "transport": "stdio"},
+        "protocol": {"client": "mcp.ClientSession", "transport": PROTOCOL_TRANSPORT},
         "command": command,
         "environment": environment,
     }
@@ -1007,7 +1010,7 @@ def validate_release_artifact(
         raise ContractError("release artifact must come from a clean checkout")
     if provenance.get("protocol") != {
         "client": "mcp.ClientSession",
-        "transport": "stdio",
+        "transport": PROTOCOL_TRANSPORT,
     }:
         raise ContractError("artifact protocol provenance mismatch")
     if provenance.get("fixtures") != validate_fixture_set(fixture_root):

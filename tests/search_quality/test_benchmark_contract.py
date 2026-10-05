@@ -187,7 +187,10 @@ def _passing_artifact(fixture_proof: dict, commit_sha: str) -> dict:
         "provenance": {
             "git": {"commit": commit_sha, "dirty": False},
             "fixtures": fixture_proof,
-            "protocol": {"client": "mcp.ClientSession", "transport": "stdio"},
+            "protocol": {
+                "client": "mcp.ClientSession",
+                "transport": contract.PROTOCOL_TRANSPORT,
+            },
             "command": ["uv", "run", "python", "tests/search_quality/run_contract.py"],
             "environment": {"config_sha256": "a" * 64},
         },
