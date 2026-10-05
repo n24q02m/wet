@@ -2,8 +2,9 @@
 """
 Phase 5 Live Comprehensive Test for wet.
 
-Spawns the server as a subprocess via MCP SDK Client (StdioClientTransport),
-communicates over JSON-RPC stdio protocol, and tests ALL tools x actions.
+Spawns the real wet HTTP MCP server (``python -m wet.server``, de-hosted: no
+stdio mode) on an ephemeral loopback port, communicates over the
+streamable-HTTP MCP protocol, and tests ALL tools x actions.
 
 Usage:
     uv run python tests/test_live_mcp.py
@@ -14,11 +15,12 @@ Config + help tests work offline.
 
 import asyncio
 import json
-import os
 import sys
+import tempfile
+from pathlib import Path
 
-from mcp import StdioServerParameters
-from mcp.client.stdio import stdio_client
+# ``tests/`` is on sys.path when this file runs as a script.
+from live_http import mcp_client_session, wet_http_server, wet_server_env
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -62,22 +64,11 @@ def skip(label: str, reason: str):
 # ---------------------------------------------------------------------------
 async def run_tests():
     global passed, failed
+    tmpdir = tempfile.mkdtemp(prefix="wet-live-test-")
+    env = wet_server_env(Path(tmpdir))
 
-    server_params = StdioServerParameters(
-        command="uv",
-        args=["run", "wet"],
-        env={
-            **os.environ,
-            "LOG_LEVEL": "WARNING",
-        },
-    )
-
-    async with stdio_client(server_params) as streams:
-        read_stream, write_stream = streams
-        from mcp.client.session import ClientSession
-
-        async with ClientSession(read_stream, write_stream) as session:
-            await session.initialize()
+    async with wet_http_server(env, Path(tmpdir) / "server.log") as port:
+        async with mcp_client_session(port) as session:
             print("Server connected. Running tests...\n")
 
             # ===== META =====

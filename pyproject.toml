@@ -148,7 +148,7 @@ python_files = ["test_*.py"]
 timeout = 30
 markers = [
     "integration: integration tests (require network/services)",
-    "live: live MCP protocol tests (spawn real server via stdio)",
+    "live: live MCP protocol tests (spawn the real HTTP server)",
     "network: tests requiring network access",
     "full: full live tests with real services",
     "e2e: end-to-end tests (3 setup modes: relay, env, plugin)",
