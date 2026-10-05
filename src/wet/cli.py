@@ -660,7 +660,9 @@ def _post_rpc(
 
 def _extract_rpc_response(body: str, content_type: str, request_id: int) -> dict | None:
     """Pull the JSON-RPC response with ``request_id`` from a JSON or SSE body."""
-    if "text/event-stream" in content_type or body.lstrip().startswith(
+    # Slicing before lstrip prevents allocating a massive copy of the
+    # entire body if leading whitespace is present.
+    if "text/event-stream" in content_type or body[:2000].lstrip().startswith(
         ("event:", "data:")
     ):
         for line in body.splitlines():
