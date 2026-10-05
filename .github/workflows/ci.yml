@@ -189,6 +189,9 @@ jobs:
       - name: Install dependencies
         run: uv sync --group dev
 
+      - name: Validate immutable benchmark contract fixtures
+        run: uv run --no-sync python tests/search_quality/run_contract.py validate-fixtures
+
       - name: Run Ruff check
         run: uv run --no-sync ruff check .
 

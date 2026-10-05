@@ -29,3 +29,6 @@
 
 # Docker
 Dockerfile text
+
+# Immutable benchmark fixtures: byte-identical on every checkout (payload_sha256 pinned).
+tests/search_quality/fixtures/** -text
