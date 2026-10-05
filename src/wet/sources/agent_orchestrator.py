@@ -20,21 +20,16 @@ from loguru import logger
 
 from wet.sources.search_backends import run_search_chain
 
-# LLM-provider key env names, in spec-section-5.6 fallback priority. Checked
-# against host-level ``os.environ`` only: per-sub credential buckets were
-# removed in the 2026-09 de-host (keys are host-only), so every mode sees the
-# same host-configured provider set. GOOGLE_API_KEY is the GEMINI alias;
-# ANTHROPIC and XAI round out the cloud chat providers the setup form offers
-# (the list previously omitted ANTHROPIC). Aliased here for the tests that
-# key off ``ao._PROVIDER_KEYS``.
+# LLM-provider credential env names, checked before falling back to the
+# [models.chat] cell. OPENROUTER_API_KEY is the single-OpenRouter-default
+# credential: wet.runtime.model_cell feeds it into any OpenRouter-default
+# cell whose key is otherwise unset, so its presence means the chat cell can
+# authenticate. HULL_CHAT_API_KEY is the per-task host-injection path and
+# always overrides the cell's api_key. Aliased for tests keying off
+# ``ao._PROVIDER_KEYS``.
 _PROVIDER_KEYS = (
-    "GEMINI_API_KEY",
-    "GOOGLE_API_KEY",
-    "OPENAI_API_KEY",
     "OPENROUTER_API_KEY",
-    "ANTHROPIC_API_KEY",
-    "XAI_API_KEY",
-    "GOOGLE_VERTEX_EXPRESS_API_KEY",
+    "HULL_CHAT_API_KEY",
 )
 
 _DEFAULT_MAX_URLS = 5
@@ -47,23 +42,27 @@ _EXTRACT_CONCURRENCY = 3
 
 
 def detect_llm_provider() -> str | None:
-    """Return the first configured provider key name, or ``None``.
+    """Return the credential source enabling chat-cell calls, or ``None``.
 
-    Reads host-level ``os.environ`` only (order: ``_PROVIDER_KEYS`` fallback
-    priority, incl. the GOOGLE->GEMINI alias). Per-sub credential buckets were
-    removed in the 2026-09 de-host. ``None`` means the orchestrator should
-    bail out with a structured error rather than try.
+    Checks host-level ``os.environ`` for ``_PROVIDER_KEYS`` first (the
+    OpenRouter single-default and per-task injection paths), then falls back
+    to the ``[models.chat]`` cell in ``~/.wet/config.toml`` — a cell api_key
+    set in the file never appears in env. ``None`` means the orchestrator
+    should bail out with a structured error rather than try.
     """
     for key in _PROVIDER_KEYS:
         if os.getenv(key):
             return key
-    return None
+    from wet.llm import has_llm_provider
+
+    return "[models.chat]" if has_llm_provider() else None
 
 
 def _no_provider_error() -> str:
     return (
-        "Error: no LLM provider detected. Set one of "
-        "GEMINI_API_KEY / OPENAI_API_KEY / ANTHROPIC_API_KEY / XAI_API_KEY."
+        "Error: no LLM provider detected. Configure the [models.chat] cell in "
+        "~/.wet/config.toml (api_key), or set HULL_CHAT_API_KEY / "
+        "OPENROUTER_API_KEY."
     )
 
 

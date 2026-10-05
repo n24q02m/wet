@@ -22,8 +22,8 @@ import pytest
 
 # Self-hosted OpenAI-compatible proxy for the custom-api-base tests below.
 # Env-supplied only — there is no centralized n24q02m proxy deployment.
-LLM_API_BASE = os.environ.get("LLM_API_BASE", "")
-LLM_API_KEY = os.environ.get("LLM_API_KEY", "")
+PROXY_BASE_URL = os.environ.get("WET_TEST_PROXY_BASE_URL", "")
+PROXY_API_KEY = os.environ.get("WET_TEST_PROXY_API_KEY", "")
 _SEARXNG_AUTH_PASS = os.environ.get("SEARXNG_AUTH_PASS")
 SEARXNG_EXTERNAL_URL = "https://klprism:{}@searxng.n24q02m.com".format(
     _SEARXNG_AUTH_PASS or ""
@@ -221,7 +221,7 @@ class TestExtractTool:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.skipif(not LLM_API_BASE, reason="LLM_API_BASE not set")
+@pytest.mark.skipif(not PROXY_BASE_URL, reason="WET_TEST_PROXY_BASE_URL not set")
 class TestCustomApiBaseProxy:
     """Test against a self-hosted OpenAI-compatible proxy (env-supplied)."""
 
@@ -229,7 +229,7 @@ class TestCustomApiBaseProxy:
         import httpx
 
         async with httpx.AsyncClient(timeout=10) as client:
-            resp = await client.get(f"{LLM_API_BASE}/health/liveliness")
+            resp = await client.get(f"{PROXY_BASE_URL}/health/liveliness")
             assert resp.status_code == 200
 
     async def test_proxy_chat(self):
@@ -238,9 +238,9 @@ class TestCustomApiBaseProxy:
 
         async with httpx.AsyncClient(timeout=30) as client:
             resp = await client.post(
-                f"{LLM_API_BASE}/chat/completions",
+                f"{PROXY_BASE_URL}/chat/completions",
                 headers={
-                    "Authorization": f"Bearer {LLM_API_KEY}",
+                    "Authorization": f"Bearer {PROXY_API_KEY}",
                     "Content-Type": "application/json",
                 },
                 json={
@@ -260,8 +260,8 @@ class TestCustomApiBaseProxy:
 
         cell = ModelCell(
             task="rerank",
-            base_url=LLM_API_BASE,
-            api_key=LLM_API_KEY,
+            base_url=PROXY_BASE_URL,
+            api_key=PROXY_API_KEY,
             model="rerank-multilingual-v3",
         )
         return OpenAICompatClient(cell)

@@ -132,13 +132,6 @@ class Settings(BaseSettings):
     openrouter_base_url: str = "https://openrouter.ai/api/v1"  # env OPENROUTER_BASE_URL
     openrouter_search_engine: str = ""  # env OPENROUTER_SEARCH_ENGINE (empty = default)
 
-    # Optional Cohere rerank post-processing for the search chain (PAID API).
-    # Double opt-in: WET_SEARCH_RERANK=1 AND COHERE_API_KEY must both be set;
-    # without them the chain never calls Cohere and results keep source order.
-    cohere_api_key: str = ""  # env COHERE_API_KEY
-    cohere_base_url: str = "https://api.cohere.com"  # env COHERE_BASE_URL
-    cohere_rerank_model: str = "rerank-v4.0-fast"  # env COHERE_RERANK_MODEL
-    wet_search_rerank: bool = False  # env WET_SEARCH_RERANK
     # Disable-local toggle for search: skip the auto-local SearXNG spawn. An
     # external SEARXNG_URL or cloud backends still work; only the heavy local
     # SearXNG auto-start is suppressed.

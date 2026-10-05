@@ -30,6 +30,9 @@ def test_embed_cell_key_gating_follows_host_cell_key(monkeypatch):
     from wet.runtime import cell_configured, model_cell, reset_settings_cache
 
     monkeypatch.delenv("HULL_EMBED_API_KEY", raising=False)
+    # OPENROUTER_API_KEY is the fallback credential for OpenRouter-default
+    # cells; clear it so "absent -> unconfigured" is tested in isolation.
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
     reset_settings_cache()
     assert cell_configured("embed") is False
 

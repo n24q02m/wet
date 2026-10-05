@@ -18,13 +18,15 @@ One place wires the shared-core seams together:
 
 from __future__ import annotations
 
+import os
+from dataclasses import replace
 from functools import lru_cache
 from pathlib import Path
 
 from hull_core.auth.context import AuthContext, current_user
 from hull_core.auth.middleware import Authenticator
 from hull_core.auth.users import User, load_users
-from hull_core.config.models import ModelCell, resolve_model_cells
+from hull_core.config.models import DEFAULT_BASE_URL, ModelCell, resolve_model_cells
 from hull_core.config.settings import CONFIG_TEMPLATE, HullSettings, load_settings
 from hull_core.limits.limiter import SlidingWindowLimiter
 from hull_core.providers.openai_spec import OpenAICompatClient
@@ -109,9 +111,20 @@ def sub_root(namespace: str | None = None) -> Path:
 
 
 def model_cell(task: str, settings: HullSettings | None = None) -> ModelCell:
-    """Resolve one per-task provider cell (embed/rerank/chat/jev_score)."""
+    """Resolve one per-task provider cell (embed/rerank/chat/jev_score).
+
+    Credential order per cell: ``HULL_<TASK>_API_KEY`` env > ``[models.<task>]
+    api_key`` in config.toml > ``OPENROUTER_API_KEY`` env when the cell points
+    at the OpenRouter default base URL (one OpenRouter key serves every cell;
+    the fallback never applies to custom endpoints so it can never leak a key
+    to a third-party base_url).
+    """
     settings = settings if settings is not None else hull_settings()
-    return resolve_model_cells(settings.models)[task]
+    cell = resolve_model_cells(settings.models)[task]
+    if cell.api_key or cell.base_url != DEFAULT_BASE_URL:
+        return cell
+    fallback = os.environ.get("OPENROUTER_API_KEY", "")
+    return replace(cell, api_key=fallback) if fallback else cell
 
 
 def provider_client(

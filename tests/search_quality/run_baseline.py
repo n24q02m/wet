@@ -60,6 +60,17 @@ def _safe_origin(url: str) -> str | None:
     return f"{parts.scheme.lower()}://{host.lower()}{port}"
 
 
+def _rerank_models_provenance() -> list[str]:
+    """Report the resolved reranker: [models.rerank] cell model, else local."""
+    try:
+        from wet.runtime import model_cell
+
+        cell = model_cell("rerank")
+        return [cell.model] if cell.configured else ["local"]
+    except Exception:
+        return ["unavailable"]
+
+
 def _git_output(*args: str) -> str | None:
     try:
         completed = subprocess.run(
@@ -106,7 +117,7 @@ def build_provenance(
         "provider": {
             "search_backends": [backend.lower() for backend in search_backends],
             "searxng_origin": _safe_origin(selected_env.get("SEARXNG_URL", "")),
-            "rerank_models": _csv(selected_env.get("RERANK_MODELS", "")),
+            "rerank_models": _rerank_models_provenance(),
         },
         "config": {
             "rerank_enabled": selected_env.get("RERANK_ENABLED", "true")

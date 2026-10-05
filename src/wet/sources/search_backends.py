@@ -26,7 +26,6 @@ from loguru import logger
 
 from wet import search_metrics
 from wet.config import settings
-from wet.sources.rerank import maybe_rerank
 
 # --- Local fallback / key-rotation primitives (de-host 2026-09) ------------
 # Inlined from the deleted shared chains / key-rotation modules; semantics
@@ -1507,7 +1506,6 @@ async def run_search_chain(
             "selected": "+".join(successful_backends) if successful_backends else None,
             "fallback": "parallel_fanout" if successful_backends else "exhausted",
         }
-        data = await maybe_rerank(query, data, max_results)
         return json.dumps(data, ensure_ascii=False)
 
     def traced_thunk(backend: SearchBackend) -> Callable[[], Awaitable[str]]:
@@ -1584,7 +1582,6 @@ async def run_search_chain(
             else ("none" if requested and selected == requested[0] else "used")
         ),
     }
-    data = await maybe_rerank(query, data, max_results)
     return json.dumps(data, ensure_ascii=False)
 
 

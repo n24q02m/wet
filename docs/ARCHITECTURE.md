@@ -128,24 +128,24 @@ Docs-search schema additions (libraries, versions, project_context)
 land via Alembic revisions `docs_002_libraries`,
 `docs_003_project_context`.
 
-## LLM provider dispatch (per-task model chains)
+## LLM provider dispatch (per-task provider cells)
 
-wet selects models via per-task model chains, not a pinned model or a
-key-priority router. Each chain is a CSV of `provider/model` entries
-(order = litellm fallback); the provider is inferred from the model prefix:
+wet selects providers via per-task cells, not a pinned model or a
+key-priority router. Each cell in `~/.wet/config.toml` is one
+`base_url` + `api_key` + `model` triple (OpenAI-spec):
 
 ```text
-LLM_MODELS        -> LLM chain (e.g. extract agent). Empty -> LLM features off.
-EMBEDDING_MODELS  -> embedding chain. Empty -> local ONNX (fastretrieval).
-RERANK_MODELS     -> rerank chain. Empty -> local ONNX cross-encoder.
-LLM_API_BASE      -> custom OpenAI-compatible endpoint (SSRF-guarded)
+[models.chat]      -> chat/LLM calls (e.g. extract agent). Unkeyed -> LLM features off.
+[models.embed]     -> embedding calls. Unkeyed -> local ONNX (fastretrieval).
+[models.rerank]    -> rerank calls. Unkeyed -> local ONNX cross-encoder.
+[models.jev_score] -> advisory jev scoring cell.
 ```
 
-The default chains list curated models but are filtered to providers whose
-`<PROVIDER>_API_KEY` is configured; if none has a key, the chain resolves
-empty and wet falls back to local (no keyless cloud call, no priority router).
-All calls dispatch through `mcp_core.llm` (litellm passthrough via the
-`mcp-core[llm]` extra); any litellm `provider/model` string works.
+OpenRouter is the pre-wired default `base_url` for every cell; any
+OpenAI-compatible endpoint works. Credential order per cell:
+`HULL_<TASK>_API_KEY` env > cell `api_key` > `OPENROUTER_API_KEY` (only when
+the cell keeps the OpenRouter default `base_url`). All calls dispatch through
+the hull-core OpenAI-spec client (`OpenAICompatClient`) built per task.
 
 If none is set:
 
@@ -153,9 +153,6 @@ If none is set:
   warning.
 - Core search/extract/docs continue to work via embedding-only ranking.
 - No hard failure -- LLM is an enhancement, not a requirement.
-
-This dispatch is shared with web-core's `selector_inference` module
-(web-core 2.0.1+ removed the hardcoded `gemini-2.5-flash` default).
 
 ## Mode matrix
 
@@ -249,7 +246,7 @@ LRU eviction tracking.
 ```text
 extract(action="agent", query=...)
   |
-  +-- resolve LLM_MODELS chain (provider inferred from prefix; key-gated)
+  +-- chat-cell gate (OPENROUTER_API_KEY / HULL_CHAT_API_KEY env, or cell api_key)
   |     |
   |     +-- no provider key configured -> return "Error: no LLM provider detected"
   |     |                     (does not crash the SDK)
@@ -271,7 +268,7 @@ extract(action="agent", query=...)
   |   per-extract char budget = (token_budget - 200) / N * 4
   |   numbered [N] citations with URL + title + truncated body
   |
-  +-- llm.acompletion(model=synthesis_model or LLM_MODELS[0], ...)
+  +-- llm.acompletion(model=synthesis_model or [models.chat].model, ...)
   |     |
   |     v
   |   synthesis Markdown with [1], [2], ... matching sources index

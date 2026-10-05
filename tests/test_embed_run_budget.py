@@ -2,8 +2,8 @@
 
 ``_background_index_and_search`` wraps the whole embed run in one
 ``asyncio.wait_for``. The 60s ceiling was sized for a local ONNX pass over the
-whole chunk set; once the embed path goes remote (Cohere via the credential
-vault), ``CloudEmbeddingBackend`` splits the same set into 96-text batches
+whole chunk set; once the embed path goes remote (cloud provider via the
+[models.embed] cell), ``CloudEmbeddingBackend`` splits the same set into 96-text batches
 drained 8 at a time, and a large library (1967 chunks -> 21 batches -> 3
 waves) legitimately needs longer than any fixed 60s. The run was cancelled
 mid-embed and every chunk was stamped keyword-only ("embedding batch timed

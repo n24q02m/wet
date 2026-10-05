@@ -16,10 +16,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 300
     env:
-      JINA_AI_API_KEY: ${{ secrets.JINA_AI_API_KEY }}
-      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-      COHERE_API_KEY: ${{ secrets.COHERE_API_KEY }}
+      OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
     steps:
       - name: Harden Runner
         uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
@@ -46,7 +43,7 @@ jobs:
       - name: Require a real provider credential
         shell: bash
         run: |
-          if [ -z "${JINA_AI_API_KEY}" ] && [ -z "${GEMINI_API_KEY}" ] && [ -z "${OPENAI_API_KEY}" ] && [ -z "${COHERE_API_KEY}" ]; then
+          if [ -z "${OPENROUTER_API_KEY}" ]; then
             echo "::error::No real wet provider credential is projected into this run. Sync it from skret; the benchmark never mocks credentials."
             exit 1
           fi

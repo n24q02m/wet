@@ -56,27 +56,12 @@ mise run dev       # uv run wet
 ## Env vars
 
 - KHONG co prefix ung dung (day la open-source MCP server)
-- LLM/Embed/Rerank: litellm passthrough qua `mcp_core.llm` (mcp-core[llm]). Per-task model chains, CSV `provider/model,provider/model`, order = litellm fallback:
-  - `EMBEDDING_MODELS` -- chain embedding. Rong = local ONNX (fastretrieval).
-  - `RERANK_MODELS` -- chain rerank. Rong = local ONNX cross-encoder.
-  - `LLM_MODELS` -- chain LLM. Rong = tat feature LLM.
-- Provider duoc suy ra tu prefix model. API key theo convention litellm `<PROVIDER>_API_KEY`. 7 provider servers goi y:
-
-  | model prefix | key env var | get it at |
-  |---|---|---|
-  | `gemini/` | `GEMINI_API_KEY` | aistudio.google.com/apikey |
-  | `vertex_express/` | `GOOGLE_VERTEX_EXPRESS_API_KEY` | cloud.google.com/vertex-ai/generative-ai/docs/start/express-mode/overview |
-  | `openai/` (or bare) | `OPENAI_API_KEY` | platform.openai.com |
-  | `jina_ai/` | `JINA_AI_API_KEY` | jina.ai/api-key |
-  | `cohere/` | `COHERE_API_KEY` | dashboard.cohere.com |
-  | `xai/` | `XAI_API_KEY` | console.x.ai |
-  | `anthropic/` | `ANTHROPIC_API_KEY` | console.anthropic.com |
-
-  For any other litellm provider (used via env passthrough), see https://docs.litellm.ai/docs/providers/<provider> for its `<PROVIDER>_API_KEY` name.
- - Custom endpoint (SSRF-guarded): `LLM_API_BASE`, `EMBEDDING_API_BASE`, `RERANK_API_BASE`
+- LLM/Embed/Rerank/Chat: per-task provider cells `[models.embed|rerank|chat|jev_score]` in `~/.wet/config.toml` (each `base_url` + `api_key` + `model`, OpenAI-spec). OpenRouter is the pre-wired default for every cell.
+  - Credentials: `api_key` in the cell, or `HULL_<TASK>_API_KEY` env injection (`HULL_EMBED_API_KEY` / `HULL_RERANK_API_KEY` / `HULL_CHAT_API_KEY` / `HULL_JEV_SCORE_API_KEY` — env wins over the file).
+  - `OPENROUTER_API_KEY` env serves any cell that keeps the OpenRouter default `base_url` — one key can power every task.
+  - Empty embed/rerank cell -> local ONNX (fastretrieval); unkeyed chat cell -> LLM features off.
  - Local model cache: `FASTRETRIEVAL_CACHE_PATH`.
-- Search backends (`SEARCH_BACKENDS` CSV, runtime fallback — thử từng backend, rơi xuống backend kế khi error/empty): `searxng` (self-host) | `tavily` | `brave` | `exa` | `kagi` (keyed, `KAGI_API_KEY`) | `firecrawl` (key optional — không key vẫn thử keyless, `FIRECRAWL_API_KEY`) | `duckduckgo` | `startpage` (credential-free HTML scrape, uvx-safe; datacenter IP có thể bị bot-challenge → chain tự advance).
-- Deprecated (honored mot release voi warning): singular `EMBEDDING_MODEL`/`RERANK_MODEL` + `EMBEDDING_BACKEND`/`RERANK_BACKEND` (backend gio suy ra tu chain rong hay khong). Priority-router cu "Jina > Gemini > OpenAI > Cohere" da bo.
+- Search backends (`SEARCH_BACKENDS` CSV, runtime fallback — thử từng backend, rơi xuống backend kế khi error/empty): `searxng` (self-host) | `tavily` | `brave` | `exa` | `kagi` (keyed, `KAGI_API_KEY`) | `openrouter` (`OPENROUTER_API_KEY`, `openrouter:web_search` server tool) | `firecrawl` (key optional — không key vẫn thử keyless, `FIRECRAWL_API_KEY`) | `duckduckgo` | `startpage` (credential-free HTML scrape, uvx-safe; datacenter IP có thể bị bot-challenge → chain tự advance).
 - SearXNG: `WET_AUTO_SEARXNG` (default true), `SEARXNG_URL` (external mode)
 - Browser render backends (headless leg of `extract`): `BROWSER_BACKENDS` (CSV escalation chain: `native` | `browserless` | `invisible`; empty = `native`), `BROWSERLESS_URL`/`BROWSERLESS_TOKEN` (self-host browserless), `STEALTHFOX_BINARY` (path to a patched Firefox build for the `invisible` tier — skips the engine download, seal still verified), `CAPSOLVER_API_KEY` (optional key-gated captcha tier)
 - Identity layer (one coherent person across the chain): `WET_IDENTITY_SEED` (int pin; default 0 = derive once and persist per namespace under `~/.wet/subs/<sub>/identity.json`), `IDENTITY_PROFILE_DIR` (persistent browser profile dir; default `~/.wet/subs/<sub>/profiles`). Requires the optional `hull-core[identity]` extra (`invisible-core`); without it strategies keep legacy behavior (warn once). First identity build may download a GeoIP mmdb (egress) and resolve locale/timezone from the egress IP — `timezone_mismatch` behind a proxy falls back to en-US/UTC, never raises to MCP callers
@@ -96,11 +81,7 @@ mise run dev       # uv run wet
     "wet": {
       "command": "uvx", "args": ["wet-mcp"],
       "env": {
-        "EMBEDDING_MODELS": "jina_ai/jina-embeddings-v5-text-small,gemini/gemini-embedding-001",
-        "RERANK_MODELS": "jina_ai/jina-reranker-v3",
-        "LLM_MODELS": "gemini/gemini-3-flash-preview",
-        "JINA_AI_API_KEY": "jina_xxx",
-        "GEMINI_API_KEY": "AIza_xxx"
+        "OPENROUTER_API_KEY": "sk-or-xxx"
       }
     }
   }
@@ -110,16 +91,13 @@ mise run dev       # uv run wet
 ## Cloudflare serverless mode
 
 Forcing cloud embed/rerank (so the container never downloads local ONNX models):
+configure the `[models.embed]` / `[models.rerank]` cells in `config.toml` (any
+OpenAI-compatible endpoint; OpenRouter default) and inject the key via
+`HULL_EMBED_API_KEY` / `HULL_RERANK_API_KEY` — or one `OPENROUTER_API_KEY` for
+every OpenRouter-default cell.
 
-| env var | value |
-|---|---|
-| `EMBEDDING_MODELS` | `jina_ai/jina-embeddings-v5-text-small` |
-| `RERANK_MODELS` | `jina_ai/jina-reranker-v3` |
-| `JINA_AI_API_KEY` | from jina.ai/api-key |
-
-A non-empty `*_MODELS` chain whose provider key is set -> cloud backend (inferred,
-not via the deprecated `*_BACKEND`). Empty chain -> local ONNX. With cloud forced,
-  `fastretrieval` is never instantiated, keeping the container slim. Storage: set
+With cloud cells keyed, `fastretrieval` is never instantiated, keeping the
+container slim. Storage: set
 `MCP_STORAGE_BACKEND=cf-kv` + `MCP_KV_BASE_URL=http://kv.internal`,
 `DOCS_DB_BACKEND=cf-d1` + `MCP_D1_BASE_URL`/`MCP_VECTORIZE_BASE_URL`/`MCP_VECTORIZE_IDX`,
 `SEARCH_BACKEND=tavily` + `TAVILY_API_KEY`, and `CREDENTIAL_SECRET`.
