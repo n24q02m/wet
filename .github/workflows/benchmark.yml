@@ -108,7 +108,10 @@ jobs:
         with:
           name: wet-benchmark-contract-${{ github.sha }}
           path: ${{ runner.temp }}/wet-benchmark-contract.json
-          if-no-files-found: error
+          # ignore, not error: with `if: always()` this step also runs on a
+          # pre-flight abort (no model / no credit) where no artifact exists —
+          # a second failure line there would mask the real error.
+          if-no-files-found: ignore
           retention-days: 90
 
       - name: Gate measured artifact against exact SHA
