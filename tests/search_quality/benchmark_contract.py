@@ -134,6 +134,16 @@ def _sha256_file(path: Path) -> str:
     return _sha256_bytes(path.read_bytes())
 
 
+def _sha256_source_file(path: Path) -> str:
+    """Hash a repository source file in LF-normalized form.
+
+    Git attributes mark these sources ``text``, so a Windows checkout
+    materializes CRLF while CI checks out LF; hashing raw bytes makes the
+    manifest platform-dependent. Provenance records the versioned LF blob.
+    """
+    return _sha256_bytes(path.read_bytes().replace(b"\r\n", b"\n"))
+
+
 def _canonical_json(value: Any) -> str:
     return json.dumps(
         value,
@@ -481,7 +491,9 @@ def render_fixture_files(derived: DerivedFixtures, repo_root: Path) -> dict[str,
         FIXTURE_FILES["docs_recall_cases"]: _jsonl_bytes(derived.docs_recall_cases),
         FIXTURE_FILES["docs_corpus"]: _jsonl_bytes(derived.docs_corpus),
     }
-    source_hashes = {path: _sha256_file(repo_root / path) for path in SOURCE_PATHS}
+    source_hashes = {
+        path: _sha256_source_file(repo_root / path) for path in SOURCE_PATHS
+    }
     manifest = {
         "schema_version": FIXTURE_SCHEMA_VERSION,
         "contract_version": CONTRACT_VERSION,
