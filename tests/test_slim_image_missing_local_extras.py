@@ -195,7 +195,8 @@ class TestRerankResolutionOnASlimImage:
         from wet import server
 
         results = [{"content": "doc-a"}, {"content": "doc-b"}]
-        assert await server._rerank_results("q", results, 1) == [{"content": "doc-a"}]
+        ranked, _gate = await server._rerank_results("q", results, 1)
+        assert ranked == [{"content": "doc-a"}]
         assert slim_image == [], f"local ONNX leg was entered: {slim_image}"
 
     def test_installed_local_extras_are_still_used(self):

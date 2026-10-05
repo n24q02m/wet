@@ -209,7 +209,7 @@ class TestRerankResolverHonoursDisableLocalRerank:
         from wet import server
 
         results = [{"content": "doc-a"}, {"content": "doc-b"}]
-        ranked = await server._rerank_results("q", results, 1)
+        ranked, _gate = await server._rerank_results("q", results, 1)
         assert ranked == [{"content": "doc-a"}]
         assert slim_image == [], f"local ONNX leg was entered: {slim_image}"
 

@@ -133,7 +133,9 @@ async def test_rerank_failure_is_reported_at_warning():
         ),
         captured_logs() as records,
     ):
-        out = await server._rerank_results("how to mount a volume", results, top_n=2)
+        out, _gate = await server._rerank_results(
+            "how to mount a volume", results, top_n=2
+        )
 
     assert out == results[:2]
     warned = messages(records, "WARNING")

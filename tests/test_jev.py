@@ -294,3 +294,81 @@ async def test_refine_untouched_without_refine_flag(monkeypatch):
 
     assert len(calls) == 1
     assert "jev" not in out
+
+
+# ---------------------------------------------------------------------------
+# K1 rerank-gate: skip the rerank backend when results already suffice (BỎ)
+# ---------------------------------------------------------------------------
+
+
+def _stub_reranker(monkeypatch):
+
+    calls = []
+
+    class _Reranker:
+        def rerank(self, query, documents, top_n):
+            calls.append((query, top_n))
+            return [(i, 0.5) for i in range(min(top_n, len(documents)))]
+
+    monkeypatch.setattr(
+        "wet.reranker.resolve_rerank_backend_for_request", lambda: _Reranker()
+    )
+    return calls
+
+
+async def test_rerank_gate_skips_backend_when_sufficient(monkeypatch):
+    calls = _stub_reranker(monkeypatch)
+    monkeypatch.setattr("wet.jev.results_sufficient", AsyncMock(return_value=0.9))
+    from wet.server import _rerank_results
+
+    results = [{"content": f"r{i}"} for i in range(5)]
+    ranked, gate = await _rerank_results("q", results, top_n=3)
+
+    assert calls == []  # BỎ: the rerank backend never ran
+    assert ranked == results[:3]  # baseline order preserved
+    assert gate == {"gate": "rerank", "decision": "skip", "score": 0.9}
+
+
+async def test_rerank_gate_proceeds_when_insufficient(monkeypatch):
+    calls = _stub_reranker(monkeypatch)
+    monkeypatch.setattr("wet.jev.results_sufficient", AsyncMock(return_value=0.2))
+    from wet.server import _rerank_results
+
+    results = [{"content": f"r{i}"} for i in range(5)]
+    ranked, gate = await _rerank_results("q", results, top_n=3)
+
+    assert len(calls) == 1  # low score → baseline rerank as before
+    assert gate == {"gate": "rerank", "decision": "rerank", "score": 0.2}
+    assert ranked[0]["score"] == 0.5  # reranker output applied
+
+
+async def test_rerank_gate_fail_open_matches_baseline_exactly(monkeypatch):
+    """Unconfigured cell ⇒ output identical to the jev-less path."""
+    from wet.server import _rerank_results
+
+    results = [{"content": f"r{i}"} for i in range(5)]
+    calls = _stub_reranker(monkeypatch)
+    monkeypatch.setattr("wet.jev.results_sufficient", AsyncMock(return_value=None))
+    ranked, gate = await _rerank_results("q", results, top_n=3)
+
+    assert len(calls) == 1  # fail-open: rerank ran exactly as before
+    assert gate is None
+    assert ranked[0]["score"] == 0.5
+
+
+async def test_docs_payload_merges_rerank_and_hyde_gates(monkeypatch):
+    """Both K1 gates firing in one call ship a two-block receipt list."""
+    # >= limit results so the rerank-gate consult runs at all (with fewer
+    # candidates than top_n no rerank would happen, so no BỎ decision).
+    _stub_docs_db(monkeypatch, scores=tuple(0.1 for _ in range(12)))
+    _stub_embed(monkeypatch)
+    _patch_cell(monkeypatch, text="0.9")
+    _stub_reranker(monkeypatch)
+    with _stub_hyde(monkeypatch) as hyde:
+        out = await _cached_index_payload(monkeypatch)
+
+    hyde.assert_not_awaited()
+    assert out["jev"] == [
+        {"gate": "rerank", "decision": "skip", "score": 0.9},
+        {"gate": "hyde", "decision": "skip", "score": 0.9},
+    ]

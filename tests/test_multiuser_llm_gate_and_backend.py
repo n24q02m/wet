@@ -238,7 +238,7 @@ class TestRerankDispatchWiring:
         )
 
         results = self._results(3)
-        reranked = await srv._rerank_results("query", results, top_n=2)
+        reranked, _gate = await srv._rerank_results("query", results, top_n=2)
 
         reranker.rerank.assert_awaited_once()
         assert [r["url"] for r in reranked] == [
@@ -256,7 +256,7 @@ class TestRerankDispatchWiring:
             "wet.reranker.resolve_rerank_backend_for_request", lambda: reranker
         )
 
-        reranked = await srv._rerank_results("query", self._results(3), top_n=2)
+        reranked, _gate = await srv._rerank_results("query", self._results(3), top_n=2)
 
         assert [r["url"] for r in reranked] == [
             "https://example.com/2",
@@ -274,7 +274,7 @@ class TestRerankDispatchWiring:
         )
 
         results = self._results(2)
-        reranked = await srv._rerank_results("query", results, top_n=2)
+        reranked, _gate = await srv._rerank_results("query", results, top_n=2)
 
         assert [r["url"] for r in reranked] == [
             "https://example.com/1",
@@ -290,7 +290,7 @@ class TestRerankDispatchWiring:
         )
 
         results = self._results(3)
-        reranked = await srv._rerank_results("query", results, top_n=2)
+        reranked, _gate = await srv._rerank_results("query", results, top_n=2)
 
         assert [r["url"] for r in reranked] == [
             "https://example.com/0",
@@ -303,7 +303,7 @@ class TestRerankDispatchWiring:
         )
 
         results = self._results(3)
-        reranked = await srv._rerank_results("query", results, top_n=2)
+        reranked, _gate = await srv._rerank_results("query", results, top_n=2)
 
         assert [r["url"] for r in reranked][:2] == [
             "https://example.com/0",

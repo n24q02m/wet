@@ -410,7 +410,7 @@ async def test_search_applies_reranking():
         patch(
             "wet.server._rerank_results",
             new_callable=AsyncMock,
-            return_value=reranked,
+            return_value=(reranked, None),
         ) as mock_rerank,
         patch("wet.server._web_cache", None),
     ):
@@ -628,7 +628,7 @@ async def test_search_enrich_flag():
         patch(
             "wet.server._rerank_results",
             new_callable=AsyncMock,
-            return_value=None,
+            return_value=([], None),
         ),
         patch("wet.server._web_cache", None),
         patch(

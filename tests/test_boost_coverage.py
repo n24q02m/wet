@@ -132,15 +132,18 @@ class TestServerResearchAction:
             patch(
                 "wet.server._rerank_results",
                 new_callable=AsyncMock,
-                return_value=[
-                    {
-                        "url": "https://arxiv.org/123",
-                        "title": "Paper",
-                        "snippet": "Abstract",
-                        "content": "Abstract",
-                        "score": 0.9,
-                    }
-                ],
+                return_value=(
+                    [
+                        {
+                            "url": "https://arxiv.org/123",
+                            "title": "Paper",
+                            "snippet": "Abstract",
+                            "content": "Abstract",
+                            "score": 0.9,
+                        }
+                    ],
+                    None,
+                ),
             ),
         ):
             result = await search(action="research", query="attention mechanism")
@@ -236,7 +239,7 @@ class TestServerHelpers:
         with patch(
             "wet.reranker.resolve_rerank_backend_for_request", return_value=None
         ):
-            reranked = await _rerank_results("query", results, top_n=3)
+            reranked, _gate = await _rerank_results("query", results, top_n=3)
             assert len(reranked) == 3
 
     async def test_rerank_fewer_than_topn(self):
@@ -248,7 +251,7 @@ class TestServerHelpers:
             "wet.reranker.resolve_rerank_backend_for_request",
             return_value=MagicMock(),
         ):
-            reranked = await _rerank_results("query", results, top_n=5)
+            reranked, _gate = await _rerank_results("query", results, top_n=5)
             assert len(reranked) == 2
 
     async def test_rerank_success(self):
@@ -263,7 +266,7 @@ class TestServerHelpers:
             "wet.reranker.resolve_rerank_backend_for_request",
             return_value=mock_reranker,
         ):
-            reranked = await _rerank_results("query", results, top_n=2)
+            reranked, _gate = await _rerank_results("query", results, top_n=2)
             assert len(reranked) == 2
             assert reranked[0]["content"] == "r2"
             assert reranked[0]["score"] == 0.95
@@ -280,7 +283,7 @@ class TestServerHelpers:
             "wet.reranker.resolve_rerank_backend_for_request",
             return_value=mock_reranker,
         ):
-            reranked = await _rerank_results("query", results, top_n=3)
+            reranked, _gate = await _rerank_results("query", results, top_n=3)
             assert len(reranked) == 3
 
     async def test_with_timeout_no_timeout(self):

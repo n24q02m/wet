@@ -31,7 +31,8 @@ async def test_rerank_waits_for_background_backend_initialization(monkeypatch):
     assert not rerank_task.done()
 
     ready.set()
-    assert await rerank_task == [{"content": "doc-a"}]
+    ranked, _gate = await rerank_task
+    assert ranked == [{"content": "doc-a"}]
 
 
 @pytest.fixture(autouse=True)
@@ -481,7 +482,7 @@ async def test_rerank_exception_fallback():
         mock_get.return_value = mock_reranker
 
         results = [{"content": "a"}, {"content": "b"}, {"content": "c"}]
-        res = await server._rerank_results("q", results, 2)
+        res, _gate = await server._rerank_results("q", results, 2)
         assert len(res) == 2
         assert res[0]["content"] == "a"
 
@@ -492,7 +493,7 @@ async def test_rerank_fewer_results_than_top_n():
         mock_get.return_value = MagicMock()
 
         results = [{"content": "a"}]
-        res = await server._rerank_results("q", results, 5)
+        res, _gate = await server._rerank_results("q", results, 5)
         assert len(res) == 1
 
 
@@ -1237,10 +1238,13 @@ async def test_do_research_reranking_filters_low_scores():
             }
         )
         # Only first result has score > 0.3
-        mock_rerank.return_value = [
-            {"url": "http://arxiv.org/1", "content": "good", "score": 0.8},
-            {"url": "http://other.org/2", "content": "bad", "score": 0.1},
-        ]
+        mock_rerank.return_value = (
+            [
+                {"url": "http://arxiv.org/1", "content": "good", "score": 0.8},
+                {"url": "http://other.org/2", "content": "bad", "score": 0.1},
+            ],
+            None,
+        )
         result = await server._do_research("test query")
         data = json.loads(result)
         # Low-score result filtered

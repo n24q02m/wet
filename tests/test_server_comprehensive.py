@@ -237,7 +237,7 @@ async def test_rerank_results():
         mock_reranker.rerank.return_value = [(0, 0.9)]
         mock_get_reranker.return_value = mock_reranker
 
-        res = await server._rerank_results(
+        res, _gate = await server._rerank_results(
             "query", [{"content": "hello"}, {"content": "world"}], 1
         )
         assert res == [{"content": "hello", "score": 0.9}]
@@ -390,7 +390,7 @@ async def test_do_docs_search_cached():
         patch("wet.server._rerank_results", new_callable=AsyncMock) as mock_rerank,
     ):
         mock_embed.return_value = [0.1]
-        mock_rerank.return_value = [{"content": "res"}]
+        mock_rerank.return_value = ([{"content": "res"}], None)
 
         res = await server._do_docs_search("test", "test")
         assert "cached_index" in payload(res)["source"]
@@ -1173,7 +1173,7 @@ async def test_rerank_results_exception():
         mock_get.return_value = mock_reranker
 
         results = [{"content": "a"}, {"content": "b"}, {"content": "c"}]
-        res = await server._rerank_results("query", results, 2)
+        res, _gate = await server._rerank_results("query", results, 2)
         assert len(res) == 2
         assert res == [{"content": "a"}, {"content": "b"}]
 

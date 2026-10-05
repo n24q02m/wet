@@ -709,10 +709,13 @@ async def _rerank_results(
     query: str,
     results: list[dict],
     top_n: int,
-) -> list[dict]:
+) -> tuple[list[dict], dict[str, Any] | None]:
     """Rerank search results if reranker is available.
 
-    Falls back to original results if reranking fails or is unavailable.
+    Returns ``(results, jev_gate)``: the ranked/truncated list plus the jev
+    advisory rerank-gate receipt (``None`` when jev was not consulted or the
+    cell is unconfigured). Falls back to original results if reranking
+    fails or is unavailable.
     """
     await _wait_for_backend_init()
 
@@ -723,7 +726,26 @@ async def _rerank_results(
 
     reranker = resolve_rerank_backend_for_request()
     if not reranker or len(results) < top_n:
-        return results[:top_n]
+        return results[:top_n], None
+
+    # K1 (spec 2026-09-26 §7): jev advisory rerank-gate (BỎ). A "sufficient"
+    # verdict means the retrieved order already answers the query, so the
+    # rerank backend call is skipped. Fail-open: ``results_sufficient``
+    # returns None on any failure and the rerank proceeds exactly as before;
+    # consultation metrics land in search_metrics under ``jev_score``.
+    from wet.jev import SUFFICIENT_SCORE, results_sufficient
+
+    _jev = await results_sufficient(query, results)
+    gate: dict[str, Any] | None = None
+    if _jev is not None:
+        gate = {
+            "gate": "rerank",
+            "decision": "skip" if _jev >= SUFFICIENT_SCORE else "rerank",
+            "score": round(_jev, 4),
+        }
+        if _jev >= SUFFICIENT_SCORE:
+            logger.info(f"jev rerank-gate: sufficient ({_jev:.2f}); skipping rerank")
+            return results[:top_n], gate
 
     try:
         documents = [r["content"] for r in results]
@@ -738,7 +760,7 @@ async def _rerank_results(
                     result = results[idx].copy()
                     result["score"] = round(score, 4)
                     reranked.append(result)
-            return reranked
+            return reranked, gate
     except Exception as e:
         # A reranker that is configured but permanently broken (bad key, wrong
         # model id, dead endpoint) silently returns keyword order on EVERY
@@ -750,7 +772,7 @@ async def _rerank_results(
             f"falling back to unranked order: {type(e).__name__}: {e}"
         )
 
-    return results[:top_n]
+    return results[:top_n], gate
 
 
 # Initialize MCP server
@@ -1225,12 +1247,14 @@ async def search(  # noqa: PLR0913
                                 r["content"] = snippet
                             if not isinstance(snippet, str) or not snippet.strip():
                                 r["snippet"] = r["content"]
-                        reranked = await _rerank_results(
+                        reranked, rerank_gate = await _rerank_results(
                             round_query, results_list, top_n=max_results
                         )
                         if reranked:
                             data["results"] = reranked
                             data["total"] = len(data["results"])
+                        if rerank_gate:
+                            data["jev"] = rerank_gate
                 except Exception as e:
                     logger.warning(
                         f"Search reranking step failed for query {round_query!r}, "
@@ -1311,7 +1335,8 @@ async def search(  # noqa: PLR0913
                     current = rewritten
             _, data = max(rounds, key=lambda pair: pair[0])
             if jev_block is not None:
-                data["jev"] = jev_block
+                blocks = [b for b in (data.get("jev"), jev_block) if b]
+                data["jev"] = blocks[0] if len(blocks) == 1 else blocks
 
             # Optional snippet enrichment
             if enrich:
@@ -2343,11 +2368,13 @@ async def _do_research(
         # Rerank
         try:
             if "results" in data and data["results"]:
-                reranked = await _rerank_results(
+                reranked, rerank_gate = await _rerank_results(
                     query, data["results"], top_n=max_results
                 )
                 data["results"] = [r for r in reranked if r.get("score", 1.0) > 0.3]
                 data["total"] = len(data["results"])
+                if rerank_gate:
+                    data["jev"] = rerank_gate
         except Exception as e:
             logger.error(f"Reranking failed: {e}")
 
@@ -2944,7 +2971,7 @@ async def _search_cached_index(
     library = lib_key.split(":")[0]
 
     # Rerank if available, otherwise truncate to limit
-    results = await _rerank_results(query, results, limit)
+    results, rerank_gate = await _rerank_results(query, results, limit)
     payload = {
         "library": library,
         "version": ver.get("version", "latest"),
@@ -2954,8 +2981,9 @@ async def _search_cached_index(
         "retrieval": ("keyword_only" if query_embedding is None else "hybrid"),
         "retrieval_notice": retrieval_notice,
     }
-    if jev_block is not None:
-        payload["jev"] = jev_block
+    if jev_block is not None or rerank_gate is not None:
+        blocks = [b for b in (rerank_gate, jev_block) if b]
+        payload["jev"] = blocks[0] if len(blocks) == 1 else blocks
     return payload
 
 
@@ -3166,9 +3194,11 @@ async def _do_immediate_fallback_search(
         )
         fallback_data = json.loads(fallback_result)
         if "results" in fallback_data and fallback_data["results"]:
-            fallback_data["results"] = await _rerank_results(
+            fallback_data["results"], fallback_gate = await _rerank_results(
                 query, fallback_data["results"], top_n=limit
             )
+            if fallback_gate:
+                fallback_data["jev"] = fallback_gate
     except Exception as e:
         # The caller ships this as `temporary_results` next to a message
         # promising web results. An empty list therefore reads as "the web had
