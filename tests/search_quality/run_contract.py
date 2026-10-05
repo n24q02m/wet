@@ -31,6 +31,25 @@ from live_http import mcp_client_session, wet_http_server, wet_server_env  # noq
 # the spawned server's env and the backend recorded on the web_search suite.
 WEB_SEARCH_BACKEND = "openrouter"
 
+# The benchmark corpus is seeded WITHOUT vectors (fixture JSONL has no
+# embeddings), so the benchmark server must answer docs_recall keyword-only.
+# Two things make that deterministic on a box holding OPENROUTER_API_KEY:
+# a config.toml that points the embed/rerank cells at a non-OpenRouter
+# base_url (the OPENROUTER_API_KEY fallback only applies to the default
+# base_url, so the cells stay unconfigured), and DISABLE_LOCAL_* suppressing
+# the ONNX legs. Anything else lets a per-query cloud embed/rerank call into
+# a suite whose thresholds assume local retrieval.
+_BENCHMARK_CONFIG_TOML = """\
+# Benchmark-isolated instance config: embed/rerank cells point at a
+# non-OpenRouter base_url with no key, so the OPENROUTER_API_KEY fallback
+# does NOT configure them — the spawned server stays keyword-only.
+[models.embed]
+base_url = "https://benchmark.invalid"
+
+[models.rerank]
+base_url = "https://benchmark.invalid"
+"""
+
 
 def _load_fixture_records() -> dict[str, list[dict[str, Any]]]:
     return {
@@ -39,15 +58,44 @@ def _load_fixture_records() -> dict[str, list[dict[str, Any]]]:
     }
 
 
-def _seed_docs_database(path: Path, corpus: list[dict[str, Any]]) -> None:
-    """Materialize the versioned controlled corpus before protocol execution."""
+def _server_embedding_identity(env: dict[str, str]) -> tuple[int, str]:
+    """The (dims, model_identity) ``make_docs_db`` computes under ``env``.
+
+    The benchmark config leaves [models.embed] unconfigured by construction
+    (see ``_BENCHMARK_CONFIG_TOML``), so the identity is the local embedding
+    model resolution: ``LOCAL_EMBEDDING_MODEL`` verbatim, else the bundled
+    ONNX default — mirroring ``Settings.resolve_local_embedding_model``.
+    """
+    from wet.runtime import DEFAULT_EMBEDDING_DIMS
+
+    dims = int(env.get("EMBEDDING_DIMS") or "0") or DEFAULT_EMBEDDING_DIMS
+    model = env.get("LOCAL_EMBEDDING_MODEL") or "n24q02m/Qwen3-Embedding-0.6B-ONNX"
+    return dims, model
+
+
+def _seed_docs_database(
+    path: Path,
+    corpus: list[dict[str, Any]],
+    *,
+    embedding_dims: int = 0,
+    model_identity: str = "",
+) -> None:
+    """Materialize the versioned controlled corpus before protocol execution.
+
+    ``embedding_dims``/``model_identity`` must match what the spawned
+    server's ``make_docs_db`` computes for the same store — the B2 identity
+    guard refuses to open a store stamped with a different embedding
+    identity (``EmbeddingModelMismatch``).
+    """
     from wet.db import DocsDB
 
     grouped: dict[str, list[dict[str, Any]]] = defaultdict(list)
     for record in corpus:
         grouped[record["library"]].append(record)
 
-    database = DocsDB(path, embedding_dims=0)
+    database = DocsDB(
+        path, embedding_dims=embedding_dims, model_identity=model_identity
+    )
     try:
         for library in sorted(grouped):
             records = grouped[library]
@@ -115,9 +163,34 @@ def _server_environment(temp_root: Path, docs_db_path: Path) -> dict[str, str]:
             # benchmark.
             "GOOGLE_DRIVE_CLIENT_ID": "",
             "GOOGLE_DRIVE_CLIENT_SECRET": "",
+            # Deterministic keyword-only docs suite (see
+            # ``_BENCHMARK_CONFIG_TOML``): no embed/rerank leg may resolve.
+            # Env-key blanks beat config.toml api_key fields; the custom
+            # base_url in the config beats the OPENROUTER_API_KEY fallback.
+            "HULL_EMBED_API_KEY": "",
+            "HULL_RERANK_API_KEY": "",
+            "DISABLE_LOCAL_EMBED": "true",
+            "DISABLE_LOCAL_RERANK": "true",
+            # Pin identity inputs so seed and server stamp the same
+            # (dims, model) regardless of host env/GPU.
+            "EMBEDDING_DIMS": "768",
+            "LOCAL_EMBEDDING_MODEL": "n24q02m/Qwen3-Embedding-0.6B-ONNX",
+            # Fail closed on any residual identity drift rather than
+            # silently reindexing the seeded store (a developer's
+            # REINDEX_ON_MODEL_CHANGE=true user env masked this bug
+            # locally while CI failed).
+            "REINDEX_ON_MODEL_CHANGE": "false",
         }
     )
     return env
+
+
+def _write_benchmark_config(env: dict[str, str]) -> None:
+    """Drop the isolated config.toml into the spawned server's tmp home."""
+    home = Path(env["HOME"])  # ``wet_server_env`` points every home var here.
+    config_dir = home / ".wet"
+    config_dir.mkdir(parents=True, exist_ok=True)
+    (config_dir / "config.toml").write_text(_BENCHMARK_CONFIG_TOML, encoding="utf-8")
 
 
 async def _run_protocol(
@@ -132,9 +205,17 @@ async def _run_protocol(
     temp_root = Path(tempfile.mkdtemp(prefix="wet-benchmark-v1-"))
     try:
         docs_db_path = temp_root / "docs.db"
-        _seed_docs_database(docs_db_path, fixtures["docs_corpus"])
+        env = _server_environment(temp_root, docs_db_path)
+        _write_benchmark_config(env)
+        dims, model_identity = _server_embedding_identity(env)
+        _seed_docs_database(
+            docs_db_path,
+            fixtures["docs_corpus"],
+            embedding_dims=dims,
+            model_identity=model_identity,
+        )
         async with wet_http_server(
-            _server_environment(temp_root, docs_db_path),
+            env,
             temp_root / "server.log",
         ) as port:
             async with mcp_client_session(port, timeout=600.0) as session:
