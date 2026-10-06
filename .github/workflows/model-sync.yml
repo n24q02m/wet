@@ -1,0 +1,232 @@
+name: Model Sync
+
+# Weekly benchmark-driven model-pin sync for the wet live benchmark.
+#
+# Source of truth: KnowledgePrism's apps/ai-worker/app/data/model_rankings.json
+# (KP's daily model-refresh job keeps it current). Selection is deterministic:
+# active entries sorted by chain_position, image-output entries dropped, the
+# first survivor is the proposed OpenRouter slug.
+#
+# When the proposal differs from the current pin (vars.OPENROUTER_MODEL, else
+# bench/model.txt), this workflow files or updates ONE sticky issue and opens
+# a single-file PR against bench/model.txt (label model-pin). It NEVER merges
+# the PR, never sets the repo variable, and never edits code defaults — moving
+# the paid benchmark model stays a labelled, human-approved change. When the
+# proposal already matches, the sticky issue is only PATCHed (state cache).
+#
+# Source-access note: KnowledgePrism is a private repository, so the anonymous
+# raw fetch below fails closed (HTTP 404) until the rankings file is mirrored
+# to a public URL or this repo is granted a fine-grained PAT with read access
+# to it. The job never guesses a model.
+
+on:
+  schedule:
+    - cron: "37 3 * * 1" # weekly Mon 03:37 UTC — after KP's daily 02:23 refresh
+  workflow_dispatch:
+
+permissions:
+  contents: write # single-file pin branch commit
+  issues: write # sticky dashboard issue
+  pull-requests: write # pin PR
+
+concurrency:
+  group: model-sync
+  cancel-in-progress: false
+
+env:
+  KP_RANKINGS_URL: https://raw.githubusercontent.com/n24q02m/KnowledgePrism/main/apps/ai-worker/app/data/model_rankings.json
+  PIN_FILE: bench/model.txt
+  PIN_BRANCH: model-sync/pin
+  PIN_LABEL: model-pin
+  STICKY_TITLE: "[model-sync] weekly model pin"
+  # Read through the vars context (no actions:read needed) so the pin
+  # comparison mirrors exactly what benchmark.yml resolves.
+  VAR_MODEL: ${{ vars.OPENROUTER_MODEL }}
+  GH_TOKEN: ${{ github.token }}
+
+jobs:
+  sync:
+    name: Sync benchmark model pin
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        with:
+          egress-policy: audit
+
+      - name: Checkout pin file state
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Fetch published rankings
+        run: |
+          code="$(curl -sS -o model_rankings.json -w '%{http_code}' "${KP_RANKINGS_URL}")" || code=000
+          if [ "${code}" != "200" ]; then
+            echo "::error::Fetching KnowledgePrism model_rankings.json returned HTTP ${code}. KnowledgePrism is private: raw.githubusercontent.com serves anonymous clients a 404 and GITHUB_TOKEN cannot read sibling private repos. Unblock by mirroring the file to a public URL from KP's daily job, or by adding a fine-grained PAT secret (contents:read on KP) and switching this step to an authenticated fetch. Failing closed — the sync never guesses a model."
+            exit 1
+          fi
+
+      - name: Select text-chain leader
+        id: select
+        run: |
+          python3 - <<'PY' >> "${GITHUB_OUTPUT}"
+          import json
+
+          data = json.load(open("model_rankings.json"))
+          models = [
+              m
+              for m in data.get("models", [])
+              if m.get("active") and m.get("chain_position") is not None
+          ]
+          models.sort(key=lambda m: m["chain_position"])
+          models = [m for m in models if "image" not in (m.get("output_modalities") or [])]
+          if not models:
+              raise SystemExit("no active text-chain model in model_rankings.json — failing closed")
+          meta = data.get("snapshot_meta") or {}
+          print(f"proposed={models[0]['litellm_id']}")
+          print(f"proposed_slug={models[0].get('openrouter_slug') or models[0]['litellm_id']}")
+          print(f"generated_at={meta.get('generated_at', 'unknown')}")
+          print("chain=" + "; ".join(m["litellm_id"] for m in models[:3]))
+          PY
+
+      - name: Resolve current effective pin
+        id: current
+        run: |
+          pin=""
+          if [ -f "${PIN_FILE}" ]; then
+            pin="$(tr -d ' \t\r\n' < "${PIN_FILE}")"
+          fi
+          if [ -n "${VAR_MODEL}" ]; then
+            current="${VAR_MODEL}"
+            source="vars.OPENROUTER_MODEL"
+          elif [ -n "${pin}" ]; then
+            current="${pin}"
+            source="${PIN_FILE}"
+          else
+            current=""
+            source="unset"
+          fi
+          changed="false"
+          if [ "${current}" != "${PROPOSED}" ]; then
+            changed="true"
+          fi
+          printf 'current=%s\nsource=%s\nchanged=%s\n' "${current}" "${source}" "${changed}" >> "${GITHUB_OUTPUT}"
+        env:
+          PROPOSED: ${{ steps.select.outputs.proposed }}
+
+      - name: Locate sticky issue
+        id: sticky
+        env:
+          REPO: ${{ github.repository }}
+        run: |
+          num="$(gh issue list --repo "${REPO}" --state open --limit 200 --json number,title \
+            | python3 -c 'import json,os,sys;t=os.environ["STICKY_TITLE"];items=[i for i in json.load(sys.stdin) if i["title"]==t];print(items[0]["number"] if items else "")')"
+          printf 'number=%s\n' "${num}" >> "${GITHUB_OUTPUT}"
+
+      - name: Open pin PR
+        id: pr
+        if: steps.current.outputs.changed == 'true'
+        env:
+          REPO: ${{ github.repository }}
+          PROPOSED: ${{ steps.select.outputs.proposed }}
+          GENERATED_AT: ${{ steps.select.outputs.generated_at }}
+          CHAIN: ${{ steps.select.outputs.chain }}
+          CURRENT: ${{ steps.current.outputs.current }}
+          CURRENT_SOURCE: ${{ steps.current.outputs.source }}
+        run: |
+          python3 - <<'PY'
+          import os
+
+          proposed = os.environ["PROPOSED"]
+          with open("pr.md", "w") as f:
+              f.write(
+                  "## model-sync pin proposal\n\n"
+                  + f"- proposed pin: `{proposed}`\n"
+                  + f"- current effective pin: `{os.environ['CURRENT'] or 'unset'}` ({os.environ['CURRENT_SOURCE']})\n"
+                  + f"- source: KnowledgePrism `model_rankings.json` (generated_at {os.environ['GENERATED_AT']})\n"
+                  + f"- text chain (top): {os.environ['CHAIN']}\n\n"
+                  + "Single-file change to `bench/model.txt`. Merging this PR moves the paid benchmark model; "
+                  + "the [model-sync] workflow never merges its own PRs.\n"
+              )
+          PY
+          gh label create "${PIN_LABEL}" --repo "${REPO}" --force \
+            --color D93F0B --description "Benchmark model pin proposal" >/dev/null
+          head_sha="$(gh api "repos/${REPO}/git/ref/heads/main" --jq '.object.sha')"
+          if gh api "repos/${REPO}/git/ref/heads/${PIN_BRANCH}" >/dev/null 2>&1; then
+            gh api -X PATCH "repos/${REPO}/git/refs/heads/${PIN_BRANCH}" -F force=true -f sha="${head_sha}" >/dev/null
+          else
+            gh api -X POST "repos/${REPO}/git/refs" -f ref="refs/heads/${PIN_BRANCH}" -f sha="${head_sha}" >/dev/null
+          fi
+          old_sha="$(gh api "repos/${REPO}/contents/${PIN_FILE}?ref=main" --jq '.sha' 2>/dev/null || true)"
+          content_b64="$(printf '%s\n' "${PROPOSED}" | base64 -w0)"
+          jq -n --arg m "chore(bench): pin benchmark model to ${PROPOSED}" \
+            --arg c "${content_b64}" --arg b "${PIN_BRANCH}" --arg s "${old_sha}" \
+            '{message: $m, content: $c, branch: $b} + (if $s == "" then {} else {sha: $s} end)' \
+            | gh api -X PUT "repos/${REPO}/contents/${PIN_FILE}" --input - >/dev/null
+          pr_url="$(gh pr create --repo "${REPO}" --base main --head "${PIN_BRANCH}" \
+            --title "model-sync: pin benchmark model to ${PROPOSED}" \
+            --body-file pr.md --label "${PIN_LABEL}")"
+          printf 'url=%s\nnumber=%s\n' "${pr_url}" "${pr_url##*/}" >> "${GITHUB_OUTPUT}"
+
+      - name: Create or patch sticky issue
+        id: upsert
+        env:
+          REPO: ${{ github.repository }}
+          PROPOSED: ${{ steps.select.outputs.proposed }}
+          GENERATED_AT: ${{ steps.select.outputs.generated_at }}
+          CHAIN: ${{ steps.select.outputs.chain }}
+          CURRENT: ${{ steps.current.outputs.current }}
+          CURRENT_SOURCE: ${{ steps.current.outputs.source }}
+          CHANGED: ${{ steps.current.outputs.changed }}
+          STICKY_NUM: ${{ steps.sticky.outputs.number }}
+          PR_NUM: ${{ steps.pr.outputs.number }}
+          PR_URL: ${{ steps.pr.outputs.url }}
+        run: |
+          export NOW="$(date -u '+%Y-%m-%d %H:%M UTC')"
+          python3 - <<'PY'
+          import os
+
+          repo = os.environ["REPO"]
+          proposed = os.environ["PROPOSED"]
+          current = os.environ["CURRENT"]
+          source = os.environ["CURRENT_SOURCE"]
+          changed = os.environ["CHANGED"] == "true"
+          pr_num = os.environ["PR_NUM"]
+
+          rows = [
+              ("last checked (UTC)", os.environ["NOW"]),
+              ("source", f"KnowledgePrism `model_rankings.json` (generated_at {os.environ['GENERATED_AT']})"),
+              ("proposed text-chain leader", f"`{proposed}`"),
+              ("text chain (top)", os.environ["CHAIN"]),
+              ("current effective pin", f"`{current}` ({source})" if current else f"unset ({source})"),
+          ]
+          if pr_num:
+              rows.append(("pin PR", f"#{pr_num} (open — human review required)"))
+          rows.append(("state", "**proposal open**" if changed else "unchanged"))
+          table = "| field | value |\n| --- | --- |\n" + "\n".join(
+              f"| {k} | {v} |" for k, v in rows
+          )
+          with open("sticky.md", "w") as f:
+              f.write(
+                  "## [model-sync] weekly model pin\n\n"
+                  + table
+                  + "\n\n"
+                  + "**Apply:** merge the labelled `model-pin` PR (updates `bench/model.txt`), or set the repo variable directly:\n"
+                  + f"`gh variable set OPENROUTER_MODEL --repo {repo} --body \"{proposed}\"`.\n\n"
+                  + "This workflow never merges the PR and never sets the variable — moving the paid benchmark model is a human-approved change.\n"
+              )
+          PY
+          if [ -z "${STICKY_NUM}" ]; then
+            url="$(gh issue create --repo "${REPO}" --title "${STICKY_TITLE}" --body-file sticky.md)"
+            echo "number=${url##*/}" >> "${GITHUB_OUTPUT}"
+            echo "Created sticky issue ${url}"
+          else
+            gh issue edit "${STICKY_NUM}" --repo "${REPO}" --body-file sticky.md >/dev/null
+            echo "number=${STICKY_NUM}" >> "${GITHUB_OUTPUT}"
+            echo "Patched sticky issue #${STICKY_NUM}"
+          fi
+          if [ "${CHANGED}" = "true" ] && [ -n "${PR_URL}" ]; then
+            gh issue comment "${STICKY_NUM}" --repo "${REPO}" \
+              --body "Proposal updated at ${NOW}: effective pin \`${CURRENT:-unset}\` (${CURRENT_SOURCE}) → proposed \`${PROPOSED}\`. Pin PR: ${PR_URL}" >/dev/null
+          fi
+          cat sticky.md >> "${GITHUB_STEP_SUMMARY}"

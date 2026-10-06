@@ -59,20 +59,33 @@ jobs:
             exit 1
           fi
 
-      - name: Require explicit benchmark model
+      - name: Resolve benchmark model
         shell: bash
         env:
-          OPENROUTER_MODEL: ${{ vars.OPENROUTER_MODEL }}
+          VAR_MODEL: ${{ vars.OPENROUTER_MODEL }}
         run: |
-          if [ -z "${OPENROUTER_MODEL}" ]; then
-            echo "::error::vars.OPENROUTER_MODEL is not set. The benchmark never picks a paid model silently — set the repo variable to a user-approved OpenRouter slug before dispatching."
+          # Precedence: explicit repo variable first, then the model-sync pin
+          # file. Both unset stays fail-closed — the benchmark never picks a
+          # paid model silently.
+          model="${VAR_MODEL}"
+          src="vars.OPENROUTER_MODEL"
+          if [ -z "${model}" ] && [ -f bench/model.txt ]; then
+            pin="$(tr -d ' \t\r\n' < bench/model.txt)"
+            if [ -n "${pin}" ]; then
+              model="${pin}"
+              src="bench/model.txt"
+            fi
+          fi
+          if [ -z "${model}" ]; then
+            echo "::error::No benchmark model resolved: vars.OPENROUTER_MODEL is unset and bench/model.txt is empty. The benchmark never picks a paid model silently — set the repo variable or merge a [model-sync] pin PR before dispatching."
             exit 1
           fi
+          echo "OPENROUTER_MODEL=${model}" >> "${GITHUB_ENV}"
+          echo "Resolved benchmark model ${model} from ${src}"
 
       - name: Pre-flight provider spend gate
         shell: bash
         env:
-          OPENROUTER_MODEL: ${{ vars.OPENROUTER_MODEL }}
           OPENROUTER_SPEND_CAP_USD: ${{ vars.OPENROUTER_SPEND_CAP_USD }}
         run: |
           cap="${OPENROUTER_SPEND_CAP_USD:-5}"
@@ -96,7 +109,6 @@ jobs:
       - name: Execute live MCP benchmark
         env:
           BENCHMARK_ARTIFACT: ${{ runner.temp }}/wet-benchmark-contract.json
-          OPENROUTER_MODEL: ${{ vars.OPENROUTER_MODEL }}
         run: uv run python tests/search_quality/run_contract.py run --output "${BENCHMARK_ARTIFACT}"
 
       - name: Upload exact-SHA benchmark artifact
