@@ -1187,10 +1187,44 @@ async def search(  # noqa: PLR0913
                     return _payload(cached_content)
             # Optional query expansion (LLM-driven, opt-in)
             search_query = normalized_query or query
+            expand_gate: dict[str, Any] | None = None
             if expand:
+                # K1 (spec 2026-09-26 §7): jev advisory search-strategy
+                # gate (BỎ). When the judge says the query is already clear
+                # enough that alternative phrasings will not improve
+                # coverage, the paid expansion call is skipped entirely;
+                # a low score or any jev failure is fail-open and expansion
+                # runs exactly as before. Metrics land in search_metrics
+                # under ``jev_score``.
+                from wet.jev import SUFFICIENT_SCORE, query_clear
                 from wet.sources.search_strategies import expand_query
 
-                expanded = await expand_query(query)
+                _jev = await query_clear(query)
+                if _jev is not None:
+                    _skip = _jev >= SUFFICIENT_SCORE
+                    expand_gate = {
+                        "gate": "expand",
+                        "decision": "skip" if _skip else "expand",
+                        "skipped": _skip,
+                        "score": round(_jev, 4),
+                        "reason": (
+                            f"query already clear (score {_jev:.2f}"
+                            f" >= {SUFFICIENT_SCORE})"
+                            if _skip
+                            else f"query unclear (score {_jev:.2f}"
+                            f" < {SUFFICIENT_SCORE})"
+                        ),
+                    }
+                    if _skip:
+                        logger.info(
+                            f"jev expand-gate: clear ({_jev:.2f}); "
+                            "skipping query expansion"
+                        )
+                        expanded = [query]
+                    else:
+                        expanded = await expand_query(query)
+                else:
+                    expanded = await expand_query(query)
                 if len(expanded) > 1:
                     search_query = " OR ".join(expanded)
 
@@ -1283,6 +1317,9 @@ async def search(  # noqa: PLR0913
             if refine:
                 tried: list[str] = [search_query]
                 current = search_query
+                # Index of the round whose results are under review
+                # (0 = the initial round); bumped after each rewrite round.
+                round_no = 0
                 for _ in range(2):  # hard bound: max 2 review rounds
                     if not refine_needed(rounds[-1][1].get("results", [])):
                         break
@@ -1298,14 +1335,21 @@ async def search(  # noqa: PLR0913
                         query, rounds[-1][1].get("results", [])
                     )
                     if _jev is not None:
+                        _stop = _jev >= SUFFICIENT_SCORE
                         jev_block = {
                             "gate": "refine",
-                            "decision": (
-                                "stop" if _jev >= SUFFICIENT_SCORE else "proceed"
-                            ),
+                            "decision": "stop" if _stop else "proceed",
                             "score": round(_jev, 4),
+                            "stopped_at": round_no if _stop else None,
+                            "reason": (
+                                f"results sufficient (score {_jev:.2f}"
+                                f" >= {SUFFICIENT_SCORE})"
+                                if _stop
+                                else f"results insufficient (score {_jev:.2f}"
+                                f" < {SUFFICIENT_SCORE})"
+                            ),
                         }
-                        if _jev >= SUFFICIENT_SCORE:
+                        if _stop:
                             break
                     from wet.sources.search_strategies import rewrite_query
 
@@ -1333,10 +1377,13 @@ async def search(  # noqa: PLR0913
                         break  # a failed round never poisons the best-round pick
                     rounds.append((round_quality(r_data.get("results", [])), r_data))
                     current = rewritten
+                    round_no += 1
             _, data = max(rounds, key=lambda pair: pair[0])
-            if jev_block is not None:
-                blocks = [b for b in (data.get("jev"), jev_block) if b]
-                data["jev"] = blocks[0] if len(blocks) == 1 else blocks
+            # Merge every gate receipt consulted in this call (rerank rides
+            # in ``data["jev"]``, expand/refine arrive via the blocks here).
+            _gates = [b for b in (data.get("jev"), expand_gate, jev_block) if b]
+            if _gates:
+                data["jev"] = _gates[0] if len(_gates) == 1 else _gates
 
             # Optional snippet enrichment
             if enrich:

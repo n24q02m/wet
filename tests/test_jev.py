@@ -1,4 +1,5 @@
-"""jev advisory placements (spec 2026-09-26 §7): K1 HyDE gate + N6 refine stop.
+"""jev advisory placements (spec 2026-09-26 §7): K1 HyDE gate + K1 expand
+gate + N6 refine stop.
 
 Covers:
 - the shared scorer parser contract (first-float extraction, raise on
@@ -8,8 +9,12 @@ Covers:
 - K1: a "sufficient" verdict skips the docs HyDE strategy round and ships
   a ``jev`` receipt block; insufficient/failed jev keeps the exact baseline
   payload (fail-open);
+- K1 expand gate: a "clear" verdict skips the paid ``expand_query`` call
+  and ships a receipt; failed jev keeps the exact baseline expansion
+  behavior (fail-open);
 - N6: a "sufficient" verdict stops the refine loop before the rewrite
-  round; failed jev keeps the exact baseline refine behavior;
+  round (receipt carries ``stopped_at`` + ``reason``); failed jev keeps the
+  exact baseline refine behavior;
 - the client contract pinned on the cell call: temperature 0,
   ``max_tokens=1024``, ``reasoning={"exclude": True}`` (glm reasoning on
   OpenRouter eats the budget otherwise).
@@ -23,7 +28,7 @@ import pytest
 from structured import payload
 
 from wet import search_metrics
-from wet.jev import parse_score, results_sufficient
+from wet.jev import parse_score, query_clear, results_sufficient
 
 # ---------------------------------------------------------------------------
 # Parser contract (raise on non-numeric, never silent 0.5)
@@ -239,7 +244,13 @@ async def test_refine_stops_early_when_jev_sufficient(monkeypatch):
 
     rewrite.assert_not_awaited()  # DỪNG: the rewrite round never ran
     assert len(calls) == 1
-    assert out["jev"] == {"gate": "refine", "decision": "stop", "score": 0.9}
+    assert out["jev"] == {
+        "gate": "refine",
+        "decision": "stop",
+        "score": 0.9,
+        "stopped_at": 0,
+        "reason": "results sufficient (score 0.90 >= 0.7)",
+    }
 
 
 async def test_refine_proceeds_with_receipt_when_jev_insufficient(monkeypatch):
@@ -257,7 +268,13 @@ async def test_refine_proceeds_with_receipt_when_jev_insufficient(monkeypatch):
 
     rewrite.assert_awaited_once()  # low score → baseline loop continues
     assert len(calls) == 2
-    assert out["jev"] == {"gate": "refine", "decision": "proceed", "score": 0.2}
+    assert out["jev"] == {
+        "gate": "refine",
+        "decision": "proceed",
+        "score": 0.2,
+        "stopped_at": None,
+        "reason": "results insufficient (score 0.20 < 0.7)",
+    }
     assert out["results"][0]["score"] == 0.9  # best round still wins
 
 
@@ -294,6 +311,102 @@ async def test_refine_untouched_without_refine_flag(monkeypatch):
 
     assert len(calls) == 1
     assert "jev" not in out
+
+
+# ---------------------------------------------------------------------------
+# K1 expand-gate: skip the paid expansion call when the query is clear (BỎ)
+# ---------------------------------------------------------------------------
+
+
+async def test_query_clear_returns_score_and_records_metrics(monkeypatch):
+    seen = _patch_cell(monkeypatch, text="clarity: 0.95")
+    before = search_metrics.query_count("jev_score")
+    score = await query_clear("python tutorial")
+
+    assert score == 0.95
+    assert seen["reasoning"] == {"exclude": True}
+    assert "<query>" in seen["messages"][0]["content"]
+    assert "python tutorial" in seen["messages"][0]["content"]
+    assert search_metrics.query_count("jev_score") == before + 1
+
+
+async def test_query_clear_fail_open_when_unconfigured(monkeypatch):
+    _patch_cell(monkeypatch, configured=False)
+    assert await query_clear("q") is None
+
+
+async def test_expand_gate_skips_expansion_when_query_clear(monkeypatch):
+    monkeypatch.setenv("SEARCH_BACKENDS", "tavily")
+    fake, calls = _chain_mock([_HIT])
+    _patch_cell(monkeypatch, text="0.95")
+    with (
+        unittest.mock.patch("wet.sources.search_backends.run_search_chain", fake),
+        unittest.mock.patch(
+            "wet.sources.search_strategies.expand_query",
+            AsyncMock(
+                return_value=["python tutorial", "python basics", "learn python"]
+            ),
+        ) as expand,
+    ):
+        out = payload(await _call_search(expand=True))
+
+    expand.assert_not_awaited()  # BỎ: the paid expansion call never ran
+    assert len(calls) == 1
+    assert calls[0] == "python tutorial"  # original query, no OR-join
+    assert out["jev"] == {
+        "gate": "expand",
+        "decision": "skip",
+        "skipped": True,
+        "score": 0.95,
+        "reason": "query already clear (score 0.95 >= 0.7)",
+    }
+
+
+async def test_expand_gate_runs_expansion_when_query_unclear(monkeypatch):
+    monkeypatch.setenv("SEARCH_BACKENDS", "tavily")
+    fake, calls = _chain_mock([_HIT])
+    _patch_cell(monkeypatch, text="0.1")
+    with (
+        unittest.mock.patch("wet.sources.search_backends.run_search_chain", fake),
+        unittest.mock.patch(
+            "wet.sources.search_strategies.expand_query",
+            AsyncMock(return_value=["python tutorial", "python basics"]),
+        ) as expand,
+    ):
+        out = payload(await _call_search(expand=True))
+
+    expand.assert_awaited_once()  # low score → baseline expansion runs
+    assert calls[0] == "python tutorial OR python basics"
+    assert out["jev"] == {
+        "gate": "expand",
+        "decision": "expand",
+        "skipped": False,
+        "score": 0.1,
+        "reason": "query unclear (score 0.10 < 0.7)",
+    }
+
+
+async def test_expand_gate_fail_open_matches_baseline_exactly(monkeypatch):
+    """Provider error ⇒ envelope identical to the jev-less expand baseline."""
+    baselines = []
+    for configured, error in ((True, RuntimeError("jev down")), (False, None)):
+        monkeypatch.setenv("SEARCH_BACKENDS", "tavily")
+        fake, calls = _chain_mock([_HIT])
+        _patch_cell(monkeypatch, configured=configured, error=error)
+        with (
+            unittest.mock.patch("wet.sources.search_backends.run_search_chain", fake),
+            unittest.mock.patch(
+                "wet.sources.search_strategies.expand_query",
+                AsyncMock(return_value=["python tutorial", "python basics"]),
+            ) as expand,
+        ):
+            out = payload(await _call_search(expand=True))
+        expand.assert_awaited_once()  # fail-open: expansion ran as before
+        assert calls[0] == "python tutorial OR python basics"
+        assert "jev" not in out
+        baselines.append(out)
+
+    assert baselines[0] == baselines[1]
 
 
 # ---------------------------------------------------------------------------
