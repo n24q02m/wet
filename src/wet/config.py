@@ -126,9 +126,11 @@ class Settings(BaseSettings):
     # as url_citation annotations. Engine selects the search provider when
     # OpenRouter supports one.
     openrouter_api_key: str = ""  # env OPENROUTER_API_KEY
-    openrouter_model: str = (
-        "meta-llama/llama-3.3-70b-instruct:free"  # env OPENROUTER_MODEL
-    )
+    # NO default model: an unparsed :free slug has burned real money by
+    # silently routing to paid inference (2026-10-06 incident). Empty = the
+    # openrouter backend refuses to construct until OPENROUTER_MODEL is set
+    # explicitly — same fail-closed contract as the benchmark gate.
+    openrouter_model: str = ""  # env OPENROUTER_MODEL
     openrouter_base_url: str = "https://openrouter.ai/api/v1"  # env OPENROUTER_BASE_URL
     openrouter_search_engine: str = ""  # env OPENROUTER_SEARCH_ENGINE (empty = default)
 

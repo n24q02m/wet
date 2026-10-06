@@ -86,7 +86,19 @@ def test_factory_openrouter_requires_key(monkeypatch):
 def test_factory_openrouter_builds_from_settings(monkeypatch):
     monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
     monkeypatch.setattr(settings, "openrouter_api_key", "k1,k2")
+    monkeypatch.setattr(settings, "openrouter_model", "test/model")
     backend = _make_backend("openrouter")
     assert isinstance(backend, OpenRouterBackend)
     assert backend.keys == ["k1", "k2"]
-    assert backend.model == settings.openrouter_model
+    assert backend.model == "test/model"
+
+
+def test_factory_openrouter_requires_model(monkeypatch):
+    # No sanctioned default: with a key but no model the factory must fail
+    # closed instead of silently routing spend to a hardcoded slug.
+    monkeypatch.setenv("SEARCH_BACKEND", "openrouter")
+    monkeypatch.delenv("OPENROUTER_MODEL", raising=False)
+    monkeypatch.setattr(settings, "openrouter_api_key", "k1,k2")
+    monkeypatch.setattr(settings, "openrouter_model", "")
+    with pytest.raises(ValueError, match="OPENROUTER_MODEL"):
+        _make_backend("openrouter")
