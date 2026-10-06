@@ -1184,9 +1184,18 @@ def _make_backend(name: str, searxng_url: str | None = None) -> SearchBackend:
             raise ValueError(
                 "OPENROUTER_API_KEY required for the openrouter search backend"
             )
+        model = _config_value(
+            config, "OPENROUTER_MODEL", settings.openrouter_model
+        ).strip()
+        if not model:
+            raise ValueError(
+                "OPENROUTER_MODEL required for the openrouter search backend: "
+                "there is no sanctioned default model — set it explicitly "
+                "(repo var OPENROUTER_MODEL in CI) or the backend refuses to run"
+            )
         return OpenRouterBackend(
             keys,
-            model=_config_value(config, "OPENROUTER_MODEL", settings.openrouter_model),
+            model=model,
             base_url=_config_value(
                 config, "OPENROUTER_BASE_URL", settings.openrouter_base_url
             ),
