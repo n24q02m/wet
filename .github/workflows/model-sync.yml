@@ -181,15 +181,14 @@ jobs:
           PY
           if [ -z "${STICKY_NUM}" ]; then
             url="$(gh issue create --repo "${REPO}" --title "${STICKY_TITLE}" --body-file sticky.md)"
-            echo "number=${url##*/}" >> "${GITHUB_OUTPUT}"
-            echo "Created sticky issue ${url}"
+            NUM="${url##*/}"
           else
             gh issue edit "${STICKY_NUM}" --repo "${REPO}" --body-file sticky.md >/dev/null
-            echo "number=${STICKY_NUM}" >> "${GITHUB_OUTPUT}"
-            echo "Patched sticky issue #${STICKY_NUM}"
+            NUM="${STICKY_NUM}"
           fi
+          echo "number=${NUM}" >> "${GITHUB_OUTPUT}"
           if [ "${STATE}" = "pr-needed" ]; then
-            gh issue comment "${STICKY_NUM}" --repo "${REPO}" \
+            gh issue comment "${NUM}" --repo "${REPO}" \
               --body "Proposal updated at ${NOW}: effective pin \`${CURRENT:-unset}\` (${CURRENT_SOURCE}) → proposed \`${PROPOSED}\`. Apply via \`gh variable set OPENROUTER_MODEL\` or a hand-written \`bench/model.txt\` PR." >/dev/null
           fi
           cat sticky.md >> "${GITHUB_STEP_SUMMARY}"
