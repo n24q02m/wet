@@ -8,13 +8,16 @@ name: Model Sync
 # wet MCP benchmark). Selection is deterministic: the first candidate with
 # weak_evidence == false AND pareto_rank == 0 is the proposed OpenRouter slug.
 # When no strong candidate exists, the sticky issue records the weak-board
-# state and NO pin PR is opened — the sync never guesses a model.
+# state and no pin is proposed — the sync never guesses a model.
 #
 # When a strong candidate differs from the current pin (vars.OPENROUTER_MODEL,
-# else bench/model.txt), this workflow files or updates ONE sticky issue and
-# opens a single-file PR against bench/model.txt (label model-pin). It NEVER
-# merges the PR, never sets the repo variable, and never edits code defaults —
-# moving the paid benchmark model stays a labelled, human-approved change.
+# else bench/model.txt), this workflow files or updates ONE sticky issue with
+# the proposed slug and the manual apply command. It NEVER opens a PR itself
+# (personal repos deny GITHUB_TOKEN pull-request creation — same constraint
+# that moved hull's publisher to a canonical data branch), never sets the repo
+# variable, and never edits code defaults. Moving the paid benchmark model
+# stays a human-approved change: run the printed gh variable set command, or
+# hand-write bench/model.txt and open the PR yourself.
 
 on:
   schedule:
@@ -22,9 +25,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write # single-file pin branch commit
   issues: write # sticky dashboard issue
-  pull-requests: write # pin PR
 
 concurrency:
   group: model-sync
@@ -34,8 +35,6 @@ env:
   MODEL_CANDIDATES_URL: https://raw.githubusercontent.com/n24q02m/hull/data/model-candidates/data/model-candidates.json
   TASK_PROFILE: agentic
   PIN_FILE: bench/model.txt
-  PIN_BRANCH: model-sync/pin
-  PIN_LABEL: model-pin
   STICKY_TITLE: "[model-sync] weekly model pin"
   # Read through the vars context (no actions:read needed) so the pin
   # comparison mirrors exactly what benchmark.yml resolves.
@@ -131,51 +130,6 @@ jobs:
             | python3 -c 'import json,os,sys;t=os.environ["STICKY_TITLE"];items=[i for i in json.load(sys.stdin) if i["title"]==t];print(items[0]["number"] if items else "")')"
           printf 'number=%s\n' "${num}" >> "${GITHUB_OUTPUT}"
 
-      - name: Open pin PR
-        id: pr
-        if: steps.current.outputs.state == 'pr-needed'
-        env:
-          REPO: ${{ github.repository }}
-          PROPOSED: ${{ steps.select.outputs.proposed_slug }}
-          GENERATED_AT: ${{ steps.select.outputs.generated_at }}
-          STRONG: ${{ steps.select.outputs.strong }}
-          CURRENT: ${{ steps.current.outputs.current }}
-          CURRENT_SOURCE: ${{ steps.current.outputs.source }}
-        run: |
-          python3 - <<'PY'
-          import os
-
-          proposed = os.environ["PROPOSED"]
-          with open("pr.md", "w") as f:
-              f.write(
-                  "## model-sync pin proposal\n\n"
-                  + f"- proposed pin: `{proposed}`\n"
-                  + f"- current effective pin: `{os.environ['CURRENT'] or 'unset'}` ({os.environ['CURRENT_SOURCE']})\n"
-                  + f"- source: hull `model-candidates.json` (generated_at {os.environ['GENERATED_AT']})\n"
-                  + f"- strong candidates (top): {os.environ['STRONG']}\n\n"
-                  + "Single-file change to `bench/model.txt`. Merging this PR moves the paid benchmark model; "
-                  + "the [model-sync] workflow never merges its own PRs.\n"
-              )
-          PY
-          gh label create "${PIN_LABEL}" --repo "${REPO}" --force \
-            --color D93F0B --description "Benchmark model pin proposal" >/dev/null
-          head_sha="$(gh api "repos/${REPO}/git/ref/heads/main" --jq '.object.sha')"
-          if gh api "repos/${REPO}/git/ref/heads/${PIN_BRANCH}" >/dev/null 2>&1; then
-            gh api -X PATCH "repos/${REPO}/git/refs/heads/${PIN_BRANCH}" -F force=true -f sha="${head_sha}" >/dev/null
-          else
-            gh api -X POST "repos/${REPO}/git/refs" -f ref="refs/heads/${PIN_BRANCH}" -f sha="${head_sha}" >/dev/null
-          fi
-          old_sha="$(gh api "repos/${REPO}/contents/${PIN_FILE}?ref=main" --jq '.sha' 2>/dev/null || true)"
-          content_b64="$(printf '%s\n' "${PROPOSED}" | base64 -w0)"
-          jq -n --arg m "chore(bench): pin benchmark model to ${PROPOSED}" \
-            --arg c "${content_b64}" --arg b "${PIN_BRANCH}" --arg s "${old_sha}" \
-            '{message: $m, content: $c, branch: $b} + (if $s == "" then {} else {sha: $s} end)' \
-            | gh api -X PUT "repos/${REPO}/contents/${PIN_FILE}" --input - >/dev/null
-          pr_url="$(gh pr create --repo "${REPO}" --base main --head "${PIN_BRANCH}" \
-            --title "model-sync: pin benchmark model to ${PROPOSED}" \
-            --body-file pr.md --label "${PIN_LABEL}")"
-          printf 'url=%s\nnumber=%s\n' "${pr_url}" "${pr_url##*/}" >> "${GITHUB_OUTPUT}"
-
       - name: Create or patch sticky issue
         id: upsert
         env:
@@ -187,8 +141,6 @@ jobs:
           CURRENT_SOURCE: ${{ steps.current.outputs.source }}
           STATE: ${{ steps.current.outputs.state }}
           STICKY_NUM: ${{ steps.sticky.outputs.number }}
-          PR_NUM: ${{ steps.pr.outputs.number }}
-          PR_URL: ${{ steps.pr.outputs.url }}
         run: |
           export NOW="$(date -u '+%Y-%m-%d %H:%M UTC')"
           python3 - <<'PY'
@@ -199,10 +151,9 @@ jobs:
           current = os.environ["CURRENT"]
           source = os.environ["CURRENT_SOURCE"]
           state = os.environ["STATE"]
-          pr_num = os.environ["PR_NUM"]
 
           state_label = {
-              "pr-needed": "**proposal open**",
+              "pr-needed": "**proposal — apply manually (see below)**",
               "unchanged": "unchanged",
               "no-strong-candidate": "**no strong candidate this week — no pin change proposed**",
           }[state]
@@ -213,8 +164,6 @@ jobs:
               ("strong candidates (top)", os.environ["STRONG"] or "(none)"),
               ("current effective pin", f"`{current}` ({source})" if current else f"unset ({source})"),
           ]
-          if pr_num:
-              rows.append(("pin PR", f"#{pr_num} (open — human review required)"))
           rows.append(("state", state_label))
           table = "| field | value |\n| --- | --- |\n" + "\n".join(
               f"| {k} | {v} |" for k, v in rows
@@ -224,9 +173,10 @@ jobs:
                   "## [model-sync] weekly model pin\n\n"
                   + table
                   + "\n\n"
-                  + "**Apply:** merge the labelled `model-pin` PR (updates `bench/model.txt`), or set the repo variable directly:\n"
-                  + f"`gh variable set OPENROUTER_MODEL --repo {repo} --body \"{proposed}\"`.\n\n"
-                  + "This workflow never merges the PR and never sets the variable — moving the paid benchmark model is a human-approved change.\n"
+                  + "**Apply (manual — this bot cannot open PRs on a personal repo):** either set the repo variable directly\n"
+                  + f"`gh variable set OPENROUTER_MODEL --repo {repo} --body \"{proposed}\"`\n"
+                  + "or write that slug into `bench/model.txt` and open a `model-pin` PR yourself.\n\n"
+                  + "This workflow never sets the variable and never edits `bench/model.txt` — moving the paid benchmark model is a human-approved change.\n"
               )
           PY
           if [ -z "${STICKY_NUM}" ]; then
@@ -238,8 +188,8 @@ jobs:
             echo "number=${STICKY_NUM}" >> "${GITHUB_OUTPUT}"
             echo "Patched sticky issue #${STICKY_NUM}"
           fi
-          if [ "${STATE}" = "pr-needed" ] && [ -n "${PR_URL}" ]; then
+          if [ "${STATE}" = "pr-needed" ]; then
             gh issue comment "${STICKY_NUM}" --repo "${REPO}" \
-              --body "Proposal updated at ${NOW}: effective pin \`${CURRENT:-unset}\` (${CURRENT_SOURCE}) → proposed \`${PROPOSED}\`. Pin PR: ${PR_URL}" >/dev/null
+              --body "Proposal updated at ${NOW}: effective pin \`${CURRENT:-unset}\` (${CURRENT_SOURCE}) → proposed \`${PROPOSED}\`. Apply via \`gh variable set OPENROUTER_MODEL\` or a hand-written \`bench/model.txt\` PR." >/dev/null
           fi
           cat sticky.md >> "${GITHUB_STEP_SUMMARY}"
