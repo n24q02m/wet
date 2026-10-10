@@ -15,7 +15,7 @@ import os
 import re
 import sys
 import time
-from collections.abc import Iterator, Sequence
+from collections.abc import Generator, Sequence
 from contextlib import contextmanager
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
@@ -134,7 +134,7 @@ def load_corpus(path: Path) -> list[CorpusItem]:
 
 
 @contextmanager
-def benchmark_environment(backend: str, model_chain: str) -> Iterator[None]:
+def benchmark_environment(backend: str, model_chain: str) -> Generator[None]:
     """Apply one benchmark configuration and restore the process environment."""
     overrides: dict[str, str | None] = {
         "SEARCH_BACKENDS": backend,

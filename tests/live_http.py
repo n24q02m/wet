@@ -15,7 +15,7 @@ import socket
 import subprocess
 import sys
 import time
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -120,7 +120,7 @@ def wait_until_up(
 @asynccontextmanager
 async def mcp_client_session(
     port: int, *, timeout: float = 120.0
-) -> AsyncIterator[ClientSession]:
+) -> AsyncGenerator[ClientSession]:
     """Yield an initialized MCP ``ClientSession`` over streamable HTTP."""
     url = f"http://127.0.0.1:{port}/mcp"
     async with httpx.AsyncClient(
@@ -138,7 +138,7 @@ async def mcp_client_session(
 
 
 @asynccontextmanager
-async def wet_http_server(env: dict, log_path: Path) -> AsyncIterator[int]:
+async def wet_http_server(env: dict, log_path: Path) -> AsyncGenerator[int]:
     """Spawn the server, wait for readiness, yield its port, then stop it."""
     proc = spawn_wet_server(env, log_path)
     port = int(env["WET_PORT"])
