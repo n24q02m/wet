@@ -125,11 +125,7 @@ def _detect_go_mod(path: Path) -> list[dict]:
                 name = match.group(1)
                 version = match.group(2)
                 # Strip github.com/ prefix; keep the org/repo (per spec example).
-                short = (
-                    name[len("github.com/") :]
-                    if name.startswith("github.com/")
-                    else name
-                )
+                short = name.removeprefix("github.com/")
                 out.append({"id": short.lower(), "version": version})
     return out
 
