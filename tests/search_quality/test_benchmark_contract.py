@@ -369,3 +369,18 @@ def test_ci_and_release_workflows_wire_contract_and_exact_sha_gate():
     assert "run_contract.py gate" in cd
     assert '--expected-commit "${GITHUB_SHA}"' in cd
     assert "needs: benchmark-contract" in cd
+
+
+def test_benchmark_workflow_keeps_checkout_clean_before_spending():
+    benchmark = (REPO_ROOT / ".github/workflows/benchmark.yml").read_text(
+        encoding="utf-8"
+    )
+
+    # Browser binaries inside the workspace leave an untracked dir that makes
+    # the gate reject the artifact as `dirty` after the paid run completes.
+    assert "github.workspace }}/.ms-playwright" not in benchmark
+    assert "PLAYWRIGHT_BROWSERS_PATH=${RUNNER_TEMP}/" in benchmark
+    clean_check = benchmark.index("name: Require a clean checkout before spending")
+    assert 'dirty="$(git status --porcelain)"' in benchmark[clean_check:]
+    assert clean_check < benchmark.index("name: Pre-flight provider spend gate")
+    assert clean_check > benchmark.index("run: uv run python -m patchright install")

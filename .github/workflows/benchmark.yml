@@ -17,16 +17,22 @@ jobs:
     timeout-minutes: 300
     env:
       OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
-      # The benchmark server runs under an isolated HOME, so patchright cannot
-      # see the default ~/.cache/ms-playwright browsers. Pin the browser path
-      # via env: it flows through wet_server_env's `**os.environ` into the
-      # spawned server regardless of the isolated home.
-      PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/.ms-playwright
     steps:
       - name: Harden Runner
         uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
         with:
           egress-policy: audit
+
+      - name: Pin browser path outside the checkout
+        # The benchmark server runs under an isolated HOME, so patchright cannot
+        # see the default ~/.cache/ms-playwright browsers. Pin the browser path
+        # via env: it flows through wet_server_env's `**os.environ` into the
+        # spawned server regardless of the isolated home. It must live outside
+        # the checkout: the release gate requires `git status --porcelain` to be
+        # empty, and an untracked browser dir inside the workspace fails it.
+        # (`runner.temp` is not available in job-level env, hence GITHUB_ENV.)
+        shell: bash
+        run: echo "PLAYWRIGHT_BROWSERS_PATH=${RUNNER_TEMP}/ms-playwright" >> "${GITHUB_ENV}"
 
       - name: Checkout exact dispatch SHA
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -50,6 +56,18 @@ jobs:
         # exercised by anti-bot fixture URLs; browser binaries are not part
         # of `uv sync` and must be fetched once per job.
         run: uv run python -m patchright install chromium
+
+      - name: Require a clean checkout before spending
+        # The gate rejects artifacts whose provenance records a dirty tree.
+        # Fail here, before any paid provider call, instead of after the run.
+        shell: bash
+        run: |
+          dirty="$(git status --porcelain)"
+          if [ -n "${dirty}" ]; then
+            echo "::error::Checkout is dirty after setup; the release gate would reject this run. Offending paths:"
+            printf '%s\n' "${dirty}"
+            exit 1
+          fi
 
       - name: Require a real provider credential
         shell: bash
