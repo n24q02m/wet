@@ -63,6 +63,9 @@ async def test_openrouter_maps_url_citation_annotations():
     # Each extra server-side search is billed; wet needs exactly one per call.
     assert body["tools"][0]["parameters"]["max_uses"] == 1
     assert body["max_tool_calls"] == 1
+    # The model may skip the tool; the system turn makes the one search reliable.
+    assert body["messages"][0]["role"] == "system"
+    assert body["messages"][-1] == {"role": "user", "content": "q"}
 
 
 async def test_openrouter_http_error_returns_error_json():

@@ -1030,6 +1030,13 @@ class KagiBackend:
 # one search per call, so cap both the tool (``max_uses``) and the request
 # step budget (``max_tool_calls``). Docs verified 2026-10-11.
 _OPENROUTER_MAX_SEARCHES_PER_REQUEST = 1
+# The model decides whether to call the server tool; with one search allowed
+# it sometimes answers without searching (no citations = empty results).
+# Live A/B 2026-10-11: tool_choice="required" still skipped 2/10, this system
+# instruction cited 10/10 at the same cost.
+_OPENROUTER_SEARCH_INSTRUCTION = (
+    "Always run exactly one web search for the user's query before answering."
+)
 
 
 class OpenRouterBackend:
@@ -1080,7 +1087,10 @@ class OpenRouterBackend:
                 f"{self.base_url}/chat/completions",
                 json={
                     "model": self.model,
-                    "messages": [{"role": "user", "content": query}],
+                    "messages": [
+                        {"role": "system", "content": _OPENROUTER_SEARCH_INSTRUCTION},
+                        {"role": "user", "content": query},
+                    ],
                     "tools": [tool],
                     "max_tool_calls": _OPENROUTER_MAX_SEARCHES_PER_REQUEST,
                 },
