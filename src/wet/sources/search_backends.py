@@ -1025,6 +1025,20 @@ class KagiBackend:
         )
 
 
+# Every server-side web_search is billed (Exa: $0.007/search) and the docs
+# default lets the model run up to 30 per request; wet's backend contract is
+# one search per call, so cap both the tool (``max_uses``) and the request
+# step budget (``max_tool_calls``). Docs verified 2026-10-11.
+_OPENROUTER_MAX_SEARCHES_PER_REQUEST = 1
+# The model decides whether to call the server tool; with one search allowed
+# it sometimes answers without searching (no citations = empty results).
+# Live A/B 2026-10-11: tool_choice="required" still skipped 2/10, this system
+# instruction cited 10/10 at the same cost.
+_OPENROUTER_SEARCH_INSTRUCTION = (
+    "Always run exactly one web search for the user's query before answering."
+)
+
+
 class OpenRouterBackend:
     """OpenRouter web-search backend (https://openrouter.ai/docs).
 
@@ -1034,7 +1048,8 @@ class OpenRouterBackend:
     suffix are deprecated). Result sources come back standardized as
     ``url_citation`` annotations on the assistant message; they are mapped
     onto the shared result shape and deduplicated by URL (docs verified
-    2026-09-18).
+    2026-09-18). Each request is bounded to one billed search via ``max_uses``
+    and ``max_tool_calls``.
     """
 
     name = "openrouter"
@@ -1055,6 +1070,7 @@ class OpenRouterBackend:
     async def _search_one(self, key: str, query: str, max_results: int) -> str:
         parameters: dict[str, object] = {
             "max_results": min(max(max_results, 1), 10),
+            "max_uses": _OPENROUTER_MAX_SEARCHES_PER_REQUEST,
         }
         if self.engine:
             parameters["engine"] = self.engine
@@ -1071,8 +1087,12 @@ class OpenRouterBackend:
                 f"{self.base_url}/chat/completions",
                 json={
                     "model": self.model,
-                    "messages": [{"role": "user", "content": query}],
+                    "messages": [
+                        {"role": "system", "content": _OPENROUTER_SEARCH_INSTRUCTION},
+                        {"role": "user", "content": query},
+                    ],
                     "tools": [tool],
+                    "max_tool_calls": _OPENROUTER_MAX_SEARCHES_PER_REQUEST,
                 },
                 headers=headers,
             )
