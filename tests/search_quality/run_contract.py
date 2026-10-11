@@ -5,17 +5,21 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import math
 import os
 import shutil
 import sys
 import tempfile
 import time
 from collections import defaultdict
+from collections.abc import Awaitable, Callable
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 import benchmark_contract as contract
+import httpx
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 TESTS_ROOT = Path(__file__).resolve().parents[1]
@@ -49,6 +53,211 @@ base_url = "https://benchmark.invalid"
 [models.rerank]
 base_url = "https://benchmark.invalid"
 """
+
+# Spend discipline during the run (incident 2026-10-11): the workflow's
+# pre-flight only compares account credit against the cap once, before any
+# call, and the run logged nothing about money while it spent for hours. The
+# guard below measures this run's own spend (key usage now minus key usage at
+# start), logs it, and aborts as soon as the cap is reached or the per-suite
+# projection says it will be. Concurrent consumers of the same key inflate the
+# delta, which errs toward stopping early, never toward overspending.
+DEFAULT_SPEND_CAP_USD = 5.0
+SPEND_CHECK_INTERVAL_S = 30.0
+# Below this many finished cases a suite's per-case cost is too noisy to
+# extrapolate from (one slow first search would abort a healthy run).
+PROJECTION_MIN_CASES = 25
+OPENROUTER_KEY_URL = "https://openrouter.ai/api/v1/key"
+# Parallel web cases for LLM-mediated backends only: their p95 is reported but
+# not gated (``contract.web_search_p95_threshold``), so contention cannot flip
+# the gate, while 500 serial ~35 s searches alone took ~4.6 h of a 5 h job.
+LLM_MEDIATED_WEB_CONCURRENCY = 4
+
+
+class SpendCapExceeded(contract.ContractError):
+    """Raised when this run reached, or is projected to exceed, its cap."""
+
+
+@dataclass(frozen=True)
+class KeyUsage:
+    usage_usd: float
+    limit_remaining_usd: float | None
+
+
+@dataclass
+class SpendGuard:
+    cap_usd: float
+    read_usage: Callable[[], Awaitable[KeyUsage]]
+    clock: Callable[[], float] = time.monotonic
+    log: Callable[[str], None] = field(
+        default=lambda line: print(line, file=sys.stderr, flush=True)
+    )
+    _baseline_usd: float = field(default=0.0, init=False)
+    _last_usd: float = field(default=0.0, init=False)
+    _last_read_at: float = field(default=-math.inf, init=False)
+    _suite_baseline_usd: dict[str, float] = field(default_factory=dict, init=False)
+
+    @property
+    def spent_usd(self) -> float:
+        return self._last_usd - self._baseline_usd
+
+    async def _read(self) -> float:
+        reading = await self.read_usage()
+        self._last_read_at = self.clock()
+        self._last_usd = reading.usage_usd
+        return reading.usage_usd
+
+    async def start(self) -> None:
+        reading = await self.read_usage()
+        self._last_read_at = self.clock()
+        self._baseline_usd = self._last_usd = reading.usage_usd
+        remaining = reading.limit_remaining_usd
+        self.log(
+            f"spend guard: cap {self.cap_usd:.2f} USD; key usage at start "
+            f"{reading.usage_usd:.2f} USD; key limit remaining "
+            f"{'unlimited' if remaining is None else f'{remaining:.2f} USD'}"
+        )
+        if remaining is not None and remaining < self.cap_usd:
+            raise SpendCapExceeded(
+                f"key limit remaining {remaining:.2f} USD is below this run's "
+                f"cap {self.cap_usd:.2f} USD; the run would die mid-suite with "
+                "the money already spent. Raise the key limit or wait for its "
+                "reset before dispatching."
+            )
+
+    async def check(
+        self, suite: str, *, done: int, total: int, force: bool = False
+    ) -> None:
+        suite_baseline = self._suite_baseline_usd.setdefault(suite, self._last_usd)
+        if not force and self.clock() - self._last_read_at < SPEND_CHECK_INTERVAL_S:
+            return
+        await self._read()
+        spent = self.spent_usd
+        projected = spent
+        if done >= PROJECTION_MIN_CASES:
+            per_case = (self._last_usd - suite_baseline) / done
+            projected = spent + per_case * max(total - done, 0)
+        self.log(
+            f"spend guard: {suite} {done}/{total} cases, spent "
+            f"{spent:.2f}/{self.cap_usd:.2f} USD, projected {projected:.2f} USD"
+        )
+        if spent >= self.cap_usd:
+            raise SpendCapExceeded(
+                f"run spent {spent:.2f} USD, reaching its cap "
+                f"{self.cap_usd:.2f} USD, after {suite} {done}/{total}"
+            )
+        if projected > self.cap_usd:
+            raise SpendCapExceeded(
+                f"{suite} is projected to bring this run to {projected:.2f} USD, "
+                f"over its cap {self.cap_usd:.2f} USD (spent {spent:.2f} USD "
+                f"after {done}/{total} cases); stopping before the money is gone"
+            )
+
+
+def spend_cap_from_env(raw: str | None) -> float:
+    """``OPENROUTER_SPEND_CAP_USD`` with the workflow's default for unset/blank."""
+    if raw is None or not raw.strip():
+        return DEFAULT_SPEND_CAP_USD
+    try:
+        cap = float(raw)
+    except ValueError as exc:
+        raise contract.ContractError(
+            f"OPENROUTER_SPEND_CAP_USD must be a number, got {raw!r}"
+        ) from exc
+    if not math.isfinite(cap) or cap <= 0:
+        raise contract.ContractError(
+            f"OPENROUTER_SPEND_CAP_USD must be a positive finite number, got {raw!r}"
+        )
+    return cap
+
+
+def openrouter_key_reader(api_key: str) -> Callable[[], Awaitable[KeyUsage]]:
+    """Read this key's cumulative usage and remaining limit (never the key)."""
+
+    async def read() -> KeyUsage:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.get(
+                OPENROUTER_KEY_URL, headers={"Authorization": f"Bearer {api_key}"}
+            )
+            response.raise_for_status()
+        data = response.json()["data"]
+        remaining = data.get("limit_remaining")
+        return KeyUsage(
+            usage_usd=float(data["usage"]),
+            limit_remaining_usd=None if remaining is None else float(remaining),
+        )
+
+    return read
+
+
+def _spend_guard_from_env() -> SpendGuard:
+    api_key = os.environ.get("OPENROUTER_API_KEY", "").strip()
+    if not api_key:
+        raise SystemExit(
+            "OPENROUTER_API_KEY is required: the spend guard measures this run's "
+            "spend on the same key the benchmark server uses."
+        )
+    return SpendGuard(
+        cap_usd=spend_cap_from_env(os.environ.get("OPENROUTER_SPEND_CAP_USD")),
+        read_usage=openrouter_key_reader(api_key),
+    )
+
+
+def web_concurrency_for(backend: str) -> int:
+    if backend in contract.LLM_MEDIATED_WEB_BACKENDS:
+        return LLM_MEDIATED_WEB_CONCURRENCY
+    return 1
+
+
+async def run_cases_bounded[CaseT, ResultT](
+    cases: list[CaseT],
+    runner: Callable[[CaseT], Awaitable[ResultT]],
+    *,
+    concurrency: int,
+    on_done: Callable[[int], Awaitable[None]],
+) -> list[ResultT]:
+    """Run ``cases`` with at most ``concurrency`` in flight, results in order.
+
+    ``on_done`` sees the running completion count; when it raises (the spend
+    guard), every in-flight and queued case is cancelled and that exception
+    propagates unwrapped.
+    """
+    semaphore = asyncio.Semaphore(concurrency)
+    results: list[Any] = [None] * len(cases)
+    done = 0
+
+    async def run_one(index: int, case: CaseT) -> None:
+        nonlocal done
+        async with semaphore:
+            results[index] = await runner(case)
+        done += 1
+        await on_done(done)
+
+    try:
+        async with asyncio.TaskGroup() as group:
+            for index, case in enumerate(cases):
+                group.create_task(run_one(index, case))
+    except ExceptionGroup as failures:
+        raise failures.exceptions[0] from None
+    return results
+
+
+async def _run_suite(
+    suite: str,
+    cases: list[dict[str, Any]],
+    runner: Callable[[dict[str, Any]], Awaitable[dict[str, Any]]],
+    *,
+    concurrency: int,
+    guard: SpendGuard,
+) -> list[dict[str, Any]]:
+    total = len(cases)
+    await guard.check(suite, done=0, total=total, force=True)
+
+    async def on_done(done: int) -> None:
+        await guard.check(suite, done=done, total=total, force=done == total)
+
+    return await run_cases_bounded(
+        cases, runner, concurrency=concurrency, on_done=on_done
+    )
 
 
 def _load_fixture_records() -> dict[str, list[dict[str, Any]]]:
@@ -219,7 +428,12 @@ async def _run_protocol(
     fixtures: dict[str, list[dict[str, Any]]],
     *,
     smoke_limit: int | None,
+    guard: SpendGuard,
 ) -> dict[str, dict[str, Any]]:
+    # Before the server spawns or any case runs: a key that cannot cover the
+    # cap fails here with nothing spent.
+    await guard.start()
+    web_concurrency = web_concurrency_for(WEB_SEARCH_BACKEND)
     # mkdtemp + manual rmtree instead of TemporaryDirectory: on Windows the
     # spawned server's LifecycleLock byte-range lock can outlive
     # proc.terminate() by a beat, and a single rmtree then loses to
@@ -245,23 +459,39 @@ async def _run_protocol(
                 extract_cases = fixtures["extract_urls"][:smoke_limit]
                 web_cases = fixtures["web_search_queries"][:smoke_limit]
                 docs_cases = fixtures["docs_recall_cases"][:smoke_limit]
-                extract_records = [
-                    await contract.run_extract_case(session, case)
-                    for case in extract_cases
-                ]
-                web_records = [
-                    await contract.run_web_case(session, case) for case in web_cases
-                ]
-                docs_records = [
-                    await contract.run_docs_case(session, case) for case in docs_cases
-                ]
+                # Serial on purpose: extract hits real sites whose anti-bot
+                # response concurrency would change, and docs_recall's p95 is
+                # gated.
+                extract_records = await _run_suite(
+                    "extract",
+                    extract_cases,
+                    lambda case: contract.run_extract_case(session, case),
+                    concurrency=1,
+                    guard=guard,
+                )
+                web_records = await _run_suite(
+                    "web_search",
+                    web_cases,
+                    lambda case: contract.run_web_case(session, case),
+                    concurrency=web_concurrency,
+                    guard=guard,
+                )
+                docs_records = await _run_suite(
+                    "docs_recall",
+                    docs_cases,
+                    lambda case: contract.run_docs_case(session, case),
+                    concurrency=1,
+                    guard=guard,
+                )
     finally:
         _remove_tree(temp_root)
 
     web_summary = contract.summarize_suite("web_search", web_records)
     # Record the measured backend so the gate can pick the effective p95
-    # bound (see contract.web_search_p95_threshold).
+    # bound (see contract.web_search_p95_threshold), and the concurrency the
+    # reported (ungated) p95 was measured under.
     web_summary["backend"] = WEB_SEARCH_BACKEND
+    web_summary["concurrency"] = web_concurrency
     return {
         "extract": contract.summarize_suite("extract", extract_records),
         "web_search": web_summary,
@@ -377,7 +607,13 @@ def main(argv: list[str] | None = None) -> int:
                 fixture_proof=fixture_proof,
                 command=command,
             )
-            suites = asyncio.run(_run_protocol(fixtures, smoke_limit=args.smoke_limit))
+            suites = asyncio.run(
+                _run_protocol(
+                    fixtures,
+                    smoke_limit=args.smoke_limit,
+                    guard=_spend_guard_from_env(),
+                )
+            )
             result = contract.build_artifact(provenance=provenance, suites=suites)
             result["generated_at"] = datetime.now(UTC).isoformat()
             _write_json(args.output, result)

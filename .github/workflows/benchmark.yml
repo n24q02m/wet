@@ -127,6 +127,9 @@ jobs:
       - name: Execute live MCP benchmark
         env:
           BENCHMARK_ARTIFACT: ${{ runner.temp }}/wet-benchmark-contract.json
+          # The in-run spend guard enforces the same cap as the pre-flight
+          # (blank -> the same 5 USD default) against this run's own spend.
+          OPENROUTER_SPEND_CAP_USD: ${{ vars.OPENROUTER_SPEND_CAP_USD }}
         run: uv run python tests/search_quality/run_contract.py run --output "${BENCHMARK_ARTIFACT}"
 
       - name: Upload exact-SHA benchmark artifact
