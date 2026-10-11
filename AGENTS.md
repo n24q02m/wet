@@ -6,15 +6,16 @@ Xem `AGENTS.md` va `README.md` de hieu architecture va configuration.
 ## Cau truc
 
 - `src/wet/` -- Package chinh (src layout)
-  - `server.py` -- FastMCP server (orchestrator, file lon nhat)
+  - `server.py` -- FastMCP server (orchestrator, file lon nhat); always the HTTP MCP endpoint (no stdio mode)
+  - `cli.py` -- `wet` control plane: `server start|stop|status`, `config`, `token hash`, `users path`, `docs reindex|import|reembed`, `search`, `warmup`
+  - `runtime.py` -- Bridge to hull-core (settings, auth mode, users store, per-sub namespace)
   - `config.py` -- Pydantic Settings (singleton)
   - `cache.py`, `db.py`, `embedder.py`, `reranker.py` -- Infrastructure
-  - `relay_setup.py` -- `apply_config` / `load_config_from_file` env-applier used by the OAuth setup form (live setup UX = OAuth-AS browser form at `<PUBLIC_URL>/authorize`; the `ensure_config` create-session/poll path is legacy/unused in production)
-  - `relay_schema.py` -- Relay form schema (2 modes: local/cloud)
-  - `sync/` -- Docs sync backends: `gdrive.py` (Google Drive, OAuth Device Code, httpx) + `s3.py` (S3/R2/B2 operator mode) + `base.py`
-  - `token_store.py` -- Local token storage cho OAuth (~/.wet/tokens/)
-  - `setup_tool.py` -- Warmup + setup-sync logic (MCP-callable)
-  - `sources/` -- Data source integrations (crawler, docs, searxng)
+  - `identity.py` -- Coherent browsing identity across the strategy chain
+  - `docs_import.py`, `docs_reembed.py` -- Offline docs maintenance (no running server needed)
+  - `setup.py`, `setup_tool.py` -- First-run SearXNG install + warmup logic (MCP-callable)
+  - `sources/` -- Data source integrations (crawler, docs, searxng, search backends/strategies)
+  - `alembic/` -- Docs DB migrations
 - `tests/` -- Mirror source modules
 
 ## Lenh thuong dung
@@ -29,15 +30,22 @@ uv run ty check                    # Type check (ty lenient config)
 uv run pytest                      # Test tat ca (integration excluded by default)
 uv run pytest -m integration       # Chi integration tests
 uv run pytest tests/test_config.py::test_function_name -v  # Test don le
-uv run wet                     # Chay server
+uv run wet server start            # Chay server (background; --foreground de giu terminal)
+uv run wet server status           # pid / lock / HTTP liveness
+uv run wet server stop
 
 # Mise shortcuts
 mise run setup     # Full dev env setup
 mise run lint      # ruff check + ruff format --check + ty check
 mise run test      # pytest
 mise run fix       # ruff check --fix --unsafe-fixes + ruff format
-mise run dev       # uv run wet
+mise run dev       # uv run wet server start --foreground
 ```
+
+Script entry points: `wet` (`wet.cli:main`) and `wet-mcp` (legacy alias).
+`wet search` and other server-backed subcommands talk to the running server over
+streamable HTTP; with no server running they exit 2 and print a hint to run
+`wet server start`. `wet docs reindex|import|reembed` work without a server.
 
 ## Cau hinh quan trong
 
@@ -53,6 +61,17 @@ mise run dev       # uv run wet
 - Integration/live/full tests excluded by default
 - `addopts = "-m 'not integration and not live and not full'"` trong pyproject.toml
 
+## Server, bind & auth
+
+- One transport: the HTTP MCP server (`wet server start`, or `python -m wet.server`).
+- Bind: `[server] host` / `port` in `~/.wet/config.toml`; `WET_HOST` / `WET_PORT` env override (container deployments).
+- Per-port lifecycle lock (`LifecycleLock("wet", port)`, lock files under `~/.config/mcp/locks`) -- one instance per port, several ports can run side by side.
+- `[server] auth` modes:
+  - `no-auth` -- loopback bind only; the server refuses to start on a non-loopback host.
+  - `token` -- single bearer token; store only its hash (`wet token hash <token>`).
+  - `multi` -- per-user tokens from `[server] users_file` (default `~/.wet/users.toml`, see `wet users path`); data is namespaced per sub under `~/.wet/subs/<sub>/`.
+- Client config points at the HTTP endpoint (see the manual example below).
+
 ## Env vars
 
 - KHONG co prefix ung dung (day la open-source MCP server)
@@ -67,54 +86,35 @@ mise run dev       # uv run wet
 - Identity layer (one coherent person across the chain): `WET_IDENTITY_SEED` (int pin; default 0 = derive once and persist per namespace under `~/.wet/subs/<sub>/identity.json`), `IDENTITY_PROFILE_DIR` (persistent browser profile dir; default `~/.wet/subs/<sub>/profiles`). Requires the optional `hull-core[identity]` extra (`invisible-core`); without it strategies keep legacy behavior (warn once). First identity build may download a GeoIP mmdb (egress) and resolve locale/timezone from the egress IP — `timezone_mismatch` behind a proxy falls back to en-US/UTC, never raises to MCP callers
 - Robots policy: `RESPECT_ROBOTS_TXT` (default `false`); set `true` to enforce `robots.txt` for the ScrapingAgent extract chain and Crawl4AI `crawl`, `sitemap`, and `list_media` actions
 - Disable-local toggles (skip heavy in-process fallbacks per capability): `DISABLE_LOCAL_BROWSER`, `DISABLE_LOCAL_SEARCH`, `DISABLE_LOCAL_EMBED`, `DISABLE_LOCAL_RERANK`
-- Sync: `SYNC_ENABLED` (default true), `GOOGLE_DRIVE_CLIENT_ID` (required for sync), `SYNC_FOLDER` (default "wet"), `SYNC_INTERVAL` (default 300s)
-- Sync dung Google Drive API truc tiep (httpx). OAuth Device Code flow, token luu tai `~/.wet/tokens/google_drive.json`
-- HTTP auth (live self-host): credentials are configured via the OAuth-AS browser form at `<PUBLIC_URL>/authorize`; `GET /mcp` without a Bearer token returns 401 + `www-authenticate` pointing at `/.well-known/oauth-protected-resource`. The browser form is gated by `MCP_RELAY_PASSWORD` (single shared password, gate only — empty disables it; not per-user). Multi-user remote mode also requires `CREDENTIAL_SECRET` (per-sub vault key) + `MCP_DCR_SERVER_SECRET` (proof of intentional multi-user deploy).
-- `MCP_RELAY_URL`: read only by the legacy `ensure_config` create-session/poll path (`relay_setup.py`), which has no production caller — the live setup UX is the OAuth-AS form above, not an ECDH relay.
+- Docs DB backup is an external concern (e.g. rclone of `~/.wet/`); the server has no built-in sync.
 - Secrets: skret SSM namespace `/wet-mcp/prod` (region `ap-southeast-1`)
 
 ### Manual config example
+
+```bash
+wet server start            # binds [server] host/port from ~/.wet/config.toml
+```
 
 ```json
 {
   "mcpServers": {
     "wet": {
-      "command": "uvx", "args": ["wet-mcp"],
-      "env": {
-        "OPENROUTER_API_KEY": "sk-or-xxx"
-      }
+      "type": "http",
+      "url": "http://127.0.0.1:<port>/mcp"
     }
   }
 }
 ```
 
-## Cloudflare serverless mode
-
-Forcing cloud embed/rerank (so the container never downloads local ONNX models):
-configure the `[models.embed]` / `[models.rerank]` cells in `config.toml` (any
-OpenAI-compatible endpoint; OpenRouter default) and inject the key via
-`HULL_EMBED_API_KEY` / `HULL_RERANK_API_KEY` — or one `OPENROUTER_API_KEY` for
-every OpenRouter-default cell.
-
-With cloud cells keyed, `fastretrieval` is never instantiated, keeping the
-container slim. Storage: set
-`MCP_STORAGE_BACKEND=cf-kv` + `MCP_KV_BASE_URL=http://kv.internal`,
-`DOCS_DB_BACKEND=cf-d1` + `MCP_D1_BASE_URL`/`MCP_VECTORIZE_BASE_URL`/`MCP_VECTORIZE_IDX`,
-`SEARCH_BACKEND=tavily` + `TAVILY_API_KEY`, and `CREDENTIAL_SECRET`.
-
-- **CF template (frozen for P3 replication):** `docs/cf-template.md` pins the canonical
-  worker.ts/wrangler.jsonc copy contract (KEEP/DROP handler matrix, 5 footguns, the
-  security rule that outbound handlers stay OFF the public `fetch`, E.1 readiness probe
-  + E.2 single-user-DO/poll patterns, sync mode-gating). The 5 P3 servers copy this; do
-  not re-solve E.1/E.2 per server.
+With `auth = "token"` or `"multi"`, add the client's bearer token header
+(`"headers": {"Authorization": "Bearer <token>"}`).
 
 ## Release & Deploy
 
 - Conventional Commits. Tag format: `v{version}`
 - CD: workflow_dispatch, chon beta/stable
-- Pipeline: PSR v10 -> PyPI (uv publish) -> MCP Registry
-- Cloudflare deploy remains release-triggered and pushes only its internal
-  image to `registry.cloudflare.com`; no public OCI image is published.
+- Pipeline (`cd.yml`): `benchmark-contract` gate -> `release` (PSR v10) -> `publish-pypi` (uv publish) -> `publish-mcp-registry` -> `sync-marketplace`
+- No container image and no Cloudflare deploy are published.
 
 ## Pre-commit hooks
 
@@ -133,40 +133,21 @@ container slim. Storage: set
 - Embedding luu tai 768 dims (default). Doi embedding MODEL = doi vector space -> B2 identity guard CHAN boot (set REINDEX_ON_MODEL_CHANGE=true de re-embed). 768-dim chung chi giu table khong vo schema; KHONG cho mix vector tu 2 model khac nhau (cung dims van rac search).
 - Renovate: Python upgrades DISABLED
 
-## Known bugs / gotchas (phat hien 2026-04-18 E2E)
+## Protocol & live tests
 
-1. **Setup flow 2-phase race condition**:
-   - Phase 1: user submit API keys form -> `writeConfig(SERVER_NAME, config)` -> `state=configured` (nhanh, ~5-30s)
-   - Phase 2: Google Drive OAuth Device Code flow start (async, BLOCKING user hanh dong tren `google.com/device`)
-   - Sau Phase 2, token save vao `~/.wet/tokens/google_drive.json`
-   - **Gotcha:** E2E test script KHONG duoc kill server process sau Phase 1 -- PHAI wait cho `google_drive.json` ton tai TRUOC KHI exit. Neu kill som -> OAuth token mat -> next run phai re-auth.
-   - Example fix: `phase-m-e2e-test/test_wet_full.py` phase_1 dung check `pathlib.Path(token_path).exists()` + 300s timeout after state=configured.
+All suites spawn the real HTTP server (`python -m wet.server`) on an ephemeral
+loopback port against a tmp instance home; there is no external E2E driver.
 
-2. **GDrive token shared voi mnemo**:
-   - Neu user auth mot account Google cho wet, mnemo co the auto-detect va skip device code flow (shared account pool ong)
-   - Chua verify chinh xac mechanism, nhung observed 2026-04-18 E2E: setup mnemo ngay sau wet -> report "configured" rat nhanh
-   - **Impact:** Tot cho UX, nhung can check xem logic share co security concern khong (token scope, privilege escalation)
+- `tests/test_protocol_gate.py` -- protocol gate over the production HTTP transport, runs from the source tree (default suite).
+- `tests/test_live_protocol.py` -- `-m live` (real server + stub SearXNG).
+- `tests/test_full_live.py` -- `-m full` (real upstream services; keys from skret `/wet-mcp/prod`).
+- `tests/test_live_mcp.py` -- standalone live script (defines no pytest tests; run it directly).
 
-3. **Relay "Setup complete" browser UI**: Python core-py relay implementation works correctly (browser hien "Setup complete!" sau phase 2). KHAC voi TS consumers (notion/email) bi stuck -- see `C:\Users\n24q02m-wlap\projects\mcp-core\CLAUDE.md` Known bugs #2.
-
-## E2E
-
-Driven by `mcp-core/scripts/e2e/` (matrix-locked, 15 configs). Run a single config from this repo via `make e2e` (proxy) or directly:
-
-```
-cd ../mcp-core && uv run --project scripts/e2e python -m e2e.driver <config-id>
+```bash
+uv run pytest tests/test_protocol_gate.py
+uv run pytest -m live
+uv run pytest -m full
+uv run python tests/test_live_mcp.py
 ```
 
-Configs for this repo: `wet-full`.
-
-t2-interaction: GDrive device-code (900s); per-sub token storage at ``~/.wet/subs/<sub>/tokens/google_drive.json``.
-
-Tier policy:
-
-- **T0** (precommit + CI on PR / main push) - runs without upstream identity. Skret keys not required.
-- **T2 non-interaction** (`make e2e-config CONFIG=<id>` locally) - driver pre-fills relay form from skret AWS SSM `/wet-mcp/prod` (`ap-southeast-1`). No user gate.
-- **T2 interaction** - driver fills relay form, then prints upstream user-gate URL; user signs in / types OTP at provider. Driver enforces per-flow timeouts (device-code 900s, oauth-redirect 300s, browser-form 600s) and emits `[poll] elapsed=Xs remaining=Ys status=<body>` every 30s. On timeout, container logs + last `setup-status` are saved to `<tmp>/e2e-diag/` BEFORE teardown for post-mortem.
-
-Multi-user remote mode (deployment property; not a separate config) requires `MCP_DCR_SERVER_SECRET` in the same skret namespace - driver refuses to start the container without it when `PUBLIC_URL` is set.
-
-References: `mcp-core/scripts/e2e/matrix.yaml`, `~/.claude/skills/mcp-dev/references/e2e-full-matrix.md` (harness-readiness gate), `~/.claude/skills/mcp-dev/references/secrets-skret.md` (per-server credential layout), `~/.claude/skills/mcp-dev/references/multi-user-pattern.md` (per-JWT-sub isolation).
+References: `~/.claude/skills/mcp-dev/references/protocol-test-coverage.md`, `~/.claude/skills/mcp-dev/references/secrets-skret.md` (per-server credential layout), `~/.claude/skills/mcp-dev/references/multi-user-pattern.md` (per-sub isolation).
