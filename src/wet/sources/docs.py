@@ -3076,7 +3076,28 @@ def _is_i18n_url(path: str, root_path: str) -> bool:
 
 def _score_url_by_query(url: str, query_words: frozenset[str]) -> int:
     """Score a URL based on query term overlap in its path."""
-    path = urlparse(url).path.lower()
+    idx = url.find("://")
+    if idx != -1 and "@" not in url and "[" not in url:
+        slash_idx = url.find("/", idx + 3)
+        q_idx = url.find("?", idx + 3)
+        f_idx = url.find("#", idx + 3)
+
+        if (
+            slash_idx != -1
+            and (q_idx == -1 or slash_idx < q_idx)
+            and (f_idx == -1 or slash_idx < f_idx)
+        ):
+            end_idx = len(url)
+            if q_idx != -1 and q_idx < end_idx:
+                end_idx = q_idx
+            if f_idx != -1 and f_idx < end_idx:
+                end_idx = f_idx
+            path = url[slash_idx:end_idx].lower()
+        else:
+            path = ""
+    else:
+        path = urlparse(url).path.lower()
+
     path_words = set(
         path.replace("-", " ")
         .replace("_", " ")
