@@ -39,3 +39,7 @@ looks like, so the next scan starts from the answer rather than the question.
 **Vulnerability:** Raw `PRAGMA table_info({table})` using f-strings allows for SQL injection if the table identifier is unsanitized user input in `tests/test_d1_schema_0002.py`.
 **Learning:** SQLite introduced table-valued functions for introspection (`pragma_table_info(?)`) which do support safe parameterization using bound variables.
 **Prevention:** Always use parameterized `SELECT name FROM pragma_table_info(?)` instead of using raw dynamic `PRAGMA` queries using string concatenation or f-strings. Note that when migrating from raw `PRAGMA` to `SELECT name FROM pragma_...`, the target column is returned at index 0 rather than index 1.
+## 2026-09-01 - Path Hijacking in subprocess.run for GitHub CLI
+**Vulnerability:** The `_detect_gh_token` function in `src/wet/server.py` used `shutil.which("gh")` to locate the GitHub CLI executable. Since `shutil.which` searches the potentially compromised `PATH` environment variable, an attacker could place a malicious executable named `gh` earlier in the path, leading to arbitrary code execution when `subprocess.run` is called.
+**Learning:** `shutil.which()` is not a safe mitigation against path hijacking vulnerabilities (like Ruff `S607`) because it relies on the same `PATH` resolution that makes `subprocess.run` vulnerable natively.
+**Prevention:** Always hardcode known safe absolute paths or construct absolute paths using safe system roots instead of relying on `shutil.which()` for locating executables invoked via `subprocess.run`.
