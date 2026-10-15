@@ -285,10 +285,37 @@ def _detect_gh_token() -> str | None:
     Runs 'gh auth token' and returns the token string if available.
     Returns None if gh CLI is not installed or not authenticated.
     """
-    import shutil
+    import os
     import subprocess
 
-    gh_path = shutil.which("gh")
+    # Look for gh in known safe paths, rather than trusting shutil.which / PATH
+    safe_paths = [
+        "/usr/bin/gh",
+        "/usr/local/bin/gh",
+        "/opt/homebrew/bin/gh",
+    ]
+    if os.name == "nt":
+        safe_paths = [
+            os.path.join(
+                os.environ.get("ProgramFiles", "C:\\Program Files"),
+                "GitHub CLI",
+                "gh.exe",
+            ),
+            os.path.join(
+                os.environ.get("ProgramFiles(x86)", "C:\\Program Files (x86)"),
+                "GitHub CLI",
+                "gh.exe",
+            ),
+            os.path.join(
+                os.environ.get("LOCALAPPDATA", "C:\\Users\\Default\\AppData\\Local"),
+                "Programs",
+                "GitHub CLI",
+                "gh.exe",
+            ),
+        ]
+
+    gh_path = next((p for p in safe_paths if os.path.exists(p)), None)
+
     if not gh_path:
         return None
 

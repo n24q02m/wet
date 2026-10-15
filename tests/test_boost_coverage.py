@@ -318,7 +318,7 @@ class TestServerDetectGhToken:
         mock_result.stdout = "ghp_test_token_123\n"
 
         with (
-            patch("shutil.which", return_value="/usr/bin/gh"),
+            patch("os.path.exists", return_value=True),
             patch("subprocess.run", return_value=mock_result),
         ):
             assert _detect_gh_token() == "ghp_test_token_123"
@@ -332,7 +332,7 @@ class TestServerDetectGhToken:
         mock_result.stdout = ""
 
         with (
-            patch("shutil.which", return_value="/usr/bin/gh"),
+            patch("os.path.exists", return_value=True),
             patch("subprocess.run", return_value=mock_result),
         ):
             assert _detect_gh_token() is None
@@ -356,7 +356,7 @@ class TestServerDetectGhToken:
         from wet.server import _detect_gh_token
 
         with (
-            patch("shutil.which", return_value="/usr/bin/gh"),
+            patch("os.path.exists", return_value=True),
             patch("subprocess.run", side_effect=Exception("timeout")),
         ):
             assert _detect_gh_token() is None
