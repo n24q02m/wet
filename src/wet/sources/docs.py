@@ -2688,6 +2688,13 @@ def _rst_to_markdown(content: str) -> str:
 # Pattern to extract owner/repo from GitHub URLs
 _GH_REPO_RE = re.compile(r"github\.com/([^/]+)/([^/]+?)(?:\.git)?(?:/|$)")
 
+_SITEMAP_SKIP_RE = re.compile(
+    r"/blog/|/changelog|/releases|/feed|/rss|/sitemap|/robots\.txt|/search|/genindex|/searchindex|/modindex|/_modules/|/_sources/"
+)
+_CRAWL_SKIP_RE = re.compile(
+    r"/genindex|/searchindex|/modindex|/_modules/|/_sources/|/blog/|/changelog|/releases"
+)
+
 # Common docs directory names in repos.
 # Defined as a frozenset to enable fast O(1) membership and intersection lookups via .isdisjoint().
 _DOC_DIRS = frozenset(("docs", "doc", "documentation", "guide", "guides", "wiki"))
@@ -3406,27 +3413,12 @@ async def _try_sitemap(base_url: str, max_urls: int = 50) -> list[str]:
                     urls = re.findall(r"<loc>\s*(.*?)\s*</loc>", text)
 
                 # Filter to same domain, skip non-doc paths
-                skip_patterns = (
-                    "/blog/",
-                    "/changelog",
-                    "/releases",
-                    "/feed",
-                    "/rss",
-                    "/sitemap",
-                    "/robots.txt",
-                    "/search",
-                    "/genindex",
-                    "/searchindex",
-                    "/modindex",
-                    "/_modules/",
-                    "/_sources/",
-                )
                 filtered = []
                 for u in urls:
                     if parsed.netloc not in u:
                         continue
                     u_lower = u.lower()
-                    if not any(skip in u_lower for skip in skip_patterns):
+                    if not _SITEMAP_SKIP_RE.search(u_lower):
                         filtered.append(u)
 
                 if filtered:
@@ -3670,18 +3662,6 @@ async def fetch_docs_pages(
         "why-github",
     }
 
-    # Generated/index pages to skip (Sphinx, MkDocs, etc.)
-    _skip_url_patterns = (
-        "/genindex",
-        "/searchindex",
-        "/modindex",
-        "/_modules/",
-        "/_sources/",
-        "/blog/",
-        "/changelog",
-        "/releases",
-    )
-
     # Detect redirect: if actual URL differs from docs_url (e.g., versioned
     # docs), use the redirected path as prefix to restrict crawling to that
     # version.  Prevents crawling sibling version pages (/en/13/, /en/14/).
@@ -3717,7 +3697,7 @@ async def fetch_docs_pages(
 
             # Skip generated index/module pages
             path_lower = full_parsed.path.lower()
-            if any(pat in path_lower for pat in _skip_url_patterns):
+            if _CRAWL_SKIP_RE.search(path_lower):
                 continue
 
             # GitHub-specific: stay within same repo
