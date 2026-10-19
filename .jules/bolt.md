@@ -99,3 +99,7 @@ closed pull request.
 ## 2025-02-14 - Slice large strings before lstrip
 **Learning:** When validating the prefix of a very large string (e.g., an entire HTTP response) after whitespace removal, avoid calling `.strip()` or `.lstrip()` on the whole string as it allocates a massive copy if leading whitespace is present.
 **Action:** Slice a small prefix first (e.g., `content[:100].lstrip().startswith(...)`) to minimize memory allocation overhead.
+
+## 2026-08-20 - Combine substrings into pre-compiled regex for fast any() filtering
+**Learning:** When checking if a string contains any of multiple static substrings inside a hot loop (e.g. `any(skip in u_lower for skip in skip_patterns)`), Python allocates a new generator expression on every iteration. While extracting the inline transformation (like `.lower()`) helps, the generator allocation itself remains a bottleneck when evaluating thousands of URLs.
+**Action:** Combine the static substrings into a single regular expression using alternation (`|`), pre-compile it at the module level (e.g., `_SKIP_RE = re.compile(r"/blog/|/changelog|/releases")`), and replace the `any()` check with `_SKIP_RE.search(string)`. This yields a ~3x performance improvement by moving the entire search loop into C.
