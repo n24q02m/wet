@@ -1177,6 +1177,8 @@ def _is_github_url(url: str | None) -> bool:
     allowing them does not widen the trust boundary the way a substring does,
     and "www.github.com" is a spelling real metadata uses.
     """
+    if not url or "github.com" not in url.lower():
+        return False
     host = _url_host(url)
     return host == "github.com" or host.endswith(".github.com")
 
@@ -1188,6 +1190,8 @@ def _is_crates_url(url: str | None) -> bool:
     page. A substring match also drops an unrelated homepage that merely
     mentions crates.io in a query string, losing docs that do exist.
     """
+    if not url or "crates.io" not in url.lower():
+        return False
     host = _url_host(url)
     return host == "crates.io" or host.endswith(".crates.io")
 
