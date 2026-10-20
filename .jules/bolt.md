@@ -99,3 +99,7 @@ closed pull request.
 ## 2025-02-14 - Slice large strings before lstrip
 **Learning:** When validating the prefix of a very large string (e.g., an entire HTTP response) after whitespace removal, avoid calling `.strip()` or `.lstrip()` on the whole string as it allocates a massive copy if leading whitespace is present.
 **Action:** Slice a small prefix first (e.g., `content[:100].lstrip().startswith(...)`) to minimize memory allocation overhead.
+
+## 2026-10-20 - Fast-path early returns for registry URL parsing
+**Learning:** Using `urllib.parse.urlparse` and string processing to extract domains inside `_is_github_url` and `_is_crates_url` adds overhead during hot paths (like scanning multiple URLs).
+**Action:** Implement a fast-path early containment check (`if "domain" not in url.lower(): return False`) before performing full URL extraction. This avoids object allocation overhead for non-matching URLs while maintaining correctness.
