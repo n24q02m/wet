@@ -28,6 +28,58 @@ from loguru import logger
 
 from wet.security import safe_httpx_client as _safe_httpx_client
 
+_SITEMAP_SKIP_RE = re.compile(
+    "|".join(
+        re.escape(p)
+        for p in (
+            "/blog/",
+            "/changelog",
+            "/releases",
+            "/feed",
+            "/rss",
+            "/sitemap",
+            "/robots.txt",
+            "/search",
+            "/genindex",
+            "/searchindex",
+            "/modindex",
+            "/_modules/",
+            "/_sources/",
+        )
+    )
+)
+
+_OBJECTS_INV_SKIP_RE = re.compile(
+    "|".join(
+        re.escape(p)
+        for p in (
+            "changelog",
+            "changes",
+            "genindex",
+            "modindex",
+            "searchindex",
+            "_modules/",
+            "_sources/",
+        )
+    )
+)
+
+_COLLECT_LINKS_SKIP_RE = re.compile(
+    "|".join(
+        re.escape(p)
+        for p in (
+            "/genindex",
+            "/searchindex",
+            "/modindex",
+            "/_modules/",
+            "/_sources/",
+            "/blog/",
+            "/changelog",
+            "/releases",
+        )
+    )
+)
+
 # Bump this whenever discovery scoring or crawl logic changes.
 # Libraries cached with an older version are automatically re-indexed.
 DISCOVERY_VERSION = 27
@@ -3406,27 +3458,12 @@ async def _try_sitemap(base_url: str, max_urls: int = 50) -> list[str]:
                     urls = re.findall(r"<loc>\s*(.*?)\s*</loc>", text)
 
                 # Filter to same domain, skip non-doc paths
-                skip_patterns = (
-                    "/blog/",
-                    "/changelog",
-                    "/releases",
-                    "/feed",
-                    "/rss",
-                    "/sitemap",
-                    "/robots.txt",
-                    "/search",
-                    "/genindex",
-                    "/searchindex",
-                    "/modindex",
-                    "/_modules/",
-                    "/_sources/",
-                )
                 filtered = []
                 for u in urls:
                     if parsed.netloc not in u:
                         continue
                     u_lower = u.lower()
-                    if not any(skip in u_lower for skip in skip_patterns):
+                    if not _SITEMAP_SKIP_RE.search(u_lower):
                         filtered.append(u)
 
                 if filtered:
@@ -3551,18 +3588,7 @@ def _parse_objects_inv(data: bytes, base_url: str) -> list[str]:
             continue
         # Skip non-doc paths
         uri_lower = uri.lower()
-        if any(
-            skip in uri_lower
-            for skip in (
-                "changelog",
-                "changes",
-                "genindex",
-                "modindex",
-                "searchindex",
-                "_modules/",
-                "_sources/",
-            )
-        ):
+        if _OBJECTS_INV_SKIP_RE.search(uri_lower):
             continue
         doc_urls.add(f"{base_url}{uri}")
 
@@ -3671,17 +3697,6 @@ async def fetch_docs_pages(
     }
 
     # Generated/index pages to skip (Sphinx, MkDocs, etc.)
-    _skip_url_patterns = (
-        "/genindex",
-        "/searchindex",
-        "/modindex",
-        "/_modules/",
-        "/_sources/",
-        "/blog/",
-        "/changelog",
-        "/releases",
-    )
-
     # Detect redirect: if actual URL differs from docs_url (e.g., versioned
     # docs), use the redirected path as prefix to restrict crawling to that
     # version.  Prevents crawling sibling version pages (/en/13/, /en/14/).
@@ -3717,7 +3732,7 @@ async def fetch_docs_pages(
 
             # Skip generated index/module pages
             path_lower = full_parsed.path.lower()
-            if any(pat in path_lower for pat in _skip_url_patterns):
+            if _COLLECT_LINKS_SKIP_RE.search(path_lower):
                 continue
 
             # GitHub-specific: stay within same repo
