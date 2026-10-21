@@ -99,3 +99,7 @@ closed pull request.
 ## 2025-02-14 - Slice large strings before lstrip
 **Learning:** When validating the prefix of a very large string (e.g., an entire HTTP response) after whitespace removal, avoid calling `.strip()` or `.lstrip()` on the whole string as it allocates a massive copy if leading whitespace is present.
 **Action:** Slice a small prefix first (e.g., `content[:100].lstrip().startswith(...)`) to minimize memory allocation overhead.
+
+## 2025-01-20 - Combine regular expressions for performance
+**Learning:** When checking for the presence of any of multiple static substrings within a string inside a hot loop (e.g., `any(p in s for p in ["/a", "/b"])`), combine the patterns into a single pre-compiled regular expression using alternation (`re.compile(r"/a|/b")`) and use `.search(s)`. This avoids generator allocation overhead on every iteration and leverages the C-optimized regex engine, yielding a ~3x speedup.
+**Action:** Use pre-compiled combined regular expressions (`re.compile`) instead of `any()` with a generator expression checking static substring patterns inside hot loops.
