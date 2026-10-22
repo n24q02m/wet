@@ -44,7 +44,7 @@ dependencies = [
     # required by the now-removed direct cohere SDK dep (cohere>=6.1.0 pinned
     # pydantic-core <2.44 while pydantic 2.13.x ships pydantic-core 2.46).
     # Kept conservatively; relax in a dedicated bump.
-    "pydantic>=2.13.4,<2.14",
+    "pydantic>=2.13.4,<2.15",
     "pydantic-settings",
     # Logging
     "loguru",
