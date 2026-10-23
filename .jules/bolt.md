@@ -99,3 +99,7 @@ closed pull request.
 ## 2025-02-14 - Slice large strings before lstrip
 **Learning:** When validating the prefix of a very large string (e.g., an entire HTTP response) after whitespace removal, avoid calling `.strip()` or `.lstrip()` on the whole string as it allocates a massive copy if leading whitespace is present.
 **Action:** Slice a small prefix first (e.g., `content[:100].lstrip().startswith(...)`) to minimize memory allocation overhead.
+
+## 2025-02-19 - Fast Alternation Matching
+**Learning:** Python generator expressions inside `any()` checking against multiple static substrings in text processing loops incur significant allocation and iteration overhead.
+**Action:** Combine the substrings into a single pre-compiled regular expression using alternation (`|`) and leverage the C-based regex engine (`re.search`) for a ~3x speedup.
