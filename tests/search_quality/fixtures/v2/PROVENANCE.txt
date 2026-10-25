@@ -1,0 +1,14 @@
+wet-mcp benchmark fixture v2
+============================
+
+This directory is immutable. Create v3 instead of editing v2 in place.
+v2 supersedes v1: the only change is that npm registry URLs are no longer
+derived (www.npmjs.com blocks GitHub-hosted runners with a Cloudflare
+challenge); extract URLs are drawn from the remaining registries instead.
+All records are mechanically derived from versioned repository sources.
+The 2,000-case docs source contains 42 conflicting duplicate IDs; every
+record carrying one of those IDs is excluded, leaving 1,916 unambiguous
+records. Web and docs evaluation cases are selected by SHA-256(source ID).
+No benchmark result or measured metric is stored in these fixtures.
+Regenerate/check with:
+  uv run python tests/search_quality/run_contract.py generate-fixtures --check

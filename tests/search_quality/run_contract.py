@@ -546,7 +546,8 @@ def _generate_fixtures(*, check: bool) -> dict[str, Any]:
             existing = {path.name: path.read_bytes() for path in root.iterdir()}
             if existing and existing != rendered:
                 raise contract.ContractError(
-                    "v1 is immutable and differs from derivation; create v2"
+                    f"{contract.FIXTURE_VERSION} is immutable and differs from "
+                    "derivation; create the next fixture version"
                 )
         root.mkdir(parents=True, exist_ok=True)
         for name, content in rendered.items():
