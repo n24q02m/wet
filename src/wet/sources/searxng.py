@@ -51,7 +51,6 @@ async def _check_health(searxng_url: str, *, use_settings_auth: bool = True) -> 
     """
     try:
         auth = _searxng_auth() if use_settings_auth else None
-        extra = {"auth": auth} if auth else {}
         async with httpx.AsyncClient(timeout=_HEALTH_CHECK_TIMEOUT) as client:
             response = await client.get(
                 f"{searxng_url}/healthz",
@@ -59,7 +58,7 @@ async def _check_health(searxng_url: str, *, use_settings_auth: bool = True) -> 
                     "X-Real-IP": "127.0.0.1",
                     "X-Forwarded-For": "127.0.0.1",
                 },
-                **extra,
+                auth=auth,
             )
             return response.status_code < 500
     except Exception:
