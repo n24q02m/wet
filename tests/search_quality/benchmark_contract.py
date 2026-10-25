@@ -27,7 +27,8 @@ from urllib.parse import quote, urlsplit
 CONTRACT_VERSION = "wet-benchmark-contract-v1"
 FIXTURE_SCHEMA_VERSION = "wet-benchmark-fixture-v1"
 ARTIFACT_SCHEMA_VERSION = "wet-benchmark-artifact-v1"
-DEFAULT_FIXTURE_ROOT = Path(__file__).with_name("fixtures") / "v1"
+FIXTURE_VERSION = "v2"
+DEFAULT_FIXTURE_ROOT = Path(__file__).with_name("fixtures") / FIXTURE_VERSION
 # Post de-host wet is HTTP-only: the live harness spawns ``python -m
 # wet.server`` and the client talks streamable-HTTP to ``/mcp``.
 PROTOCOL_TRANSPORT = "streamable-http"
@@ -375,7 +376,10 @@ def _canonical_registry_url(record: dict[str, Any]) -> tuple[str, str] | None:
     library = record["library"].strip()
     mappings = (
         ("pypi", "pypi", f"https://pypi.org/project/{quote(library, safe='')}/"),
-        ("npm", "npm", f"https://www.npmjs.com/package/{quote(library, safe='@/')}"),
+        # npm is deliberately absent (fixtures v1 had it): www.npmjs.com answers
+        # GitHub-hosted runner IPs with a Cloudflare challenge, so none of the 35
+        # npm URLs could be measured from the release gate's environment
+        # (benchmark run 40195574985: 35/35 "Cloudflare challenge detected").
         (
             "crates.io",
             "crates.io",
@@ -518,7 +522,7 @@ def render_fixture_files(derived: DerivedFixtures, repo_root: Path) -> dict[str,
     manifest = {
         "schema_version": FIXTURE_SCHEMA_VERSION,
         "contract_version": CONTRACT_VERSION,
-        "fixture_version": "v1",
+        "fixture_version": FIXTURE_VERSION,
         "immutable": True,
         "counts": TARGET_COUNTS,
         "source_audit": derived.source_audit,
@@ -536,10 +540,13 @@ def render_fixture_files(derived: DerivedFixtures, repo_root: Path) -> dict[str,
         },
     }
     provenance = (
-        b"wet-mcp benchmark fixture v1\n"
-        b"============================\n"
+        f"wet-mcp benchmark fixture {FIXTURE_VERSION}\n".encode()
+        + b"============================\n"
         b"\n"
-        b"This directory is immutable. Create v2 instead of editing v1 in place.\n"
+        b"This directory is immutable. Create v3 instead of editing v2 in place.\n"
+        b"v2 supersedes v1: the only change is that npm registry URLs are no longer\n"
+        b"derived (www.npmjs.com blocks GitHub-hosted runners with a Cloudflare\n"
+        b"challenge); extract URLs are drawn from the remaining registries instead.\n"
         b"All records are mechanically derived from versioned repository sources.\n"
         b"The 2,000-case docs source contains 42 conflicting duplicate IDs; every\n"
         b"record carrying one of those IDs is excluded, leaving 1,916 unambiguous\n"
@@ -685,7 +692,7 @@ def validate_fixture_set(fixture_root: Path = DEFAULT_FIXTURE_ROOT) -> dict[str,
         raise ContractError("manifest thresholds mismatch")
 
     return {
-        "fixture_version": "v1",
+        "fixture_version": FIXTURE_VERSION,
         "schema_version": FIXTURE_SCHEMA_VERSION,
         "counts": counts,
         "sha256": {

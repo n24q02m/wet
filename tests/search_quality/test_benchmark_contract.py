@@ -37,7 +37,7 @@ def test_derivation_audits_conflicting_source_ids_and_keeps_exact_targets():
     assert len(benchmark_ids) == len(set(benchmark_ids))
 
 
-def test_committed_v1_fixtures_are_immutable_derivation_and_validate():
+def test_committed_fixtures_are_immutable_derivation_and_validate():
     expected = contract.render_fixture_files(
         contract.derive_fixture_records(REPO_ROOT), REPO_ROOT
     )
