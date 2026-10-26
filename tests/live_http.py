@@ -20,6 +20,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 import httpx
+import httpx2
 from mcp.client.session import ClientSession
 from mcp.client.streamable_http import streamable_http_client
 
@@ -123,14 +124,13 @@ async def mcp_client_session(
 ) -> AsyncGenerator[ClientSession]:
     """Yield an initialized MCP ``ClientSession`` over streamable HTTP."""
     url = f"http://127.0.0.1:{port}/mcp"
-    async with httpx.AsyncClient(
-        timeout=httpx.Timeout(timeout),
+    async with httpx2.AsyncClient(
+        timeout=httpx2.Timeout(timeout),
         follow_redirects=True,
     ) as http_client:
         async with streamable_http_client(url, http_client=http_client) as (
             read_stream,
             write_stream,
-            _,
         ):
             async with ClientSession(read_stream, write_stream) as session:
                 await session.initialize()

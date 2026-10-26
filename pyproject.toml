@@ -19,24 +19,16 @@ classifiers = [
 ]
 requires-python = "==3.13.*"
 dependencies = [
-    # Shared hull stack, consumed as ONE root-level git dist. The hull monorepo
-    # merged into a single `hull-core` distribution on 2026-10-01 (PRs #2/#4/#5,
-    # head abc27ed4): one wheel carries `hull_core` + `hull_web` +
-    # `hull_embedding_daemon`, so there is no separate `hull-web` dist and no
-    # subdirectory pin. The `[web]` extra pulls the hull_web surface wet uses:
-    # SSRF (is_safe_url / safe_httpx_client), SearXNG runner + URL utils, and
-    # ScrapingAgent (+ Crawl4AI transitively) with the remote render backends
-    # (BrowserlessClient / RemoteRenderStrategy) for the browser provider chain
-    # + the under-rendered escalation fix. (The Cloudflare Browser Rendering
-    # backend was cut in the de-host: browser rendering is native chromium or
-    # self-hosted browserless only.)
-    # History: R6 (2026-09-27) replaced the PyPI `n24q02m-web-core` dep with
-    # git pins on the hull monorepo subpackages; the 2026-10-01 merge collapsed
-    # those into this single entry. Neither `hull-web` nor `hull-core` exists
-    # on PyPI — resolution goes through [tool.uv.sources] only.
-    "hull-core[web]",
+    # Shared hull stack, published on PyPI as `n24q02m-hull` (import packages:
+    # `hull_core` + `hull_web` + `hull_embedding_daemon`). The `[web]` extra
+    # pulls the hull_web surface wet uses: SSRF (is_safe_url / safe_httpx_client),
+    # SearXNG runner + URL utils, and ScrapingAgent (+ Crawl4AI transitively)
+    # with the remote render backends (BrowserlessClient / RemoteRenderStrategy)
+    # for the browser provider chain + the under-rendered escalation fix.
+    # (Browser rendering is native chromium or self-hosted browserless only.)
+    "n24q02m-hull[web]>=0.4,<0.5",
     # MCP Server
-    "mcp[cli]>=1.29.1,<2",
+    "mcp[cli]>=2.3.0,<3",
     # HTTP Client
     "httpx",
     # Config
@@ -93,8 +85,8 @@ dependencies = [
 # Seeded-identity + invisible browser tier (E1-e/E1-f): opt-in at install time,
 # enabled at runtime via BROWSER_BACKENDS=invisible / WET_IDENTITY_SEED. Without
 # these extras strategies keep legacy behavior (warn-once). See AGENTS.md.
-identity = ["hull-core[identity]"]
-invisible = ["hull-core[invisible]"]
+identity = ["n24q02m-hull[identity]>=0.4,<0.5"]
+invisible = ["n24q02m-hull[invisible]>=0.4,<0.5"]
 
 [dependency-groups]
 dev = [
@@ -207,16 +199,8 @@ exclude_lines = ["pragma: no cover", "if TYPE_CHECKING:"]
 # crawl4ai (transitive via hull-web) requires `unclecode-litellm==1.81.13`, a
 # fork that ships the same top-level `litellm` package as upstream litellm.
 # Since the de-host nothing in wet imports litellm (provider calls are plain
-# OpenAI-spec HTTP via hull-core), so the fork is made unreachable rather than
+# OpenAI-spec HTTP via n24q02m-hull), so the fork is made unreachable rather than
 # installed: crawl4ai imports litellm only inside its LLM helper functions,
 # which this project never calls (it uses AsyncWebCrawler/BrowserConfig/
 # CrawlerRunConfig).
 override-dependencies = ["unclecode-litellm ; sys_platform == 'unreachable'"]
-
-[tool.uv.sources]
-# Shared hull stack (auth 3-mode, per-task model cells, limiter, lifecycle;
-# [web] extra: SSRF/SearXNG/ScrapingAgent). Single root-level dist since the
-# 2026-10-01 monorepo merge — one pin covers both hull_core and hull_web,
-# no subdirectory.
-# Pinned to the merged revision; bump deliberately, never via lockfile refresh.
-hull-core = { git = "https://github.com/n24q02m/hull.git", rev = "5e29415b64e4686fedacf745ba9fc1a7bf185dee" }

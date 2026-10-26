@@ -53,8 +53,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # Install dependencies first (cached when deps don't change).
-# [tool.uv.sources] stays INTACT: hull-core/hull-web resolve from the git revs
-# recorded in uv.lock — do NOT strip them for PyPI.
+# n24q02m-hull (hull_core + hull_web) resolves from PyPI via uv.lock.
 COPY pyproject.toml uv.lock ./
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --frozen --no-install-project --no-dev

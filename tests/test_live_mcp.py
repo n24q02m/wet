@@ -33,7 +33,7 @@ results: list[tuple[str, str, str]] = []  # (label, status, evidence)
 
 def parse(r) -> str:
     """Extract text from MCP tool result."""
-    if hasattr(r, "isError") and r.isError:
+    if hasattr(r, "is_error") and r.is_error:
         raise RuntimeError(r.content[0].text)
     return r.content[0].text
 

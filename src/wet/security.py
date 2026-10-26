@@ -126,7 +126,7 @@ def build_external_tool_result(
                     text=json.dumps(payload, ensure_ascii=False, indent=2),
                 )
             ],
-            structuredContent=mark_external_payload(payload, source),
+            structured_content=mark_external_payload(payload, source),
         )
 
     marked = mark_external_payload(payload, source)
@@ -139,7 +139,7 @@ def build_external_tool_result(
                 ),
             )
         ],
-        structuredContent=marked,
+        structured_content=marked,
     )
 
 

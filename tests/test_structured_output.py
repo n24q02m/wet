@@ -43,7 +43,7 @@ async def _tools() -> dict:
 async def test_domain_tools_advertise_object_output_schema():
     tools = await _tools()
     for name in DOMAIN_TOOLS:
-        schema = tools[name].outputSchema
+        schema = tools[name].output_schema
         assert schema is not None, f"{name} advertises no outputSchema"
         assert schema["type"] == "object"
         assert schema["additionalProperties"] is True
@@ -52,7 +52,7 @@ async def test_domain_tools_advertise_object_output_schema():
 async def test_help_stays_markdown():
     """`help` returns markdown by design, so its `-> str` keeps the degenerate wrap."""
     tools = await _tools()
-    assert tools["help"].outputSchema["properties"]["result"]["type"] == "string"
+    assert tools["help"].output_schema["properties"]["result"]["type"] == "string"
 
 
 # --- structuredContent + XPIA envelope ------------------------------------
@@ -201,5 +201,5 @@ async def test_fastmcp_validates_structured_content_against_output_schema():
         )
 
     assert isinstance(result, CallToolResult)
-    assert result.structuredContent["_untrusted_source"] == "web"
+    assert result.structured_content["_untrusted_source"] == "web"
     assert "<untrusted_media_content>" in result.content[0].text
