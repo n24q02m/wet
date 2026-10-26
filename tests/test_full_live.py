@@ -19,7 +19,7 @@ from pathlib import Path
 import httpx
 import pytest
 from mcp.client.session import ClientSession
-from mcp.client.streamable_http import streamablehttp_client
+from mcp.client.streamable_http import streamable_http_client
 
 pytestmark = [pytest.mark.full, pytest.mark.timeout(120)]
 
@@ -31,7 +31,7 @@ pytestmark = [pytest.mark.full, pytest.mark.timeout(120)]
 
 def parse(r) -> str:
     """Extract text from MCP tool result."""
-    if hasattr(r, "isError") and r.isError:
+    if hasattr(r, "is_error") and r.is_error:
         raise RuntimeError(r.content[0].text)
     return r.content[0].text
 
@@ -94,7 +94,7 @@ async def _connect(port: int):
                 raise
             await __import__("asyncio").sleep(0.25)
             waited += 0.25
-    async with streamablehttp_client(url) as (read_stream, write_stream, _):
+    async with streamable_http_client(url) as (read_stream, write_stream):
         async with ClientSession(read_stream, write_stream) as session:
             await session.initialize()
             yield session

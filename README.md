@@ -279,7 +279,7 @@ operator requires robots enforcement.
 
 **Invisible tier + seeded identity** (opt-in) -- append `invisible` to
 `BROWSER_BACKENDS` to add a stealth-Firefox engine tier as the last escalation
-step (`hull-core[invisible]` extra: `pip install "wet-mcp[invisible]"`). One
+step (`n24q02m-hull[invisible]` extra: `pip install "wet-mcp[invisible]"`). One
 coherent browser identity spans the whole chain: seed it with `WET_IDENTITY_SEED`
 (or let wet derive once and persist it under `~/.wet/subs/<sub>/identity.json`)
 and install the `wet[identity]` extra. Without the extras the chain keeps

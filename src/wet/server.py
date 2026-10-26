@@ -27,7 +27,7 @@ from typing import Any
 from urllib.parse import urlparse
 
 from loguru import logger
-from mcp.server.fastmcp import FastMCP
+from mcp.server.mcpserver import MCPServer
 from mcp.types import ToolAnnotations
 
 from wet import search_metrics
@@ -309,7 +309,7 @@ def _detect_gh_token() -> str | None:
 
 
 @asynccontextmanager
-async def _lifespan(_server: FastMCP):
+async def _lifespan(_server: MCPServer):
     """Server lifespan: startup SearXNG, init cache/docs DB, cleanup on shutdown."""
     warmup_task = await _lifespan_startup()
     yield
@@ -776,8 +776,14 @@ async def _rerank_results(
 
 
 # Initialize MCP server
-mcp = FastMCP(
+# Report wet's own package version in serverInfo.version (read via
+# importlib.metadata, not `from wet import __version__`, to avoid a circular
+# import: wet/__init__.py imports `mcp` from this module).
+from importlib.metadata import version as _pkgver  # noqa: E402
+
+mcp = MCPServer(
     name="wet",
+    version=_pkgver("wet-mcp"),
     instructions=(
         "Web Extended Toolkit MCP Server. "
         "IMPORTANT: `search` and `extract` serve different purposes. "
@@ -789,17 +795,6 @@ mcp = FastMCP(
     ),
     lifespan=_lifespan,
 )
-
-# Report wet's own package version in serverInfo.version. FastMCP (the SDK
-# class) does not accept a `version=` kwarg, so the underlying lowlevel Server
-# defaults `.version` to None and the SDK fills serverInfo with the `mcp`
-# package version instead. Setting it here propagates to
-# create_initialization_options().server_version. Read the version via
-# importlib.metadata (not `from wet import __version__`) to avoid a
-# circular import: wet/__init__.py imports `mcp` from this module.
-from importlib.metadata import version as _pkgver  # noqa: E402
-
-mcp._mcp_server.version = _pkgver("wet-mcp")
 
 
 # Grace period (seconds) given to a cancelled task to clean up resources
@@ -899,7 +894,7 @@ def _wrap_tool(tool_name: str):
     ``CallToolResult`` so BOTH response channels defend against XPIA: the text
     block keeps its ``<untrusted_{tool}_content>`` boundary tags and the
     ``structuredContent`` carries the envelope markers (a client reading
-    structured output never sees the text block). FastMCP still derives the
+    structured output never sees the text block). MCPServer still derives the
     tool's ``outputSchema`` from the wrapped function's ``-> dict`` annotation,
     which ``functools.wraps`` keeps reachable via ``__wrapped__``.
     """
@@ -1032,9 +1027,9 @@ async def _run_configured_search(*, timeout: float | None = None, **kwargs: Any)
 
 @mcp.tool(
     annotations=ToolAnnotations(
-        readOnlyHint=True,
-        openWorldHint=True,
-        idempotentHint=True,
+        read_only_hint=True,
+        open_world_hint=True,
+        idempotent_hint=True,
     ),
 )
 @_wrap_tool("search")
@@ -1670,8 +1665,8 @@ async def search(  # noqa: PLR0913
 
 @mcp.tool(
     annotations=ToolAnnotations(
-        readOnlyHint=True,
-        openWorldHint=True,
+        read_only_hint=True,
+        open_world_hint=True,
     ),
 )
 @_wrap_tool("extract")
@@ -1990,8 +1985,8 @@ async def extract(  # noqa: PLR0913
 
 @mcp.tool(
     annotations=ToolAnnotations(
-        readOnlyHint=False,
-        openWorldHint=True,
+        read_only_hint=False,
+        open_world_hint=True,
     ),
 )
 @_wrap_tool("media")
@@ -2107,9 +2102,9 @@ async def media(  # noqa: PLR0913
 
 @mcp.tool(
     annotations=ToolAnnotations(
-        readOnlyHint=True,
-        openWorldHint=False,
-        idempotentHint=True,
+        read_only_hint=True,
+        open_world_hint=False,
+        idempotent_hint=True,
     ),
 )
 async def help(tool_name: str = "search") -> str:
@@ -2324,10 +2319,10 @@ async def _handle_config_warmup() -> dict[str, Any]:
     ),
     annotations=ToolAnnotations(
         title="Config",
-        readOnlyHint=False,
-        destructiveHint=False,
-        idempotentHint=True,
-        openWorldHint=True,
+        read_only_hint=False,
+        destructive_hint=False,
+        idempotent_hint=True,
+        open_world_hint=True,
     ),
 )
 async def config(

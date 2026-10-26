@@ -24,7 +24,7 @@ from threading import Thread
 import httpx
 import pytest
 from mcp.client.session import ClientSession
-from mcp.client.streamable_http import streamablehttp_client
+from mcp.client.streamable_http import streamable_http_client
 from structured import payload
 
 pytestmark = [pytest.mark.live, pytest.mark.timeout(120)]
@@ -37,7 +37,7 @@ pytestmark = [pytest.mark.live, pytest.mark.timeout(120)]
 
 def parse(r) -> str:
     """Extract text from MCP tool result."""
-    if hasattr(r, "isError") and r.isError:
+    if hasattr(r, "is_error") and r.is_error:
         raise RuntimeError(r.content[0].text)
     return r.content[0].text
 
@@ -165,7 +165,7 @@ async def mcp_session(searxng_server: str, tmp_path):
     try:
         _wait_until_up(port)
         url = f"http://127.0.0.1:{port}/mcp"
-        async with streamablehttp_client(url) as (read_stream, write_stream, _):
+        async with streamable_http_client(url) as (read_stream, write_stream):
             async with ClientSession(read_stream, write_stream) as session:
                 await session.initialize()
                 yield session

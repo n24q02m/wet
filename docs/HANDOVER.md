@@ -28,7 +28,7 @@ pip install wet-mcp               # persistent install (CLI + server)
 uvx --from wet-mcp wet warmup     # try a subcommand without a persistent install
 ```
 
-Extras: `wet-mcp[identity]`, `wet-mcp[invisible]` (hull-core passthrough;
+Extras: `wet-mcp[identity]`, `wet-mcp[invisible]` (n24q02m-hull passthrough;
 `[invisible]` adds the stealth browser stack). Claude Code plugin:
 `/plugin install wet@n24q02m-plugins`.
 

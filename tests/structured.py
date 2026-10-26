@@ -19,8 +19,10 @@ from mcp.types import CallToolResult, TextContent
 def payload(result: CallToolResult | dict[str, Any]) -> dict[str, Any]:
     """Return the tool's structured payload."""
     if isinstance(result, CallToolResult):
-        assert result.structuredContent is not None, "tool emitted no structuredContent"
-        return result.structuredContent
+        assert result.structured_content is not None, (
+            "tool emitted no structuredContent"
+        )
+        return result.structured_content
     return result
 
 
