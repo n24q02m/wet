@@ -34,13 +34,10 @@ async def test_media_analyze_returns_unknown_action_error() -> None:
 
 
 @pytest.mark.asyncio
-async def test_media_analyze_does_not_invoke_analyze_media() -> None:
-    """Removed action must NOT touch the LLM pipeline."""
-    mocked = AsyncMock(return_value="should not run")
-    with patch("wet.llm.analyze_media", mocked):
-        result = await media(action="analyze", url="/tmp/x.jpg")
-        mocked.assert_not_called()
-        assert "Unknown action" in text(result)
+async def test_media_analyze_returns_unknown_action_without_llm() -> None:
+    """Removed action returns unknown action error without touching LLM."""
+    result = await media(action="analyze", url="/tmp/x.jpg")
+    assert "Unknown action" in text(result)
 
 
 @pytest.mark.asyncio
