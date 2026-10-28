@@ -104,17 +104,12 @@ async def test_media_download_missing_urls():
 @pytest.mark.asyncio
 async def test_media_analyze_returns_unknown_action_post_removal(mock_settings):
     """Phase 3 Task 5 BREAKING: analyze removed -- routes to unknown-action."""
-    mock_analyze_media = AsyncMock(return_value="Analysis result")
-
-    with patch("wet.llm.analyze_media", mock_analyze_media):
-        result = await media(
-            action="analyze", url="/path/to/image.jpg", prompt="Describe it"
-        )
-
-        mock_analyze_media.assert_not_called()
-        assert "Unknown action 'analyze'" in text(result)
-        assert "removed in wet v2.0.0" in text(result)
-        assert "imagine-mcp" in text(result)
+    result = await media(
+        action="analyze", url="/path/to/image.jpg", prompt="Describe it"
+    )
+    assert "Unknown action 'analyze'" in text(result)
+    assert "removed in wet v2.0.0" in text(result)
+    assert "imagine-mcp" in text(result)
 
 
 @pytest.mark.asyncio

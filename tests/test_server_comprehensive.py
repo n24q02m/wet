@@ -311,7 +311,6 @@ async def test_media_tool():
         patch(
             "wet.sources.crawler.download_media", new_callable=AsyncMock
         ) as mock_down,
-        patch("wet.llm.analyze_media", new_callable=AsyncMock) as mock_analyze,
     ):
         mock_list.return_value = "list_result"
         res = await server.media("list", url="http://test")
@@ -323,11 +322,9 @@ async def test_media_tool():
 
         # Phase 3 Task 5 BREAKING: analyze removed in v2.0.0 -- routes
         # through unknown-action with migration hint, never invokes LLM.
-        mock_analyze.return_value = "analyze_result"
         res = await server.media("analyze", url="http://test")
         assert "Unknown action 'analyze'" in text(res)
         assert "removed in wet v2.0.0" in text(res)
-        mock_analyze.assert_not_called()
 
 
 @pytest.mark.asyncio
