@@ -99,3 +99,7 @@ closed pull request.
 ## 2025-02-14 - Slice large strings before lstrip
 **Learning:** When validating the prefix of a very large string (e.g., an entire HTTP response) after whitespace removal, avoid calling `.strip()` or `.lstrip()` on the whole string as it allocates a massive copy if leading whitespace is present.
 **Action:** Slice a small prefix first (e.g., `content[:100].lstrip().startswith(...)`) to minimize memory allocation overhead.
+
+## 2025-02-19 - Fast URL path extraction in hot loops
+**Learning:** Using `urllib.parse.urlparse` to extract the URL path inside hot loops like `_score_url_by_query` allocates multiple objects and incurs unnecessary overhead. For standard HTTP(S) URLs, simple string slicing (`str.find`) is significantly faster.
+**Action:** When extracting URL paths in hot paths, check for "http://" or "https://", ensure there is no "@" (basic auth) or "[" (IPv6), and use `url.find("/", ...)` and handle bounds for "?" or "#". Use `urlparse` only as a fallback.
