@@ -29,6 +29,7 @@ from typing import TYPE_CHECKING, Any
 from loguru import logger
 
 from wet.config import settings
+from wet.security import is_safe_url
 from wet.sources._browser_sessions import get_pool
 
 if TYPE_CHECKING:
@@ -157,6 +158,8 @@ async def run_interact(
             f"Error: too many actions ({len(actions)} > {_MAX_ACTIONS_PER_CALL}). "
             "Split the flow across multiple interact calls or use a session."
         )
+    if not is_safe_url(url):
+        return f"Error: Security Alert: Unsafe URL blocked ({url})"
 
     pw = browser = page = None
     persistent = False

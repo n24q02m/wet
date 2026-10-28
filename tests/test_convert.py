@@ -48,3 +48,15 @@ async def test_convert_local_files_multiple(tmp_path):
     data = json.loads(result)
     assert len(data) == 2
     assert all("content" in d for d in data)
+
+
+async def test_convert_local_files_rejects_sensitive_paths(tmp_path):
+    secret_dir = tmp_path / ".wet"
+    secret_dir.mkdir()
+    secret_file = secret_dir / "config.toml"
+    secret_file.write_text("secret_key = '123'")
+    result = await convert_local_files([str(secret_file)])
+    data = json.loads(result)
+    assert len(data) == 1
+    assert "error" in data[0]
+    assert "Path rejected" in data[0]["error"]

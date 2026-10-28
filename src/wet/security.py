@@ -172,20 +172,52 @@ def _is_root_or_system_dir(p: Path) -> bool:
 
 
 _SENSITIVE_FILES = frozenset(
-    {"passwd", "shadow", "group", "sudoers", "id_rsa", "id_ed25519"}
+    {
+        "passwd",
+        "shadow",
+        "group",
+        "sudoers",
+        "id_rsa",
+        "id_ed25519",
+        ".npmrc",
+        ".pypirc",
+        ".env",
+        ".bash_history",
+        ".zsh_history",
+        "credentials.json",
+        "token.json",
+    }
 )
-_SENSITIVE_DIRS = frozenset({".ssh", ".aws", ".kube", ".azure", ".gnupg", ".config"})
+_SENSITIVE_DIRS = frozenset(
+    {
+        ".ssh",
+        ".aws",
+        ".kube",
+        ".azure",
+        ".gnupg",
+        ".config",
+        ".wet",
+        ".wet-mcp",
+        ".mnemo",
+        ".crg",
+        ".git",
+        ".docker",
+        ".private",
+    }
+)
 
 
 def _is_sensitive_path(p: Path) -> bool:
     """Check if the given path points to known sensitive files/directories."""
-    # Specific sensitive files
-    if p.name in _SENSITIVE_FILES:
+    if p.name in _SENSITIVE_FILES or p.name.startswith(".env"):
         return True
 
-    # Sensitive directories
     if not _SENSITIVE_DIRS.isdisjoint(p.parts):
         return True
+
+    for part in p.parts:
+        if part in _SENSITIVE_DIRS or part in _SENSITIVE_FILES:
+            return True
 
     return False
 
