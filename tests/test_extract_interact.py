@@ -87,7 +87,7 @@ async def test_too_many_actions_returns_error():
 @pytest.mark.asyncio
 async def test_unknown_action_type_returns_error(_fake_browser):
     result = await io.run_interact(
-        url="https://x", actions=[{"type": "evaluate", "selector": "x"}]
+        url="https://example.com", actions=[{"type": "evaluate", "selector": "x"}]
     )
     assert isinstance(result, str)
     assert "action" in result and "failed" in result
@@ -96,7 +96,7 @@ async def test_unknown_action_type_returns_error(_fake_browser):
 @pytest.mark.asyncio
 async def test_single_click_action(_fake_browser):
     result = await io.run_interact(
-        url="https://x", actions=[{"type": "click", "selector": "#btn"}]
+        url="https://example.com", actions=[{"type": "click", "selector": "#btn"}]
     )
     assert isinstance(result, dict)
     assert result["url"] == "https://example.com/post"
@@ -123,7 +123,7 @@ async def test_multi_action_fill_then_submit(_fake_browser):
 @pytest.mark.asyncio
 async def test_fill_without_value_returns_error(_fake_browser):
     result = await io.run_interact(
-        url="https://x", actions=[{"type": "fill", "selector": "#email"}]
+        url="https://example.com", actions=[{"type": "fill", "selector": "#email"}]
     )
     assert isinstance(result, str)
     assert "fill action requires" in result or "value" in result
@@ -150,7 +150,7 @@ async def test_screenshot_writes_png_and_returns_path(
     )
     (tmp_path / "downloads").mkdir()
     result = await io.run_interact(
-        url="https://x",
+        url="https://example.com",
         actions=[{"type": "click", "selector": "#btn"}],
         screenshot=True,
     )
@@ -165,7 +165,7 @@ async def test_screenshot_writes_png_and_returns_path(
 @pytest.mark.asyncio
 async def test_description_fallback_resolves_to_text_locator(_fake_browser):
     await io.run_interact(
-        url="https://x",
+        url="https://example.com",
         actions=[{"type": "click", "description": "Sign in"}],
     )
     instance = _fake_browser["instances"][0]
@@ -174,7 +174,9 @@ async def test_description_fallback_resolves_to_text_locator(_fake_browser):
 
 @pytest.mark.asyncio
 async def test_action_with_neither_selector_nor_description_errors(_fake_browser):
-    result = await io.run_interact(url="https://x", actions=[{"type": "click"}])
+    result = await io.run_interact(
+        url="https://example.com", actions=[{"type": "click"}]
+    )
     assert isinstance(result, str)
     assert "selector" in result or "description" in result
 
@@ -224,3 +226,16 @@ async def test_extract_unknown_action_lists_interact_in_help():
     result = await extract(action="bogus_99")
     assert isinstance(result, CallToolResult)
     assert "interact" in text(result)
+
+
+@pytest.mark.asyncio
+async def test_extract_interact_action_blocks_unsafe_url():
+    from wet.server import extract
+
+    result = await extract(
+        action="interact",
+        url="http://169.254.169.254/latest/meta-data/",
+        actions=[{"type": "click", "selector": "#x"}],
+    )
+    assert isinstance(result, CallToolResult)
+    assert "Security Alert: Unsafe URL blocked" in text(result)
