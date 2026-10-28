@@ -2,6 +2,196 @@
 
 <!-- version list -->
 
+## v3.20.0 (2026-10-28)
+
+### Bug Fixes
+
+- Align agent docs and dev task with the de-hosted HTTP server
+  ([#1877](https://github.com/n24q02m/wet/pull/1877),
+  [`056f128`](https://github.com/n24q02m/wet/commit/056f1288f3f0b4fccc73954feb83c1f5446edacc))
+
+- Benchmark contract harness over streamable-HTTP (de-host)
+  ([#1856](https://github.com/n24q02m/wet/pull/1856),
+  [`37779a1`](https://github.com/n24q02m/wet/commit/37779a1a10dfbe305c7a85ee212a7f27fd4c4bd3))
+
+- Block SSRF in extract interact and prevent sensitive path traversal
+  ([#1900](https://github.com/n24q02m/wet/pull/1900),
+  [`4ace202`](https://github.com/n24q02m/wet/commit/4ace20239f27467df6e5209b1e824c817cf70b9a))
+
+- Bound openrouter web_search to one reliable search per request
+  ([#1874](https://github.com/n24q02m/wet/pull/1874),
+  [`d44968f`](https://github.com/n24q02m/wet/commit/d44968f53dcec8821957650a6bf6b1d42f1fd7d7))
+
+- Bound openrouter web_search to one search per request
+  ([#1874](https://github.com/n24q02m/wet/pull/1874),
+  [`d44968f`](https://github.com/n24q02m/wet/commit/d44968f53dcec8821957650a6bf6b1d42f1fd7d7))
+
+- Guard benchmark spend during the run and parallelize LLM-mediated web cases
+  ([#1878](https://github.com/n24q02m/wet/pull/1878),
+  [`7037b44`](https://github.com/n24q02m/wet/commit/7037b442aa5933530aba68fa48d25a96608cc59b))
+
+- Ignore e2e_token*.txt scratch files + scripts/.wet_cf_token (secret-shaped token file from
+  cf_full_flow.py --save-only; e2e rule matches mnemo #1287)
+  ([`5254139`](https://github.com/n24q02m/wet/commit/5254139775306bc7ce31c5404997b685684c6288))
+
+- Install patchright browsers and pin PLAYWRIGHT_BROWSERS_PATH for benchmark headless extract
+  ([#1859](https://github.com/n24q02m/wet/pull/1859),
+  [`c974689`](https://github.com/n24q02m/wet/commit/c97468907092ae13587cafb19b49394375e24d0e))
+
+- Instruct openrouter model to always run its one web search
+  ([#1874](https://github.com/n24q02m/wet/pull/1874),
+  [`d44968f`](https://github.com/n24q02m/wet/commit/d44968f53dcec8821957650a6bf6b1d42f1fd7d7))
+
+- Isolate benchmark server embed/rerank cells and stamp matching identity
+  ([#1858](https://github.com/n24q02m/wet/pull/1858),
+  [`818bef4`](https://github.com/n24q02m/wet/commit/818bef4e90fabfa20381eb769fc176c7dea6b515))
+
+- Keep benchmark browsers outside the checkout so the gate sees a clean tree
+  ([#1875](https://github.com/n24q02m/wet/pull/1875),
+  [`fb5fcae`](https://github.com/n24q02m/wet/commit/fb5fcae6b7f5d5bc6ba93322e20fbce31208aa9c))
+
+- Make web_search p95 gate backend-aware for LLM-mediated backends
+  ([#1856](https://github.com/n24q02m/wet/pull/1856),
+  [`37779a1`](https://github.com/n24q02m/wet/commit/37779a1a10dfbe305c7a85ee212a7f27fd4c4bd3))
+
+- Move benchmark contract harness to streamable-HTTP transport
+  ([#1856](https://github.com/n24q02m/wet/pull/1856),
+  [`37779a1`](https://github.com/n24q02m/wet/commit/37779a1a10dfbe305c7a85ee212a7f27fd4c4bd3))
+
+- No sanctioned default openrouter model (fail-closed)
+  ([#1864](https://github.com/n24q02m/wet/pull/1864),
+  [`60ba484`](https://github.com/n24q02m/wet/commit/60ba48495f946edaa9f3d257aa6b20f19b6ffd90))
+
+- Pass searxng health-check auth as a typed argument
+  ([#1895](https://github.com/n24q02m/wet/pull/1895),
+  [`ecc1f34`](https://github.com/n24q02m/wet/commit/ecc1f3400298c4ef2b8c92d7293c4d0a4369ed4f))
+
+- Pin benchmark fixtures byte-stable across checkouts
+  ([#1854](https://github.com/n24q02m/wet/pull/1854),
+  [`a8bc5a7`](https://github.com/n24q02m/wet/commit/a8bc5a779923ef945289c78f674a92d22dec7f38))
+
+- Purge vendor LM surface — OpenRouter-only cells, drop native cohere rerank
+  ([#1855](https://github.com/n24q02m/wet/pull/1855),
+  [`9cd8019`](https://github.com/n24q02m/wet/commit/9cd8019ef9af5cde503d1079d62c7e5f16bb3e90))
+
+- Refresh locked security dependencies (pillow, brotli, certifi, filelock, virtualenv, fastmcp)
+  ([#1894](https://github.com/n24q02m/wet/pull/1894),
+  [`912af42`](https://github.com/n24q02m/wet/commit/912af42d22bee62173d0cb6a5e43007a3cda764f))
+
+- Remove benchmark-contract gate from CD release pipeline
+  ([`26fdd21`](https://github.com/n24q02m/wet/commit/26fdd2124705fb61e7c8ba98bcd266c8b7abfe12))
+
+- Remove dead code analyze_media and static model capability maps
+  ([#1901](https://github.com/n24q02m/wet/pull/1901),
+  [`2e23101`](https://github.com/n24q02m/wet/commit/2e23101aad008e185ab8631b7ca33ff25074a3c8))
+
+- Replace npm extract benchmark URLs that Cloudflare blocks on CI runners
+  ([#1896](https://github.com/n24q02m/wet/pull/1896),
+  [`b6b523f`](https://github.com/n24q02m/wet/commit/b6b523fca0ee27b408ea8fc40e46fbd6e857e313))
+
+- Replace obsolete stdio live fixtures with HTTP server spawn
+  ([`cb9ea47`](https://github.com/n24q02m/wet/commit/cb9ea4792ecf146ba55ade746ee3b28170bca2c7))
+
+- Require explicit OPENROUTER_MODEL and pre-flight spend gate for benchmark
+  ([#1860](https://github.com/n24q02m/wet/pull/1860),
+  [`4bc5491`](https://github.com/n24q02m/wet/commit/4bc5491cc5d0622dd88e5f7f6b64ad252c428052))
+
+- Slice large body string before lstrip to avoid massive allocations
+  ([#1853](https://github.com/n24q02m/wet/pull/1853),
+  [`6483b2c`](https://github.com/n24q02m/wet/commit/6483b2ce6f02012f32b2a7b46ff4d84ca7738f7e))
+
+- Strip the Go module host with removeprefix in the go.mod detector
+  ([#1876](https://github.com/n24q02m/wet/pull/1876),
+  [`904ae0c`](https://github.com/n24q02m/wet/commit/904ae0c612020a43fa47bea28bd4edd093ff372b))
+
+- Tolerate missing artifact on pre-flight abort in benchmark upload
+  ([#1860](https://github.com/n24q02m/wet/pull/1860),
+  [`4bc5491`](https://github.com/n24q02m/wet/commit/4bc5491cc5d0622dd88e5f7f6b64ad252c428052))
+
+- Upload benchmark artifact before gate, surface cap default, english comments
+  ([#1860](https://github.com/n24q02m/wet/pull/1860),
+  [`4bc5491`](https://github.com/n24q02m/wet/commit/4bc5491cc5d0622dd88e5f7f6b64ad252c428052))
+
+- Use generator return annotations for context managers
+  ([#1872](https://github.com/n24q02m/wet/pull/1872),
+  [`422e5bf`](https://github.com/n24q02m/wet/commit/422e5bf0fd4aa43216a59b5c47b829cb22c17ddf))
+
+- **deps**: Lock file maintenance ([#1897](https://github.com/n24q02m/wet/pull/1897),
+  [`f03dcee`](https://github.com/n24q02m/wet/commit/f03dceed5046d1034cab7175ca3e2a4c9ff4a224))
+
+- **deps**: Lock file maintenance ([#1873](https://github.com/n24q02m/wet/pull/1873),
+  [`9247292`](https://github.com/n24q02m/wet/commit/9247292e9cc86c9e1d9b7961ea395ba5c3f01a5f))
+
+- **deps**: Lock file maintenance ([#1872](https://github.com/n24q02m/wet/pull/1872),
+  [`422e5bf`](https://github.com/n24q02m/wet/commit/422e5bf0fd4aa43216a59b5c47b829cb22c17ddf))
+
+- **deps**: Lock file maintenance ([#1862](https://github.com/n24q02m/wet/pull/1862),
+  [`2b6cf5c`](https://github.com/n24q02m/wet/commit/2b6cf5c8241d99a2bc6b85c4dc558233422669a4))
+
+- **deps**: Lock file maintenance ([#1852](https://github.com/n24q02m/wet/pull/1852),
+  [`6b91569`](https://github.com/n24q02m/wet/commit/6b91569e93bea29bd8c2068bb53886d9b9cd56c8))
+
+- **deps**: Update minor dependencies ([#1882](https://github.com/n24q02m/wet/pull/1882),
+  [`7d75c2c`](https://github.com/n24q02m/wet/commit/7d75c2ce125b9b865b6e6bee01c8331e89052415))
+
+- **deps**: Update minor dependencies ([#1861](https://github.com/n24q02m/wet/pull/1861),
+  [`8d1bae6`](https://github.com/n24q02m/wet/commit/8d1bae6407465e31a9a9c627b1d8286f013f9a91))
+
+- **deps**: Update patch dependencies ([#1883](https://github.com/n24q02m/wet/pull/1883),
+  [`09bfd9d`](https://github.com/n24q02m/wet/commit/09bfd9d14f0ad285436c8efdfc7a076cc9ba958f))
+
+- **deps**: Update python:3.13-slim-bookworm Docker digest to a1165e2
+  ([#1881](https://github.com/n24q02m/wet/pull/1881),
+  [`c170b93`](https://github.com/n24q02m/wet/commit/c170b9354883da53d480cb757f074170d97aeb09))
+
+- **model-sync**: Pull from canonical data/model-candidates branch, not main
+  ([#1867](https://github.com/n24q02m/wet/pull/1867),
+  [`0de9163`](https://github.com/n24q02m/wet/commit/0de916356bc1640038140d6e4ed78a88b65dcd7a))
+
+- **model-sync**: Sticky-issue-only proposals (GITHUB_TOKEN cannot create PRs on personal repos)
+  ([#1868](https://github.com/n24q02m/wet/pull/1868),
+  [`c2b6be6`](https://github.com/n24q02m/wet/commit/c2b6be6689d578ade1426bcd808d356906a2774f))
+
+- **model-sync**: Use resolved issue number for the proposal comment
+  ([#1870](https://github.com/n24q02m/wet/pull/1870),
+  [`19bcbff`](https://github.com/n24q02m/wet/commit/19bcbffa22e7fa8f8783a9081601b0d2d07f5e06))
+
+- **model-sync**: Weekly benchmark model-pin sync + bench/model.txt fallback
+  ([#1866](https://github.com/n24q02m/wet/pull/1866),
+  [`55846d3`](https://github.com/n24q02m/wet/commit/55846d35a8cf359206aea89dcd2268574ff23c53))
+
+### Documentation
+
+- Add HANDOVER.md operational handover (post-de-host stable pack)
+  ([#1865](https://github.com/n24q02m/wet/pull/1865),
+  [`7a74dd0`](https://github.com/n24q02m/wet/commit/7a74dd0acffc75aacff95ac1a92c9c44a489ec31))
+
+### Features
+
+- Add immutable search benchmark contract gating releases
+  ([#1854](https://github.com/n24q02m/wet/pull/1854),
+  [`a8bc5a7`](https://github.com/n24q02m/wet/commit/a8bc5a779923ef945289c78f674a92d22dec7f38))
+
+- Drop per-repo model-sync (hull central leaders issue replaces it)
+  ([#1871](https://github.com/n24q02m/wet/pull/1871),
+  [`0e9b40d`](https://github.com/n24q02m/wet/commit/0e9b40d12442a41ed055a8b2ac99676e89bd9ed0))
+
+- Rewire to the published n24q02m-hull 0.4 dist and mcp 2
+  ([#1898](https://github.com/n24q02m/wet/pull/1898),
+  [`baafe21`](https://github.com/n24q02m/wet/commit/baafe21ec02350db62e902a9728bf49bc48d0e85))
+
+- ⚡ bolt: optimize url path extraction in docs sorting
+  ([#1899](https://github.com/n24q02m/wet/pull/1899),
+  [`7276a1c`](https://github.com/n24q02m/wet/commit/7276a1c38ec259d6f93cfabd79ca2eb2769905ba))
+
+- **jev**: Advisory rerank-gate placement (K1 BỎ) — skip rerank when results suffice
+  ([`d9317f4`](https://github.com/n24q02m/wet/commit/d9317f4e45c026f8bda59db859942726978f4c87))
+
+- **jev**: Advisory search-strategy expand-gate (K1) + refine receipt stopped_at/reason (N6)
+  ([#1863](https://github.com/n24q02m/wet/pull/1863),
+  [`14a6380`](https://github.com/n24q02m/wet/commit/14a63805bcfb198e245e69056b66e186486c2d44))
+
+
 ## v3.19.2 (2026-10-05)
 
 

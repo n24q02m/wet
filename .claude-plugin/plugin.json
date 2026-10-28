@@ -1,7 +1,7 @@
 {
   "name": "wet",
   "description": "Open-source MCP server for AI agents: web search, content extraction, and library docs.",
-  "version": "3.19.2",
+  "version": "3.20.0",
   "userConfig": {
     "OPENROUTER_API_KEY": {
       "type": "string",
