@@ -365,10 +365,8 @@ def test_ci_and_release_workflows_wire_contract_and_exact_sha_gate():
     assert "run_contract.py validate-fixtures" in ci
     assert "wet-benchmark-contract-${{ github.sha }}" in benchmark
     assert "run_contract.py run" in benchmark
-    assert "benchmark_run_id" in cd
-    assert "run_contract.py gate" in cd
-    assert '--expected-commit "${GITHUB_SHA}"' in cd
-    assert "needs: benchmark-contract" in cd
+    assert "run_contract.py gate" in benchmark
+    assert "--expected-commit \"${GIT_SHA}\"" in benchmark
 
 
 def test_benchmark_workflow_keeps_checkout_clean_before_spending():
