@@ -3384,6 +3384,26 @@ async def _try_github_raw_docs(
 # ---------------------------------------------------------------------------
 
 
+_sitemap_skip_patterns = (
+    "/blog/",
+    "/changelog",
+    "/releases",
+    "/feed",
+    "/rss",
+    "/sitemap",
+    "/robots.txt",
+    "/search",
+    "/genindex",
+    "/searchindex",
+    "/modindex",
+    "/_modules/",
+    "/_sources/",
+)
+_SITEMAP_SKIP_PATTERNS_RE = re.compile(
+    "|".join(re.escape(p) for p in _sitemap_skip_patterns)
+)
+
+
 async def _try_sitemap(base_url: str, max_urls: int = 50) -> list[str]:
     """Try fetching sitemap.xml and extracting docs page URLs.
 
@@ -3430,27 +3450,12 @@ async def _try_sitemap(base_url: str, max_urls: int = 50) -> list[str]:
                     urls = re.findall(r"<loc>\s*(.*?)\s*</loc>", text)
 
                 # Filter to same domain, skip non-doc paths
-                skip_patterns = (
-                    "/blog/",
-                    "/changelog",
-                    "/releases",
-                    "/feed",
-                    "/rss",
-                    "/sitemap",
-                    "/robots.txt",
-                    "/search",
-                    "/genindex",
-                    "/searchindex",
-                    "/modindex",
-                    "/_modules/",
-                    "/_sources/",
-                )
                 filtered = []
                 for u in urls:
                     if parsed.netloc not in u:
                         continue
                     u_lower = u.lower()
-                    if not any(skip in u_lower for skip in skip_patterns):
+                    if not _SITEMAP_SKIP_PATTERNS_RE.search(u_lower):
                         filtered.append(u)
 
                 if filtered:
@@ -3460,6 +3465,18 @@ async def _try_sitemap(base_url: str, max_urls: int = 50) -> list[str]:
             continue
 
     return []
+
+
+_inv_skip_patterns = (
+    "changelog",
+    "changes",
+    "genindex",
+    "modindex",
+    "searchindex",
+    "_modules/",
+    "_sources/",
+)
+_INV_SKIP_PATTERNS_RE = re.compile("|".join(re.escape(p) for p in _inv_skip_patterns))
 
 
 async def _try_objects_inv(base_url: str, max_urls: int = 50) -> list[str]:
@@ -3575,18 +3592,7 @@ def _parse_objects_inv(data: bytes, base_url: str) -> list[str]:
             continue
         # Skip non-doc paths
         uri_lower = uri.lower()
-        if any(
-            skip in uri_lower
-            for skip in (
-                "changelog",
-                "changes",
-                "genindex",
-                "modindex",
-                "searchindex",
-                "_modules/",
-                "_sources/",
-            )
-        ):
+        if _INV_SKIP_PATTERNS_RE.search(uri_lower):
             continue
         doc_urls.add(f"{base_url}{uri}")
 
@@ -3705,6 +3711,9 @@ async def fetch_docs_pages(
         "/changelog",
         "/releases",
     )
+    _SKIP_URL_PATTERNS_RE = re.compile(
+        "|".join(re.escape(p) for p in _skip_url_patterns)
+    )
 
     # Detect redirect: if actual URL differs from docs_url (e.g., versioned
     # docs), use the redirected path as prefix to restrict crawling to that
@@ -3741,7 +3750,7 @@ async def fetch_docs_pages(
 
             # Skip generated index/module pages
             path_lower = full_parsed.path.lower()
-            if any(pat in path_lower for pat in _skip_url_patterns):
+            if _SKIP_URL_PATTERNS_RE.search(path_lower):
                 continue
 
             # GitHub-specific: stay within same repo
