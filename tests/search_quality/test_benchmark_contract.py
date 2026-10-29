@@ -357,7 +357,6 @@ def test_provenance_distinguishes_revision_config_provider_and_command_without_s
 
 def test_ci_and_release_workflows_wire_contract_and_exact_sha_gate():
     ci = (REPO_ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
-    cd = (REPO_ROOT / ".github/workflows/cd.yml").read_text(encoding="utf-8")
     benchmark = (REPO_ROOT / ".github/workflows/benchmark.yml").read_text(
         encoding="utf-8"
     )
@@ -366,7 +365,7 @@ def test_ci_and_release_workflows_wire_contract_and_exact_sha_gate():
     assert "wet-benchmark-contract-${{ github.sha }}" in benchmark
     assert "run_contract.py run" in benchmark
     assert "run_contract.py gate" in benchmark
-    assert "--expected-commit \"${GIT_SHA}\"" in benchmark
+    assert '--expected-commit "${GIT_SHA}"' in benchmark
 
 
 def test_benchmark_workflow_keeps_checkout_clean_before_spending():
