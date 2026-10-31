@@ -19,7 +19,10 @@ def test_serverinfo_reports_wet_version() -> None:
     sys.modules.pop("wet.server", None)
     server = importlib.import_module("wet.server")
 
-    wet_version = version("wet-mcp")
+    try:
+        wet_version = version("n24q02m-wet")
+    except Exception:
+        wet_version = version("wet-mcp")
     server_version = server.mcp.version
 
     assert server_version == wet_version

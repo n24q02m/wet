@@ -10,7 +10,7 @@
   "packages": [
     {
       "registryType": "pypi",
-      "identifier": "wet-mcp",
+      "identifier": "n24q02m-wet",
       "version": "3.20.0",
       "runtimeHint": "uvx",
       "runtimeArgs": [
