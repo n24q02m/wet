@@ -103,3 +103,7 @@ closed pull request.
 ## 2025-02-19 - Fast URL path extraction in hot loops
 **Learning:** Using `urllib.parse.urlparse` to extract the URL path inside hot loops like `_score_url_by_query` allocates multiple objects and incurs unnecessary overhead. For standard HTTP(S) URLs, simple string slicing (`str.find`) is significantly faster.
 **Action:** When extracting URL paths in hot paths, check for "http://" or "https://", ensure there is no "@" (basic auth) or "[" (IPv6), and use `url.find("/", ...)` and handle bounds for "?" or "#". Use `urlparse` only as a fallback.
+
+## YYYY-MM-DD - Combine multiple static substring containment checks using re.compile
+**Learning:** When checking for the presence of any of multiple static substrings within a string inside a hot loop (e.g., `any(skip in u_lower for skip in skip_patterns)`), combining the patterns into a single pre-compiled regular expression using alternation (e.g., `re.compile("|".join(re.escape(p) for p in patterns))`) and using `.search(s)` is significantly faster than using `any()` with a generator expression. It safely handles special characters, avoids generator allocation overhead on every iteration, and leverages the C-optimized regex engine, yielding a ~3x speedup.
+**Action:** Replace `any(p in s for p in patterns)` with `PATTERN_RE.search(s)` in hot loops for string containment checks involving multiple static patterns.
