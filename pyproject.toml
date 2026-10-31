@@ -1,5 +1,5 @@
 [project]
-name = "wet-mcp"
+name = "n24q02m-wet"
 version = "3.20.0"
 description = "Open-source MCP server for AI agents: web search, content extraction, and library docs."
 readme = "README.md"
@@ -102,6 +102,7 @@ dev = [
 ]
 
 [project.scripts]
+n24q02m-wet = "wet.cli:main"
 wet = "wet.cli:main"
 wet-mcp = "wet.cli:main"  # legacy command alias (uvx wet-mcp configs)
 

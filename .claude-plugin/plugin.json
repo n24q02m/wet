@@ -79,7 +79,7 @@
       "args": [
         "--python",
         "3.13",
-        "wet-mcp"
+        "n24q02m-wet"
       ],
       "env": {
         "MCP_TRANSPORT": "stdio",

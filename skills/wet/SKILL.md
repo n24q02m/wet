@@ -14,8 +14,7 @@ Wet là CLI/API hạng-1; MCP server là surface phụ: chạy `wet` không subc
 - `wet config` — cấu hình (SYNC_FOLDER, cache, data dir ~/.wet legacy)
 - `wet docs` — truy vấn library docs đã nén
 - `wet warmup` — làm nóng cache
-- `wet relay` — relay form cho MCP HTTP mode
 
 ## Ghi chú
-- Repo + CLI: `wet` (2026-09-13). Package PyPI giữ `wet` (PyPI chặn project name `wet`); data dir `~/.wet` giữ nguyên.
-- MCP surface: `wet` (bare) — passthrough MCP server; legacy entry `wet` của bản cũ vẫn chạy.
+- Repo + CLI: `wet` (2026-09-13). Package PyPI là `n24q02m-wet` (`uvx n24q02m-wet`); data dir `~/.wet` giữ nguyên.
+- MCP surface: `wet` (bare) — passthrough MCP server; legacy entry `wet` và `wet-mcp` của bản cũ vẫn chạy.

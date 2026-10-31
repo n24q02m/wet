@@ -56,10 +56,12 @@ _KEY_RE = re.compile(r"^([A-Za-z0-9_-]+)\s*=")
 
 
 def _version() -> str:
-    try:
-        return f"wet {importlib.metadata.version('wet-mcp')}"
-    except importlib.metadata.PackageNotFoundError:
-        return "wet (unknown version)"
+    for name in ("n24q02m-wet", "wet-mcp", "wet"):
+        try:
+            return f"wet {importlib.metadata.version(name)}"
+        except importlib.metadata.PackageNotFoundError:
+            pass
+    return "wet (unknown version)"
 
 
 def _client_version() -> str:

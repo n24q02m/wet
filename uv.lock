@@ -1694,6 +1694,94 @@ web = [
 ]
 
 [[package]]
+name = "n24q02m-wet"
+version = "3.20.0"
+source = { editable = "." }
+dependencies = [
+    { name = "aiolimiter" },
+    { name = "alembic" },
+    { name = "cryptography" },
+    { name = "diskcache" },
+    { name = "fastretrieval" },
+    { name = "greenlet" },
+    { name = "httpx" },
+    { name = "jsonschema" },
+    { name = "langsmith" },
+    { name = "loguru" },
+    { name = "markitdown", extra = ["docx", "pdf", "pptx", "xlsx"] },
+    { name = "mcp", extra = ["cli"] },
+    { name = "n24q02m-hull", extra = ["web"] },
+    { name = "pillow" },
+    { name = "pydantic" },
+    { name = "pydantic-settings" },
+    { name = "sqlite-vec" },
+    { name = "tiktoken" },
+    { name = "urllib3" },
+    { name = "waitress", marker = "sys_platform == 'win32'" },
+]
+
+[package.optional-dependencies]
+identity = [
+    { name = "n24q02m-hull", extra = ["identity"] },
+]
+invisible = [
+    { name = "n24q02m-hull", extra = ["invisible"] },
+]
+
+[package.dev-dependencies]
+dev = [
+    { name = "pre-commit" },
+    { name = "pytest" },
+    { name = "pytest-asyncio" },
+    { name = "pytest-cov" },
+    { name = "pytest-timeout" },
+    { name = "pytest-xdist" },
+    { name = "ruff" },
+    { name = "syrupy" },
+    { name = "ty" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "aiolimiter", specifier = ">=1.2.1" },
+    { name = "alembic", specifier = ">=1.18.5" },
+    { name = "cryptography", specifier = ">=50.0.0" },
+    { name = "diskcache", specifier = ">=5.6.3" },
+    { name = "fastretrieval", specifier = ">=1.1.0,<2" },
+    { name = "greenlet", specifier = "<3.5.7" },
+    { name = "httpx" },
+    { name = "jsonschema", specifier = ">=4.26.0" },
+    { name = "langsmith", specifier = ">=0.10.10" },
+    { name = "loguru" },
+    { name = "markitdown", extras = ["pdf", "docx", "pptx", "xlsx"] },
+    { name = "mcp", extras = ["cli"], specifier = ">=2.3.0,<3" },
+    { name = "n24q02m-hull", extras = ["identity"], marker = "extra == 'identity'", specifier = ">=0.4,<0.5" },
+    { name = "n24q02m-hull", extras = ["invisible"], marker = "extra == 'invisible'", specifier = ">=0.4,<0.5" },
+    { name = "n24q02m-hull", extras = ["web"], specifier = ">=0.4,<0.5" },
+    { name = "pillow", specifier = ">=12.3.0" },
+    { name = "pydantic", specifier = ">=2.13.4,<2.15" },
+    { name = "pydantic-settings" },
+    { name = "sqlite-vec" },
+    { name = "tiktoken", specifier = ">=0.12" },
+    { name = "urllib3", specifier = ">=2.7.0" },
+    { name = "waitress", marker = "sys_platform == 'win32'", specifier = ">=3.0.2" },
+]
+provides-extras = ["identity", "invisible"]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "pre-commit" },
+    { name = "pytest" },
+    { name = "pytest-asyncio" },
+    { name = "pytest-cov", specifier = ">=7.1.0" },
+    { name = "pytest-timeout" },
+    { name = "pytest-xdist", specifier = ">=3.8.0" },
+    { name = "ruff" },
+    { name = "syrupy", specifier = ">=5.5.3" },
+    { name = "ty" },
+]
+
+[[package]]
 name = "networkx"
 version = "3.7"
 source = { registry = "https://pypi.org/simple" }
@@ -3077,94 +3165,6 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/7d/6c/db5c907d1cbea84444bc759ff63db97fc586988d11a34d5565e8b50080fa/websockets-17.3-cp313-cp313-win_amd64.whl", hash = "sha256:66027e401c70d0cf55021b91b8a7ec2cd5810e20602f945b4fe6ae8b37ed232b", size = 219026, upload-time = "2026-10-19T16:55:50.688Z" },
     { url = "https://files.pythonhosted.org/packages/f1/d3/30f04bec5b9cf0c00c98c038494b210ece923a0b05b6df38a162b759e5ed/websockets-17.3-cp313-cp313-win_arm64.whl", hash = "sha256:6b14914e67044724c31a9360c7b89e9d070117c630746eefdc1620d967545acd", size = 218958, upload-time = "2026-10-19T16:55:52.085Z" },
     { url = "https://files.pythonhosted.org/packages/d7/b0/3f01fcb3406662f6deb1e3e72b34dd0979e993991c0b7435a9e12bc14f02/websockets-17.3-py3-none-any.whl", hash = "sha256:dc2b495a92b3971966bf102e73589f950db3ec1ca6713265355ce7771d97b199", size = 212375, upload-time = "2026-10-19T16:58:04.483Z" },
-]
-
-[[package]]
-name = "wet-mcp"
-version = "3.19.2"
-source = { editable = "." }
-dependencies = [
-    { name = "aiolimiter" },
-    { name = "alembic" },
-    { name = "cryptography" },
-    { name = "diskcache" },
-    { name = "fastretrieval" },
-    { name = "greenlet" },
-    { name = "httpx" },
-    { name = "jsonschema" },
-    { name = "langsmith" },
-    { name = "loguru" },
-    { name = "markitdown", extra = ["docx", "pdf", "pptx", "xlsx"] },
-    { name = "mcp", extra = ["cli"] },
-    { name = "n24q02m-hull", extra = ["web"] },
-    { name = "pillow" },
-    { name = "pydantic" },
-    { name = "pydantic-settings" },
-    { name = "sqlite-vec" },
-    { name = "tiktoken" },
-    { name = "urllib3" },
-    { name = "waitress", marker = "sys_platform == 'win32'" },
-]
-
-[package.optional-dependencies]
-identity = [
-    { name = "n24q02m-hull", extra = ["identity"] },
-]
-invisible = [
-    { name = "n24q02m-hull", extra = ["invisible"] },
-]
-
-[package.dev-dependencies]
-dev = [
-    { name = "pre-commit" },
-    { name = "pytest" },
-    { name = "pytest-asyncio" },
-    { name = "pytest-cov" },
-    { name = "pytest-timeout" },
-    { name = "pytest-xdist" },
-    { name = "ruff" },
-    { name = "syrupy" },
-    { name = "ty" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "aiolimiter", specifier = ">=1.2.1" },
-    { name = "alembic", specifier = ">=1.18.5" },
-    { name = "cryptography", specifier = ">=50.0.0" },
-    { name = "diskcache", specifier = ">=5.6.3" },
-    { name = "fastretrieval", specifier = ">=1.1.0,<2" },
-    { name = "greenlet", specifier = "<3.5.7" },
-    { name = "httpx" },
-    { name = "jsonschema", specifier = ">=4.26.0" },
-    { name = "langsmith", specifier = ">=0.10.10" },
-    { name = "loguru" },
-    { name = "markitdown", extras = ["pdf", "docx", "pptx", "xlsx"] },
-    { name = "mcp", extras = ["cli"], specifier = ">=2.3.0,<3" },
-    { name = "n24q02m-hull", extras = ["identity"], marker = "extra == 'identity'", specifier = ">=0.4,<0.5" },
-    { name = "n24q02m-hull", extras = ["invisible"], marker = "extra == 'invisible'", specifier = ">=0.4,<0.5" },
-    { name = "n24q02m-hull", extras = ["web"], specifier = ">=0.4,<0.5" },
-    { name = "pillow", specifier = ">=12.3.0" },
-    { name = "pydantic", specifier = ">=2.13.4,<2.15" },
-    { name = "pydantic-settings" },
-    { name = "sqlite-vec" },
-    { name = "tiktoken", specifier = ">=0.12" },
-    { name = "urllib3", specifier = ">=2.7.0" },
-    { name = "waitress", marker = "sys_platform == 'win32'", specifier = ">=3.0.2" },
-]
-provides-extras = ["identity", "invisible"]
-
-[package.metadata.requires-dev]
-dev = [
-    { name = "pre-commit" },
-    { name = "pytest" },
-    { name = "pytest-asyncio" },
-    { name = "pytest-cov", specifier = ">=7.1.0" },
-    { name = "pytest-timeout" },
-    { name = "pytest-xdist", specifier = ">=3.8.0" },
-    { name = "ruff" },
-    { name = "syrupy", specifier = ">=5.5.3" },
-    { name = "ty" },
 ]
 
 [[package]]
