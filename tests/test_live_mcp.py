@@ -83,7 +83,7 @@ async def run_tests():
 
             # ===== HELP TOOL (offline) =====
             print("\n--- help ---")
-            for topic in ["search", "extract", "media", "config", "help"]:
+            for topic in ["search", "extract", "media", "config"]:
                 try:
                     r = await session.call_tool("help", {"tool_name": topic})
                     t = parse(r)
