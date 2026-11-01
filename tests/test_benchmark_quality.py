@@ -265,9 +265,16 @@ def test_benchmark_environment_scoped(monkeypatch):
 
 @pytest.fixture
 def isolated_wet_server(monkeypatch):
-    """Import the real ``wet.server`` without opening the user's docs DB."""
+    """Import the real ``wet.server`` without opening the user's docs DB.
+
+    ``_import_direct_tools`` pins ``transport_check._UVX_TOOL_VENV_CACHE``;
+    re-setting it through ``monkeypatch`` restores the original value on
+    teardown so no other test sees the pinned state.
+    """
+    import wet.transport_check as tc
     from wet import server as wet_server
 
+    monkeypatch.setattr(tc, "_UVX_TOOL_VENV_CACHE", tc._UVX_TOOL_VENV_CACHE)
     monkeypatch.setattr(wet_server, "_docs_db", object())
     return wet_server
 
@@ -280,6 +287,21 @@ def test_load_direct_tools_resolves_real_server_symbols(isolated_wet_server):
     assert search is isolated_wet_server.search
     assert callable(extract)
     assert callable(search)
+
+
+def test_direct_tools_pin_is_scoped_to_the_monkeypatch(monkeypatch):
+    """The loader pins the uvx-venv cache; the fixture pattern must undo it."""
+    import wet.transport_check as tc
+    from wet import server as wet_server
+
+    original = tc._UVX_TOOL_VENV_CACHE
+    with monkeypatch.context() as scoped:
+        scoped.setattr(tc, "_UVX_TOOL_VENV_CACHE", original)
+        scoped.setattr(wet_server, "_docs_db", object())
+        _load_direct_tools()
+        assert tc._UVX_TOOL_VENV_CACHE is False
+
+    assert tc._UVX_TOOL_VENV_CACHE is original
 
 
 @pytest.mark.asyncio

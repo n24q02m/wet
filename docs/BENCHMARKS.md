@@ -18,7 +18,12 @@ pages, credentials, or user content.
 Run the local direct benchmark from the repository root:
 
 ```bash
-uv run python scripts/benchmark_quality.py   --corpus tests/fixtures/benchmark/wet-quality-corpus.jsonl   --mode stdio   --backend searxng   --output-jsonl /path/to/wet-benchmark.jsonl   --output-summary /path/to/wet-benchmark-summary.json
+uv run python scripts/benchmark_quality.py \
+  --corpus tests/fixtures/benchmark/wet-quality-corpus.jsonl \
+  --mode stdio \
+  --backend searxng \
+  --output-jsonl /path/to/wet-benchmark.jsonl \
+  --output-summary /path/to/wet-benchmark-summary.json
 ```
 
 `--mode stdio` is a historical flag name: wet no longer has a stdio transport
