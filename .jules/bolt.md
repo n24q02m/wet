@@ -103,3 +103,7 @@ closed pull request.
 ## 2025-02-19 - Fast URL path extraction in hot loops
 **Learning:** Using `urllib.parse.urlparse` to extract the URL path inside hot loops like `_score_url_by_query` allocates multiple objects and incurs unnecessary overhead. For standard HTTP(S) URLs, simple string slicing (`str.find`) is significantly faster.
 **Action:** When extracting URL paths in hot paths, check for "http://" or "https://", ensure there is no "@" (basic auth) or "[" (IPv6), and use `url.find("/", ...)` and handle bounds for "?" or "#". Use `urlparse` only as a fallback.
+
+## 2026-10-15 - Fast URL hostname extraction in hot loops
+**Learning:** Using `urllib.parse.urlparse` just to check the hostname of a URL in a hot loop (like parsing search results) allocates multiple objects and is significantly slower than direct string manipulation.
+**Action:** Use fast string slicing (`str.find`) and an early containment check (`in`) to extract the domain, avoiding the overhead of full URL parsing.

@@ -851,7 +851,24 @@ class StartpageBackend:
             # avoiding urllib.parse.urlparse allocation for the vast majority of URLs
             # yields a ~10x speedup for this domain block check by using a fast string containment path
             if "startpage" in href:
-                host = urlparse(href).hostname or ""
+                if (
+                    href.startswith(("http://", "https://"))
+                    and "@" not in href
+                    and "[" not in href
+                ):
+                    start = href.find("://") + 3
+                    end = len(href)
+                    for c in "/?#":
+                        idx = href.find(c, start)
+                        if idx != -1 and idx < end:
+                            end = idx
+                    host = href[start:end]
+                    if ":" in host:
+                        host = host.partition(":")[0]
+                    host = host.lower()
+                else:
+                    host = urlparse(href).hostname or ""
+
                 if host == "startpage.com" or host.endswith(".startpage.com"):
                     continue
 
