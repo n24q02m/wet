@@ -1,6 +1,6 @@
 # WET - Web Extended Toolkit MCP Server
 
-> **Distribution & CLI:** the repo, CLI and Python module are `wet`. The PyPI distribution is **`n24q02m-wet`** (install `pip install n24q02m-wet` / `uvx n24q02m-wet`). The MCP server remains available: run `wet` with no subcommand (bare = MCP passthrough); the legacy aliases `wet` and `wet-mcp` remain available.
+> **Distribution & CLI:** the repo, CLI and Python module are `wet`. The PyPI distribution is **`n24q02m-wet`** (install `pip install n24q02m-wet` / `uvx n24q02m-wet`). wet is an HTTP-only MCP server: start it with `wet server start` and point clients at `http://127.0.0.1:8000/mcp`. There is no stdio mode; a bare `wet` prints the control-plane usage. The `wet` and `wet-mcp` aliases remain available.
 
 mcp-name: io.github.n24q02m/wet
 
@@ -101,37 +101,35 @@ mcp-name: io.github.n24q02m/wet
 /plugin marketplace add n24q02m/claude-plugins
 /plugin install wet@n24q02m-plugins
 
-# Method 2 (CLI): direct uvx invocation
-claude mcp add wet -- uvx n24q02m-wet
+# Method 2 (CLI): start a local instance, then register its HTTP endpoint
+uvx --python 3.13 --from n24q02m-wet wet server start
+claude mcp add --transport http wet http://127.0.0.1:8000/mcp
 
-# Method 3 (source-built container for HTTP / multi-device / OAuth)
-docker build --target http -t wet:local .
-docker run -d --name wet-http -p 8084:8080 \
-  -v wet-data:/data -e PUBLIC_URL=https://wet.example.com \
-  wet:local
+# Method 3 (always-on): compose stack from a clone of this repo (token auth)
+docker compose up --build -d
 
 # Method 4 (remote): point a client at an HTTP deployment
 claude mcp add --transport http wet https://<your-host>/mcp
 ```
 
-Install matrix (stdio unless noted; see the [Setup](https://mcp.n24q02m.com/servers/wet/setup/) page for full steps):
+Every method needs a running instance: wet never runs as a client-spawned subprocess. Install matrix (all Streamable HTTP; see the [Setup](https://mcp.n24q02m.com/servers/wet/setup/) page for full steps):
 
 | Client | Install |
 |---|---|
-| Claude Code (plugin) | `/plugin marketplace add n24q02m/claude-plugins` then `/plugin install wet@n24q02m-plugins` |
-| Claude Code (stdio) | `claude mcp add wet -- uvx n24q02m-wet` |
-| Codex | register stdio command `uvx n24q02m-wet` under `mcp_servers` in `~/.codex/config.toml` |
+| Claude Code (plugin) | `/plugin marketplace add n24q02m/claude-plugins` then `/plugin install wet@n24q02m-plugins` (set `WET_URL`, default `http://127.0.0.1:8000/mcp`; optional `WET_TOKEN`); start the instance first |
+| Claude Code (CLI) | `claude mcp add --transport http wet http://127.0.0.1:8000/mcp` |
+| Codex | register the HTTP URL under `mcp_servers` in `~/.codex/config.toml` |
 | Gemini CLI | add the `mcpServers` JSON below to `~/.gemini/settings.json` |
 | Cursor / Windsurf | add the `mcpServers` JSON below via the client's MCP settings (`mcp.json`) |
-| Any client (HTTP self-host) | point the client at `https://<your-host>/mcp` (Streamable HTTP, OAuth-gated) |
+| Any client (HTTP self-host) | point the client at `https://<your-host>/mcp` (Streamable HTTP, Bearer token when `auth = "token"` / `"multi"`) |
 
 Public OCI image publication is discontinued. Existing historical registry tags
 remain untouched; new container deployments build from source or use the
 Cloudflare-managed registry.
 
-The HTTP endpoint speaks Streamable HTTP and is OAuth-gated -- your client is
-prompted to authenticate in the browser on first connect (no API key to paste).
-Stand one up via Method 3.
+The HTTP endpoint speaks Streamable HTTP. With `auth = "token"` or `"multi"`
+the client sends `Authorization: Bearer <token>`; `no-auth` is loopback-only.
+Stand one up via Method 2 or 3.
 
 Full setup matrices live at the canonical docs site
 [mcp.n24q02m.com/servers/wet/setup/](https://mcp.n24q02m.com/servers/wet/setup/)
@@ -151,7 +149,7 @@ spawned subprocess of a client — register the endpoint in your client instead.
 ```bash
 git clone https://github.com/n24q02m/wet && cd wet
 uv run wet config init            # writes ~/.wet/config.toml (default: auth = "no-auth")
-uv run wet                        # serves http://127.0.0.1:8000/mcp
+uv run wet server start           # serves http://127.0.0.1:8000/mcp (--foreground to stay attached)
 ```
 
 `no-auth` refuses non-loopback binds — the server is localhost-only until you
@@ -187,8 +185,8 @@ config takes effect on `docker compose restart`.
 ### Consumers
 
 ```bash
-# CLI (same token, JSON-RPC over HTTP not needed — use the installed CLI):
-uvx n24q02m-wet --help                  # or `wet <tool>` for direct tool calls
+# CLI (talks to the running server over HTTP; exits 2 with a hint when none runs):
+uvx --python 3.13 --from n24q02m-wet wet search "<query>"
 
 # MCP client (Claude Code):
 claude mcp add --transport http wet http://127.0.0.1:8000/mcp \
@@ -282,19 +280,16 @@ per capability (e.g. on a slim container that renders/searches/embeds via cloud
 backends only): `DISABLE_LOCAL_BROWSER`, `DISABLE_LOCAL_SEARCH`,
 `DISABLE_LOCAL_EMBED`, `DISABLE_LOCAL_RERANK`.
 
-**HTTP self-host** -- `MCP_TRANSPORT=http`, `PUBLIC_URL=<your-domain>`. Configure token authentication via `token_hash` in `config.toml` or Streamable HTTP with OAuth.
+**Auth** -- `[server] auth` in `~/.wet/config.toml` is `no-auth` (loopback only), `token` (store only `token_hash`, see `wet token hash`) or `multi` (per-user tokens). Server-host settings such as `OPENROUTER_API_KEY` belong to the process that runs `wet server start` (or the compose environment), not to the MCP client config.
 
-Example stdio config (one OpenRouter key powers every provider cell):
+Example client config (add `headers` with the Bearer token for `token` / `multi`):
 
 ```json
 {
   "mcpServers": {
     "wet": {
-      "command": "uvx",
-      "args": ["n24q02m-wet"],
-      "env": {
-        "OPENROUTER_API_KEY": "sk-or-xxx"
-      }
+      "type": "http",
+      "url": "http://127.0.0.1:8000/mcp"
     }
   }
 }
@@ -307,9 +302,9 @@ in the file.
 
 ## Status
 
-Stable architecture with two transports: **stdio** (default, local) and
-**HTTP** (self-host, OAuth-gated). No daemon-bridge layer and no auto-spawn
-from stdio. The `media.analyze` action was removed in the v2.0.0 BREAKING
+Stable architecture with a single transport: Streamable HTTP, always served by
+`wet server start` (self-host). No stdio mode, no daemon-bridge layer and no
+auto-spawn by clients. The `media.analyze` action was removed in the v2.0.0 BREAKING
 release -- see [`docs/migration.md`](docs/migration.md) for the upgrade
 recipe. Current release line: v3.x.
 
@@ -318,7 +313,7 @@ recipe. Current release line: v3.x.
 Full docs at **[mcp.n24q02m.com/servers/wet/setup/](https://mcp.n24q02m.com/servers/wet/setup/)**:
 
 - [Setup](https://mcp.n24q02m.com/servers/wet/setup/) -- install methods for Claude Code, Codex, Gemini CLI, Cursor, Windsurf, mcp.json
-- [Modes overview](https://mcp.n24q02m.com/get-started/modes-overview/) -- stdio / http
+- [Modes overview](https://mcp.n24q02m.com/get-started/modes-overview/) -- transports and HTTP auth modes
 - [Multi-user setup](https://mcp.n24q02m.com/get-started/multi-user/) -- per-JWT-sub credential model
 
 In-repo references (Spec F single source of truth: setup docs live in
@@ -352,15 +347,14 @@ In-repo references (Spec F single source of truth: setup docs live in
 
 ## CLI
 
-The package installs three console scripts: **`n24q02m-wet`** (primary package command), `wet` (short alias), and `wet-mcp` (legacy alias kept so existing `uvx wet-mcp` configs keep working). A bare
-invocation (or any leading-dash flag) starts the server; a leading positional
-argument is dispatched as a subcommand.
+The package installs three console scripts: **`n24q02m-wet`** (primary package command), `wet` (short alias), and `wet-mcp` (legacy alias). `wet` is the control plane for the HTTP server plus one thin client; a bare invocation prints its usage.
 
 ```bash
 uvx --from n24q02m-wet wet warmup   # try a subcommand without a persistent install
 
-wet                             # start the server over stdio (default transport)
-wet --http                      # start the server over Streamable HTTP (self-host mode)
+wet server start                # start the Streamable HTTP server (detached; --foreground to attach)
+wet server status               # pid, lock and HTTP liveness
+wet server stop
 
 wet auth google                 # authorize the Google credential provider for Drive sync
 wet logout                      # clear the local Google Drive sync token
@@ -401,10 +395,9 @@ uv run wet
 ## Smithery
 
 wet ships a [`smithery.yaml`](smithery.yaml) so it can be installed and run
-through [Smithery](https://smithery.ai). The manifest declares a stdio start
-command (`uvx --python 3.13 n24q02m-wet`) with an empty config schema -- no config is
-required to start, and providers and credentials are configured at runtime via
-the server's own config flow (see [Configuration](#configuration)).
+through [Smithery](https://smithery.ai). The manifest still declares a stdio
+start command (`uvx --python 3.13 n24q02m-wet`); wet has no stdio mode, so that
+manifest does not produce a working server until it is reworked for HTTP.
 
 ## Trust Model
 
@@ -412,8 +405,8 @@ This plugin implements **TC-Local** (machine-bound, single trust principal). See
 
 | Mode | Storage | Encryption | Who can read your data? |
 |---|---|---|---|
-| stdio (default) | `~/.wet/config.json` | AES-GCM, machine-bound key | Only your OS user (file perm 0600) |
-| HTTP self-host | Same as stdio | Same | Only you (admin = user) |
+| HTTP, `no-auth` (loopback) | `~/.wet/` | Machine-bound key | Only your OS user (file perm 0600) |
+| HTTP, `token` / `multi` | `~/.wet/` (`subs/<sub>/` for `multi`) | Same | Holders of a token; `multi` separates each user |
 
 ## License
 

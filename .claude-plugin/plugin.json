@@ -3,58 +3,17 @@
   "description": "Open-source MCP server for AI agents: web search, content extraction, and library docs.",
   "version": "3.20.0",
   "userConfig": {
-    "OPENROUTER_API_KEY": {
+    "WET_URL": {
       "type": "string",
-      "title": "OpenRouter API key (optional)",
-      "description": "Single default credential: serves every [models.*] provider cell that keeps the OpenRouter default base_url, plus the openrouter search backend. Per-task keys may instead live in ~/.wet/config.toml or be injected via HULL_EMBED_API_KEY / HULL_RERANK_API_KEY / HULL_CHAT_API_KEY / HULL_JEV_SCORE_API_KEY. https://openrouter.ai/settings/keys",
-      "sensitive": true,
+      "title": "wet server URL",
+      "description": "Streamable HTTP endpoint of a running wet instance. Start one first with `uvx --python 3.13 --from wet-mcp wet server start` (or docker compose); the default matches the server's default bind http://127.0.0.1:8000/mcp.",
+      "default": "http://127.0.0.1:8000/mcp",
       "required": false
     },
-    "SEARCH_BACKENDS": {
+    "WET_TOKEN": {
       "type": "string",
-      "title": "Search backend chain (optional)",
-      "description": "Ordered runtime fallback chain: searxng | tavily | brave | exa | kagi | openrouter | firecrawl | duckduckgo | startpage. Empty = embedded local SearXNG.",
-      "required": false
-    },
-    "TAVILY_API_KEY": {
-      "type": "string",
-      "title": "Tavily API key (optional)",
-      "description": "Enables the tavily search backend. https://tavily.com",
-      "sensitive": true,
-      "required": false
-    },
-    "BRAVE_API_KEY": {
-      "type": "string",
-      "title": "Brave API key (optional)",
-      "description": "Enables the brave search backend. https://brave.com/search/api/",
-      "sensitive": true,
-      "required": false
-    },
-    "EXA_API_KEY": {
-      "type": "string",
-      "title": "Exa API key (optional)",
-      "description": "Enables the exa search backend. https://exa.ai",
-      "sensitive": true,
-      "required": false
-    },
-    "KAGI_API_KEY": {
-      "type": "string",
-      "title": "Kagi API key (optional)",
-      "description": "Enables the kagi search backend. https://kagi.com/settings?p=api",
-      "sensitive": true,
-      "required": false
-    },
-    "FIRECRAWL_API_KEY": {
-      "type": "string",
-      "title": "Firecrawl API key (optional)",
-      "description": "Enables the firecrawl search backend (keyless attempt when absent). https://firecrawl.dev",
-      "sensitive": true,
-      "required": false
-    },
-    "GITHUB_TOKEN": {
-      "type": "string",
-      "title": "GitHub personal access token (optional)",
-      "description": "Optional. Bumps GitHub API rate limit (60->5000 req/hr) for library docs discovery. https://github.com/settings/tokens",
+      "title": "wet bearer token (optional)",
+      "description": "Shared bearer token when the instance uses auth = \"token\" / \"multi\"; leave empty for a loopback no-auth instance.",
       "sensitive": true,
       "required": false
     }
@@ -75,22 +34,10 @@
   ],
   "mcpServers": {
     "wet": {
-      "command": "uvx",
-      "args": [
-        "--python",
-        "3.13",
-        "n24q02m-wet"
-      ],
-      "env": {
-        "MCP_TRANSPORT": "stdio",
-        "OPENROUTER_API_KEY": "${user_config.OPENROUTER_API_KEY}",
-        "SEARCH_BACKENDS": "${user_config.SEARCH_BACKENDS}",
-        "TAVILY_API_KEY": "${user_config.TAVILY_API_KEY}",
-        "BRAVE_API_KEY": "${user_config.BRAVE_API_KEY}",
-        "EXA_API_KEY": "${user_config.EXA_API_KEY}",
-        "KAGI_API_KEY": "${user_config.KAGI_API_KEY}",
-        "FIRECRAWL_API_KEY": "${user_config.FIRECRAWL_API_KEY}",
-        "GITHUB_TOKEN": "${user_config.GITHUB_TOKEN}"
+      "type": "http",
+      "url": "${user_config.WET_URL}",
+      "headers": {
+        "Authorization": "Bearer ${user_config.WET_TOKEN}"
       }
     }
   }
