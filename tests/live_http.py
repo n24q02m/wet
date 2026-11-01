@@ -34,6 +34,25 @@ EXPECTED_WET_TOOLS = [
 ]
 
 
+def playwright_browsers_path() -> str:
+    """Resolve the real Playwright browser cache before HOME/LOCALAPPDATA move.
+
+    The tmp instance home redirects the per-user dirs Playwright derives its
+    default cache from, so the spawned server would otherwise find no browser
+    and every crawl/map/list_media call would fail to start Chromium.
+    """
+    explicit = os.environ.get("PLAYWRIGHT_BROWSERS_PATH")
+    if explicit:
+        return explicit
+    if sys.platform == "win32":
+        base = Path(os.environ.get("LOCALAPPDATA", Path.home() / "AppData" / "Local"))
+    elif sys.platform == "darwin":
+        base = Path.home() / "Library" / "Caches"
+    else:
+        base = Path(os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache"))
+    return str(base / "ms-playwright")
+
+
 def free_port() -> int:
     """Reserve an ephemeral loopback port for the spawned server."""
     with socket.socket() as sock:
@@ -48,6 +67,7 @@ def wet_server_env(tmp_path: Path, *, searxng_url: str | None = None) -> dict:
     env = {
         **os.environ,
         "LOG_LEVEL": "WARNING",
+        "PLAYWRIGHT_BROWSERS_PATH": playwright_browsers_path(),
         # Windows Path.home() reads USERPROFILE; POSIX reads HOME.
         "HOME": str(local_state),
         "USERPROFILE": str(local_state),

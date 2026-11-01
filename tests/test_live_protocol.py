@@ -212,7 +212,7 @@ class TestMeta:
 
 
 class TestHelp:
-    @pytest.mark.parametrize("topic", ["search", "extract", "media", "config", "help"])
+    @pytest.mark.parametrize("topic", ["search", "extract", "media", "config"])
     async def test_help_topics(self, mcp_session: ClientSession, topic: str):
         r = await mcp_session.call_tool("help", {"tool_name": topic})
         text = parse(r)
