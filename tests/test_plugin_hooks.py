@@ -8,9 +8,14 @@ PLUGIN_ROOT_VAR = "${CLAUDE_PLUGIN_ROOT}"
 
 
 def _commands() -> list[str]:
+    """Return hook commands without the shell quotes around the script path.
+
+    The manifest quotes the path so a plugin root containing spaces still
+    resolves; the quotes are shell syntax, not part of the path.
+    """
     manifest = json.loads((ROOT / "hooks" / "hooks.json").read_text(encoding="utf-8"))
     return [
-        hook["command"]
+        hook["command"].strip('"')
         for groups in manifest["hooks"].values()
         for group in groups
         for hook in group["hooks"]
