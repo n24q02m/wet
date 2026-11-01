@@ -120,3 +120,35 @@ def test_legacy_qwen_cache_variable_does_not_select_cache(tmp_path, monkeypatch)
     assert result == str(active_model)
     assert not active_model.exists()
     assert legacy_model.exists()
+
+
+def test_registry_manifest_declares_http_only_and_command_parses_with_wet_cli():
+    """wet 3.20 has no stdio mode: server.json must describe the HTTP server.
+
+    The advertised package arguments must parse with the real CLI parser and
+    the transport URL must point at the port those arguments bind.
+    """
+    from wet.cli import _cmd_server_start, build_parser
+
+    package = json.loads(_read("server.json"))["packages"][0]
+    transport = package["transport"]
+    assert transport["type"] == "streamable-http"
+
+    argv: list[str] = []
+    port_arg = None
+    for arg in package["packageArguments"]:
+        if arg["type"] == "positional":
+            argv.append(arg["value"])
+            continue
+        argv.append(arg["name"])
+        if arg["name"] == "--port":
+            port_arg = arg
+            argv.append(arg["default"])
+
+    assert port_arg is not None
+    assert transport["url"] == "http://127.0.0.1:{--port}/mcp"
+
+    args = build_parser().parse_args(argv)
+    assert args.func is _cmd_server_start
+    assert args.foreground is True
+    assert str(args.port) == port_arg["default"]

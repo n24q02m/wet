@@ -72,7 +72,6 @@ mcp-name: io.github.n24q02m/wet
 - [Comparison](#comparison)
 - [Security](#security)
 - [Build from Source](#build-from-source)
-- [Smithery](#smithery)
 - [Trust Model](#trust-model)
 - [License](#license)
 
@@ -397,14 +396,6 @@ cd wet
 uv sync
 uv run wet
 ```
-
-## Smithery
-
-wet ships a [`smithery.yaml`](smithery.yaml) so it can be installed and run
-through [Smithery](https://smithery.ai). The manifest declares a stdio start
-command (`uvx --python 3.13 n24q02m-wet`) with an empty config schema -- no config is
-required to start, and providers and credentials are configured at runtime via
-the server's own config flow (see [Configuration](#configuration)).
 
 ## Trust Model
 

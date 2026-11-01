@@ -13,12 +13,48 @@
       "identifier": "n24q02m-wet",
       "version": "3.20.0",
       "runtimeHint": "uvx",
-      "runtimeArgs": [
-        "--python",
-        "3.13"
+      "runtimeArguments": [
+        {
+          "type": "named",
+          "name": "--python",
+          "value": "3.13",
+          "description": "Python interpreter version for uvx"
+        }
+      ],
+      "packageArguments": [
+        {
+          "type": "positional",
+          "value": "server"
+        },
+        {
+          "type": "positional",
+          "value": "start"
+        },
+        {
+          "type": "named",
+          "name": "--foreground",
+          "description": "Run the HTTP server in this process instead of detaching",
+          "isRequired": true
+        },
+        {
+          "type": "named",
+          "name": "--port",
+          "description": "Bind port for the wet HTTP server (loopback bind; MCP endpoint at /mcp)",
+          "default": "8000",
+          "format": "number"
+        }
       ],
       "transport": {
-        "type": "stdio"
+        "type": "streamable-http",
+        "url": "http://127.0.0.1:{--port}/mcp",
+        "headers": [
+          {
+            "name": "Authorization",
+            "description": "Bearer token; only needed when [server] auth is 'token' or 'multi' in ~/.wet/config.toml (no-auth loopback needs none)",
+            "isRequired": false,
+            "isSecret": true
+          }
+        ]
       },
       "environmentVariables": [
         {
