@@ -4,8 +4,6 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-pytest_plugins = ["conftest_e2e"]
-
 
 class _AvailableBothWays:
     """``check_available`` stub usable from both sync and async call sites.

@@ -2,13 +2,14 @@
 
 Operational handover for [wet](https://github.com/n24q02m/wet) — MCP server
 for web search, content extraction, and library docs. Current stable line:
-**wet-mcp 3.19.x**.
+**n24q02m-wet 3.20.x**.
 
 ## Current operation
 
-- PyPI dist: `wet-mcp`. Repo, CLI and module are `wet`; console scripts are
-  `wet` (primary) and `wet-mcp` (legacy alias kept so existing
-  `uvx wet-mcp` configs keep working).
+- PyPI dist: `n24q02m-wet` (renamed from `wet-mcp`; see
+  `docs/adr/0001-binary-names.md`). Repo, CLI and module are `wet`; console
+  scripts are `n24q02m-wet` (canonical), `wet` (short alias) and `wet-mcp`
+  (legacy alias kept so existing `uvx wet-mcp` configs keep working).
 - Transports: **stdio** (default, local — a bare `wet` invocation is the MCP
   passthrough) and **HTTP** (self-host, OAuth-gated; `wet --http`). No
   daemon-bridge layer and no auto-spawn from stdio.
@@ -22,13 +23,13 @@ for web search, content extraction, and library docs. Current stable line:
 ## Install
 
 ```bash
-uvx wet-mcp                       # run the stdio server without a persistent install
-claude mcp add wet -- uvx wet-mcp # Claude Code (stdio)
-pip install wet-mcp               # persistent install (CLI + server)
-uvx --from wet-mcp wet warmup     # try a subcommand without a persistent install
+uvx n24q02m-wet                       # run the stdio server without a persistent install
+claude mcp add wet -- uvx n24q02m-wet # Claude Code (stdio)
+pip install n24q02m-wet               # persistent install (CLI + server)
+uvx --from n24q02m-wet wet warmup     # try a subcommand without a persistent install
 ```
 
-Extras: `wet-mcp[identity]`, `wet-mcp[invisible]` (n24q02m-hull passthrough;
+Extras: `n24q02m-wet[identity]`, `n24q02m-wet[invisible]` (n24q02m-hull passthrough;
 `[invisible]` adds the stealth browser stack). Claude Code plugin:
 `/plugin install wet@n24q02m-plugins`.
 
@@ -92,16 +93,10 @@ uv run wet
 
 ## Multi-user HTTP self-host
 
-`MCP_TRANSPORT=http`, `PUBLIC_URL=<your-domain>`; the setup form is gated by
-`MCP_RELAY_PASSWORD`. Multi-user deployments require `CREDENTIAL_SECRET`
+`MCP_TRANSPORT=http`, `PUBLIC_URL=<your-domain>`. Multi-user deployments require `CREDENTIAL_SECRET`
 (per-user vault key), `MCP_JWT_SIGNING_SECRET` (rotatable OAuth JWT key), and
 `MCP_DCR_SERVER_SECRET`. Credentials/tokens live per JWT sub
 (`~/.wet/subs/<sub>/`).
-
-Docs sync: `SYNC_ENABLED` (default `true`), `GOOGLE_DRIVE_CLIENT_ID`,
-`SYNC_FOLDER` (default `wet`), `SYNC_INTERVAL` (default `300`s), optional
-`SYNC_S3_BUCKET`; `DOCS_DB_BACKEND=cf-d1` disables file sync including
-automatic startup.
 
 ## Data and safety invariants
 

@@ -110,7 +110,7 @@ jobs:
           COMPUTED_VERSION: ${{ steps.dryrun.outputs.version }}
         run: |
           set -uo pipefail
-          PKG='wet-mcp'
+          PKG='n24q02m-wet'
           URL="https://pypi.org/pypi/${PKG}/${COMPUTED_VERSION}/json"
           echo "Checking PyPI for ${PKG} ${COMPUTED_VERSION} before semantic-release tags anything..."
 

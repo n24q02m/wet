@@ -42,7 +42,7 @@ mise run fix       # ruff check --fix --unsafe-fixes + ruff format
 mise run dev       # uv run wet server start --foreground
 ```
 
-Script entry points: `wet` (`wet.cli:main`) and `wet-mcp` (legacy alias).
+Script entry points (all `wet.cli:main`): `n24q02m-wet` (canonical, matches the PyPI dist), `wet` (short alias) and `wet-mcp` (legacy alias).
 `wet search` and other server-backed subcommands talk to the running server over
 streamable HTTP; with no server running they exit 2 and print a hint to run
 `wet server start`. `wet docs reindex|import|reembed` work without a server.

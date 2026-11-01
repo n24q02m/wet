@@ -282,13 +282,6 @@ per capability (e.g. on a slim container that renders/searches/embeds via cloud
 backends only): `DISABLE_LOCAL_BROWSER`, `DISABLE_LOCAL_SEARCH`,
 `DISABLE_LOCAL_EMBED`, `DISABLE_LOCAL_RERANK`.
 
-**Docs sync** -- `SYNC_ENABLED` (default `true`), `GOOGLE_DRIVE_CLIENT_ID`
-(required for sync), `SYNC_FOLDER` (default `wet`), `SYNC_INTERVAL` (default
-`300`s). Sync uses Google Drive over the OAuth Device Code flow (no browser
-redirect).
-Non-CF SQLite deployments retain GDrive sync; `SYNC_S3_BUCKET` selects S3
-instead, and `SYNC_ENABLED=false` disables both.
-
 **HTTP self-host** -- `MCP_TRANSPORT=http`, `PUBLIC_URL=<your-domain>`. Configure token authentication via `token_hash` in `config.toml` or Streamable HTTP with OAuth.
 
 Example stdio config (one OpenRouter key powers every provider cell):
