@@ -18,13 +18,17 @@ pages, credentials, or user content.
 Run the local direct benchmark from the repository root:
 
 ```bash
-uv run python scripts/benchmark_quality.py \
-  --corpus tests/fixtures/benchmark/wet-quality-corpus.jsonl \
-  --mode stdio \
-  --backend searxng \
-  --output-jsonl /path/to/wet-benchmark.jsonl \
-  --output-summary /path/to/wet-benchmark-summary.json
+uv run python scripts/benchmark_quality.py   --corpus tests/fixtures/benchmark/wet-quality-corpus.jsonl   --mode stdio   --backend searxng   --output-jsonl /path/to/wet-benchmark.jsonl   --output-summary /path/to/wet-benchmark-summary.json
 ```
+
+`--mode stdio` is a historical flag name: wet no longer has a stdio transport
+(the server is HTTP-only). In this runner the mode means a direct, in-process
+call of the `search` / `extract` tool functions from `wet.server`, with no MCP
+transport and no running server. It measures the tool logic and the backend
+chain, not the protocol path. `--backend searxng` needs a working SearXNG (an
+auto-started instance, or `SEARXNG_URL`); without one every `search` case ends
+as `EMPTY_RESULTS` and the run exits 1. `docs` cases resolve against the local
+docs store and need no search backend.
 
 The JSONL output contains one machine-readable result per corpus item followed
 by one `record_type=aggregate` row. Per-item records include coverage,
@@ -32,19 +36,21 @@ judged-relevance precision, latency, cost estimate plus `cost_basis`, failure
 class, and an extraction round-trip hash. A cost estimate is emitted only for
 an observed/known-cost request; failed or unobserved provider work is marked
 `not_attempted` or `usage_unavailable` rather than assigned a hypothetical
-charge. Hosted mode fails closed in this direct runner; it requires the authorized
-MCP protocol harness and must not be reported as a local direct-call
+charge. `--mode hosted` fails closed in this direct runner
+(`UNSUPPORTED_MODE`); it must not be reported as a local direct-call
 measurement.
 
-Run the hosted representative path through the MCP protocol harness instead:
+Run the protocol-level benchmark through the real HTTP transport instead. It
+spawns the production server (`python -m wet.server`) on a loopback port and
+drives it with a streamable-HTTP `ClientSession`:
 
 ```bash
-uv run python scripts/cf_full_flow.py --endpoint https://<your-worker-domain>
+uv run python tests/search_quality/run_contract.py validate-fixtures
+uv run python tests/search_quality/run_contract.py run --output /path/to/wet-benchmark-contract.json
 ```
 
-The harness obtains an authorized session from environment-provided credentials,
-opens a Streamable HTTP `ClientSession`, and requires both a real search result
-and non-empty extracted page content. It does not print or persist credentials.
+This is the harness the `benchmark.yml` workflow runs. Credentials come from
+the environment and are never printed or persisted.
 
 ## v1.x baseline (2026-05-09)
 
