@@ -47,7 +47,7 @@ wet server (FastMCP)
     |                          +-- download: SSRF-safe via web-core
     |                          +-- analyze:  DEPRECATED -> imagine-mcp.understand
     |
-    +-- config tool   ----> mcp_core relay + config.py + cache management
+    +-- config tool   ----> config.py + cache management
     |
     +-- help tool     ----> src/wet/docs/{search,extract,media,config}.md
 ```
@@ -330,5 +330,5 @@ Reserved for the future LLM-enhanced summaries feature.
 - Interact reference: `docs/interact.md` (action language + session)
 - Web-core repo: `n24q02m/web-core` (`web_core.scraper.ScrapingAgent`,
   future `web_core.browsers.patchright.InteractOps`)
-- mcp-core repo: `n24q02m/mcp-core` (relay, JWT issuer, config storage primitives)
+- mcp-core repo: `n24q02m/mcp-core` (JWT issuer, config storage primitives)
 - Trust model: <https://mcp.n24q02m.com/servers/mcp-core/trust-model/>

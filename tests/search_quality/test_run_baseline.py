@@ -184,7 +184,7 @@ def test_provenance_distinguishes_code_config_provider_and_command(monkeypatch):
 
     assert provenance["execution_mode"] == "live_protocol"
     assert provenance["command"] == command
-    assert provenance["mcp_command"] == ["uv", "run", "wet-mcp"]
+    assert provenance["mcp_command"] == ["uv", "run", "n24q02m-wet"]
     assert len(provenance["code"]["git_revision"]) == 40
     assert isinstance(provenance["code"]["git_dirty"], bool)
     assert len(provenance["code"]["harness_sha256"]) == 64

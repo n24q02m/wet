@@ -5,8 +5,8 @@ Kept targets (new seams):
 - llm.py -- acompletion via the [models.chat] cell (no fallback chain)
 - searxng_runner.py -- subprocess lifecycle, cleanup, stale port, discovery
 
-Deleted surface (tests removed with it): relay_setup, sync/gdrive,
-token_store, credential_state, setup_sync, mcp_core.llm facade.
+Deleted surface (tests removed with it): sync/gdrive, token_store,
+credential_state, setup_sync, mcp_core.llm facade.
 """
 
 import json

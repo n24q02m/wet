@@ -287,7 +287,7 @@ async def run_single_case(
             status="FAIL",
             error_message=(
                 "Direct benchmark execution supports stdio only; "
-                "hosted/local-relay runs require the MCP protocol harness."
+                "hosted runs require the MCP protocol harness."
             ),
         )
     try:
@@ -574,7 +574,7 @@ def main() -> int:
         "--output-summary", type=str, default=None, help="Path to save summary JSON"
     )
     parser.add_argument(
-        "--mode", type=str, default="stdio", choices=["stdio", "hosted", "local-relay"]
+        "--mode", type=str, default="stdio", choices=["stdio", "hosted"]
     )
     parser.add_argument(
         "--backend",

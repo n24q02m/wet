@@ -1,4 +1,4 @@
-"""Versioned 200/500/200 quality benchmark contract for wet-mcp.
+"""Versioned 200/500/200 quality benchmark contract for wet.
 
 The committed fixtures are mechanically derived from versioned repository
 sources.  Live measurements always cross the MCP protocol boundary; this
@@ -958,10 +958,13 @@ def build_provenance(
     for key, value in safe_config.items():
         if _SECRET_NAME_RE.search(key) or _SECRET_NAME_RE.search(str(value)):
             raise ContractError(f"unsafe provenance field: {key}")
-    try:
-        package_version = version("wet-mcp")
-    except PackageNotFoundError:
-        package_version = "source-checkout"
+    package_version = "source-checkout"
+    for dist_name in ("n24q02m-wet", "wet-mcp"):
+        try:
+            package_version = version(dist_name)
+            break
+        except PackageNotFoundError:
+            continue
     environment = {
         "python": platform.python_version(),
         "platform": platform.platform(),

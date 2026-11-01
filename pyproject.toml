@@ -144,7 +144,7 @@ markers = [
     "live: live MCP protocol tests (spawn the real HTTP server)",
     "network: tests requiring network access",
     "full: full live tests with real services",
-    "e2e: end-to-end tests (3 setup modes: relay, env, plugin)",
+    "e2e: end-to-end tests (stdio and streamable-HTTP MCP sessions)",
     "slow: slow tests (crawl, download, etc.)",
 ]
 addopts = "-m 'not integration and not live and not full and not e2e'"

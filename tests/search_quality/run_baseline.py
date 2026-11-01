@@ -23,7 +23,7 @@ from mcp.client.session import ClientSession
 from mcp.client.stdio import stdio_client
 
 DEFAULT_QUERY_FILE = Path(__file__).with_name("queries.jsonl")
-MCP_COMMAND = ["uv", "run", "wet-mcp"]
+MCP_COMMAND = ["uv", "run", "n24q02m-wet"]
 TRACKING_PARAMS = {"fbclid", "gclid", "mc_cid", "mc_eid", "ref", "source"}
 UNUSABLE_TEXT = re.compile(
     r"^(accept cookies?|cookies?|javascript required|enable javascript)", re.I

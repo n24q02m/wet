@@ -17,7 +17,6 @@ EXPECTED_NAMES = [
 ]
 RETIRED_NAMES: list[str] = [
     # CF-era control-plane tools that must never come back.
-    "config__open_relay",
     "config__setup_sync",
     "config__setup_start",
 ]

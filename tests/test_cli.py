@@ -2,8 +2,8 @@
 
 The old mcp_core build_cli mount is gone: bare ``wet`` prints help (rc 0),
 subcommands run one-shot operator actions, and unknown subcommands fail with
-argparse's exit 2. Auth google / logout / relay / sync are deleted surface and
-are no longer exercised. No network or model calls — server spawn, hull
+argparse's exit 2. Auth google / logout / sync are deleted surface and are no
+longer exercised. No network or model calls — server spawn, hull
 settings, DocsDB and reembed/warmup are mocked.
 """
 
