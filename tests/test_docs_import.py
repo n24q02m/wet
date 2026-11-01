@@ -16,6 +16,8 @@ import pytest
 
 from wet.docs_import import EXPECTED_LIBRARIES, EXPECTED_VERSIONS, import_docs
 
+pytestmark = pytest.mark.timeout(90)
+
 # ---------------------------------------------------------------------------
 # synthetic D1 export builder
 # ---------------------------------------------------------------------------
@@ -124,6 +126,7 @@ def test_import_refuses_nonempty_target_without_force(tmp_path):
         import_docs(export, db_path=target, expected_chunks=3)
 
 
+@pytest.mark.timeout(120)
 def test_import_force_replaces_target_and_sidecars(tmp_path):
     """`--force` mirrors the operator flow: a fresh CLI process replaces a
     store written by a previous run (whose handles are long gone), stale

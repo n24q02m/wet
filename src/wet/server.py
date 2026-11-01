@@ -781,9 +781,17 @@ async def _rerank_results(
 # import: wet/__init__.py imports `mcp` from this module).
 from importlib.metadata import version as _pkgver  # noqa: E402
 
+try:
+    _server_version = _pkgver("n24q02m-wet")
+except Exception:
+    try:
+        _server_version = _pkgver("wet-mcp")
+    except Exception:
+        _server_version = "dev"
+
 mcp = MCPServer(
     name="wet",
-    version=_pkgver("wet-mcp"),
+    version=_server_version,
     instructions=(
         "Web Extended Toolkit MCP Server. "
         "IMPORTANT: `search` and `extract` serve different purposes. "
