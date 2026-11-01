@@ -5,7 +5,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/SessionStart_check_docs_freshness.sh"
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/hooks/SessionStart_check_docs_freshness.sh\""
           }
         ]
       }
@@ -15,7 +15,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/UserPromptSubmit_prewarm_docs_cache.sh"
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/hooks/UserPromptSubmit_prewarm_docs_cache.sh\""
           }
         ]
       }
