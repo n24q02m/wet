@@ -60,3 +60,50 @@ async def test_convert_local_files_rejects_sensitive_paths(tmp_path):
     assert len(data) == 1
     assert "error" in data[0]
     assert "Path rejected" in data[0]["error"]
+
+
+async def test_convert_default_allowlist_excludes_rest_of_home(tmp_path, monkeypatch):
+    """Without CONVERT_ALLOWED_DIRS only the working dir and temp dir are readable."""
+    home = tmp_path / "home"
+    work = home / "project"
+    docs = home / "Documents"
+    sys_tmp = tmp_path / "systmp"
+    for d in (work, docs, sys_tmp):
+        d.mkdir(parents=True)
+    inside = work / "notes.txt"
+    inside.write_text("inside the workspace")
+    elsewhere = docs / "private.txt"
+    elsewhere.write_text("elsewhere under home")
+    in_tmp = sys_tmp / "scratch.txt"
+    in_tmp.write_text("in the temp dir")
+
+    monkeypatch.setattr("pathlib.Path.home", classmethod(lambda cls: home))
+    monkeypatch.setattr("tempfile.gettempdir", lambda: str(sys_tmp))
+    monkeypatch.chdir(work)
+    monkeypatch.setattr("wet.config.settings.convert_allowed_dirs", "")
+
+    data = json.loads(
+        await convert_local_files([str(inside), str(elsewhere), str(in_tmp)])
+    )
+
+    assert "content" in data[0]
+    assert "Path rejected" in data[1]["error"]
+    assert "content" in data[2]
+
+
+async def test_convert_explicit_allowlist_overrides_default(tmp_path, monkeypatch):
+    home = tmp_path / "home"
+    work = home / "project"
+    docs = home / "Documents"
+    for d in (work, docs):
+        d.mkdir(parents=True)
+    target = docs / "report.txt"
+    target.write_text("opted in")
+
+    monkeypatch.setattr("pathlib.Path.home", classmethod(lambda cls: home))
+    monkeypatch.chdir(work)
+    monkeypatch.setattr("wet.config.settings.convert_allowed_dirs", str(docs))
+
+    data = json.loads(await convert_local_files([str(target)]))
+
+    assert "content" in data[0]

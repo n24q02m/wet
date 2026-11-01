@@ -387,7 +387,7 @@ the local store). Each subcommand prints a JSON result and exits.
 - **SSRF prevention** -- URL validation on crawl targets
 - **Graceful fallbacks** -- Cloud → Local embedding, multi-tier crawling
 - **Error sanitization** -- No credentials in error messages
-- **File conversion sandboxing** -- Optional `CONVERT_ALLOWED_DIRS` restriction
+- **File conversion sandboxing** -- Defaults to the working directory and temp dir; override with `CONVERT_ALLOWED_DIRS`
 
 ## Build from Source
 

@@ -970,14 +970,16 @@ async def convert_local_files(paths: list[str]) -> str:
             if d.strip()
         ]
     else:
-        # Default to allowing access only to the home directory and the
-        # platform temp directory to prevent arbitrary file read of
-        # sensitive system files. ``tempfile.gettempdir()`` returns the
+        # Default to the server's working directory (the workspace the host
+        # launched it in) and the platform temp directory. The whole home
+        # directory is NOT allowed by default: that exposed every readable
+        # file of the user (GHSA-j8mg-h25r-v84m). Widen it explicitly with
+        # CONVERT_ALLOWED_DIRS. ``tempfile.gettempdir()`` returns the
         # OS-level temp dir (``/tmp`` on Linux, ``$TMPDIR`` /
         # ``/var/folders/...`` on macOS, ``C:\Users\<u>\AppData\Local\Temp``
         # on Windows) — hardcoding ``/tmp`` breaks on non-Linux hosts.
         allowed_dirs = [
-            Path.home().resolve(),
+            Path.cwd().resolve(),
             Path(tempfile.gettempdir()).resolve(),
         ]
 

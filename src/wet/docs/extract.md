@@ -92,7 +92,7 @@ Convert local files to Markdown. Supports: PDF, DOCX, PPTX, XLSX, CSV, JSON, XML
 {"action": "convert", "paths": ["/home/user/report.pdf", "/home/user/data.xlsx"]}
 ```
 
-**Security:** Paths are validated against traversal attacks, symlink escapes, and optional directory allowlist (`CONVERT_ALLOWED_DIRS` env var). Max file size: 100MB (configurable via `CONVERT_MAX_FILE_SIZE`).
+**Security:** Paths are validated against traversal attacks, symlink escapes, and directory allowlist (default: the server working directory and the temp directory; set `CONVERT_ALLOWED_DIRS` to a comma-separated list of absolute paths to change it). Max file size: 100MB (configurable via `CONVERT_MAX_FILE_SIZE`).
 
 ---
 
