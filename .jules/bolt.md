@@ -107,3 +107,8 @@ closed pull request.
 ## 2026-10-15 - Fast URL hostname extraction in hot loops
 **Learning:** Using `urllib.parse.urlparse` just to check the hostname of a URL in a hot loop (like parsing search results) allocates multiple objects and is significantly slower than direct string manipulation.
 **Action:** Use fast string slicing (`str.find`) and an early containment check (`in`) to extract the domain, avoiding the overhead of full URL parsing.
+
+### 2026-10-15 - Rejected: Micro-optimization on rare path
+**Proposed:** Replaced `urllib.parse.urlparse` with manual string slicing in `StartpageBackend` when `"startpage" in href`.
+**Why rejected:** The fast path only runs when the href contains 'startpage', which is rare for search result links, meaning there is no measurable impact on a typical search query. Additionally, hand-rolling a parser adds complexity and requires equivalence tests.
+**Action:** Before optimizing, ensure the code path is actually hot for typical inputs, not just rare edge cases. Hand-rolled replacements for standard library parsers must include equivalence tests and benchmarks on realistic data.
