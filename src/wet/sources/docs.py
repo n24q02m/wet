@@ -1166,9 +1166,12 @@ def _url_host(url: str | None) -> str:
         end3 = url.find("/", start)
 
         end = len(url)
-        if end1 != -1 and end1 < end: end = end1
-        if end2 != -1 and end2 < end: end = end2
-        if end3 != -1 and end3 < end: end = end3
+        if end1 != -1 and end1 < end:
+            end = end1
+        if end2 != -1 and end2 < end:
+            end = end2
+        if end3 != -1 and end3 < end:
+            end = end3
 
         if url.find("@", start, end) == -1 and url.find("[", start, end) == -1:
             netloc = url[start:end]
@@ -3728,7 +3731,9 @@ async def fetch_docs_pages(
         "/changelog",
         "/releases",
     )
-    _skip_url_patterns_re = re.compile("|".join(re.escape(p) for p in _skip_url_patterns))
+    _skip_url_patterns_re = re.compile(
+        "|".join(re.escape(p) for p in _skip_url_patterns)
+    )
 
     # Detect redirect: if actual URL differs from docs_url (e.g., versioned
     # docs), use the redirected path as prefix to restrict crawling to that
