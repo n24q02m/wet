@@ -10,11 +10,12 @@ for web search, content extraction, and library docs. Current stable line:
   `docs/adr/0001-binary-names.md`). Repo, CLI and module are `wet`; console
   scripts are `n24q02m-wet` (canonical), `wet` (short alias) and `wet-mcp`
   (legacy alias kept so existing `uvx wet-mcp` configs keep working).
-- Transports: **stdio** (default, local — a bare `wet` invocation is the MCP
-  passthrough) and **HTTP** (self-host, OAuth-gated; `wet --http`). No
-  daemon-bridge layer and no auto-spawn from stdio.
+- Transport: Streamable HTTP only, served by `wet server start`
+  (`~/.wet/config.toml` `[server]`: `host`, `port`, `auth`). There is no stdio
+  mode; a bare `wet` prints the control-plane usage. No daemon-bridge layer and
+  no client-side auto-spawn.
 - Post-de-host the project operates no hosted MCP endpoint; all deployments
-  are user-owned (local stdio/HTTP, docker compose, or the user's own cloud).
+  are user-owned (local HTTP, the compose stack, or the user's own cloud).
 - Public OCI image publication is discontinued; build containers from source.
 - Local state is machine-bound under `~/.wet/`: `config.toml` (AES-GCM,
   machine-bound key), `docs.db`, `subs/` (per-namespace persistent browser
@@ -23,22 +24,23 @@ for web search, content extraction, and library docs. Current stable line:
 ## Install
 
 ```bash
-uvx n24q02m-wet                       # run the stdio server without a persistent install
-claude mcp add wet -- uvx n24q02m-wet # Claude Code (stdio)
+uvx --python 3.13 --from n24q02m-wet wet server start   # start the HTTP server without a persistent install
+claude mcp add --transport http wet http://127.0.0.1:8000/mcp  # Claude Code -> the running instance
 pip install n24q02m-wet               # persistent install (CLI + server)
 uvx --from n24q02m-wet wet warmup     # try a subcommand without a persistent install
 ```
 
 Extras: `n24q02m-wet[identity]`, `n24q02m-wet[invisible]` (n24q02m-hull passthrough;
 `[invisible]` adds the stealth browser stack). Claude Code plugin:
-`/plugin install wet@n24q02m-plugins`.
+`/plugin install wet@n24q02m-plugins` (HTTP entry driven by `WET_URL`, default
+`http://127.0.0.1:8000/mcp`, optional `WET_TOKEN`; start the instance first).
 
 ## Local run (README quick start)
 
 ```bash
 git clone https://github.com/n24q02m/wet && cd wet
 uv run wet config init            # writes ~/.wet/config.toml (default: auth = "no-auth")
-uv run wet                        # dev loopback; README shows http://127.0.0.1:8000/mcp
+uv run wet server start           # dev loopback; serves http://127.0.0.1:8000/mcp
 ```
 
 `no-auth` refuses non-loopback binds. Docker compose publishes
@@ -52,8 +54,8 @@ paste into `[server] token_hash`; clients send `Authorization: Bearer`.
 
 ## CLI
 
-A bare invocation (or leading-dash flag) starts the server; a leading
-positional argument is a subcommand that prints a JSON result and exits:
+`wet server start|stop|status` runs the HTTP server; the other subcommands
+print a JSON result and exit:
 
 ```bash
 wet warmup                    # pre-download local models + auto-setup (SearXNG, browser)
@@ -68,7 +70,7 @@ wet logout                    # clear the local Drive sync token
 git clone https://github.com/n24q02m/wet.git && cd wet
 uv sync
 uv run pytest          # dev group: pytest, pytest-asyncio, pytest-timeout, ruff, ty
-uv run wet
+uv run wet server start --foreground
 ```
 
 ## Model configuration policy
@@ -93,17 +95,16 @@ uv run wet
 
 ## Multi-user HTTP self-host
 
-`MCP_TRANSPORT=http`, `PUBLIC_URL=<your-domain>`. Multi-user deployments require `CREDENTIAL_SECRET`
-(per-user vault key), `MCP_JWT_SIGNING_SECRET` (rotatable OAuth JWT key), and
-`MCP_DCR_SERVER_SECRET`. Credentials/tokens live per JWT sub
+`[server] auth = "multi"` with per-user tokens from `users_file` (default
+`~/.wet/users.toml`, `wet users path`). Data is namespaced per sub
 (`~/.wet/subs/<sub>/`).
 
 ## Data and safety invariants
 
 - `no-auth` refuses non-loopback binds — the server is localhost-only until
   token auth is configured.
-- The token-hash command never echoes the token; config is AES-GCM encrypted,
-  file perm `0600`, machine-bound key.
+- The token-hash command never echoes the token; only `token_hash` is stored
+  in `config.toml`.
 - `media.analyze` was removed in v2.0.0 (see `docs/migration.md`); current
   release line is v3.x.
 
