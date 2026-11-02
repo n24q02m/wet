@@ -13,6 +13,7 @@ from scripts.benchmark_quality import (
     BenchmarkResult,
     CorpusItem,
     FailureClass,
+    _load_direct_tools,
     benchmark_environment,
     compute_metrics,
     estimate_cost,
@@ -260,3 +261,80 @@ def test_benchmark_environment_scoped(monkeypatch):
         assert os.environ["SEARCH_BACKENDS"] == "tavily"
 
     assert os.environ["SEARCH_BACKENDS"] == "searxng"
+
+
+@pytest.fixture
+def isolated_wet_server(monkeypatch):
+    """Import the real ``wet.server`` without opening the user's docs DB.
+
+    ``_import_direct_tools`` pins ``transport_check._UVX_TOOL_VENV_CACHE``;
+    re-setting it through ``monkeypatch`` restores the original value on
+    teardown so no other test sees the pinned state.
+    """
+    import wet.transport_check as tc
+    from wet import server as wet_server
+
+    monkeypatch.setattr(tc, "_UVX_TOOL_VENV_CACHE", tc._UVX_TOOL_VENV_CACHE)
+    monkeypatch.setattr(wet_server, "_docs_db", object())
+    return wet_server
+
+
+def test_load_direct_tools_resolves_real_server_symbols(isolated_wet_server):
+    """Dead imports in the direct runner must fail CI, not the first live run."""
+    extract, search = _load_direct_tools()
+
+    assert extract is isolated_wet_server.extract
+    assert search is isolated_wet_server.search
+    assert callable(extract)
+    assert callable(search)
+
+
+def test_direct_tools_pin_is_scoped_to_the_monkeypatch(monkeypatch):
+    """The loader pins the uvx-venv cache; the fixture pattern must undo it."""
+    import wet.transport_check as tc
+    from wet import server as wet_server
+
+    original = tc._UVX_TOOL_VENV_CACHE
+    with monkeypatch.context() as scoped:
+        scoped.setattr(tc, "_UVX_TOOL_VENV_CACHE", original)
+        scoped.setattr(wet_server, "_docs_db", object())
+        _load_direct_tools()
+        assert tc._UVX_TOOL_VENV_CACHE is False
+
+    assert tc._UVX_TOOL_VENV_CACHE is original
+
+
+@pytest.mark.asyncio
+async def test_stdio_search_case_runs_through_real_import_path(
+    isolated_wet_server, monkeypatch
+):
+    calls = []
+
+    async def fake_search(**kwargs):
+        calls.append(kwargs)
+        return {
+            "results": [
+                {"title": "Python asyncio", "url": "https://docs.python.org/3/"}
+            ]
+        }
+
+    monkeypatch.setattr(isolated_wet_server, "search", fake_search)
+    item = CorpusItem(
+        id="stdio-1",
+        query="python asyncio",
+        source_url="https://docs.python.org/3/",
+        expected_type="search",
+        expected_fields=["title", "url"],
+        freshness_class="static",
+        provenance="test",
+        expected_relevance={"domains": ["python.org"]},
+    )
+
+    result = await run_single_case(item, mode="stdio")
+
+    assert calls == [{"action": "search", "query": "python asyncio"}]
+    assert result.status == "PASS"
+    assert result.failures == FailureClass.NONE
+    assert result.raw_item_count == 1
+    assert result.coverage == 1.0
+    assert result.precision == 1.0

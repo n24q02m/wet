@@ -265,6 +265,30 @@ def compute_metrics(results: Sequence[BenchmarkResult]) -> dict[str, Any]:
     }
 
 
+def _import_direct_tools() -> tuple[Any, Any]:
+    """Import the in-process ``extract``/``search`` tools of ``wet.server``."""
+    import wet.transport_check as tc
+
+    tc._UVX_TOOL_VENV_CACHE = False
+    from wet import server as wet_server
+
+    if wet_server._docs_db is None:
+        try:
+            wet_server._docs_db = wet_server.make_docs_db()
+        except Exception:
+            pass
+    return wet_server.extract, wet_server.search
+
+
+def _load_direct_tools() -> tuple[Any, Any]:
+    """Return ``(extract, search)``, falling back to the source tree on ImportError."""
+    try:
+        return _import_direct_tools()
+    except ImportError:
+        sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
+        return _import_direct_tools()
+
+
 async def run_single_case(
     item: CorpusItem,
     mode: str = "stdio",
@@ -290,37 +314,7 @@ async def run_single_case(
                 "hosted runs require the MCP protocol harness."
             ),
         )
-    try:
-        import wet.transport_check as tc
-
-        tc._UVX_TOOL_VENV_CACHE = False
-        from wet.credential_state import CredentialState, set_state
-
-        set_state(CredentialState.LOCAL)
-        from wet import server as wet_server
-
-        if wet_server._docs_db is None:
-            try:
-                wet_server._docs_db = wet_server.make_docs_db()
-            except Exception:
-                pass
-        from wet.server import extract, search
-    except ImportError:
-        sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
-        import wet.transport_check as tc
-
-        tc._UVX_TOOL_VENV_CACHE = False
-        from wet.credential_state import CredentialState, set_state
-
-        set_state(CredentialState.LOCAL)
-        from wet import server as wet_server
-
-        if wet_server._docs_db is None:
-            try:
-                wet_server._docs_db = wet_server.make_docs_db()
-            except Exception:
-                pass
-        from wet.server import extract, search
+    extract, search = _load_direct_tools()
     t0 = time.perf_counter()
     status = "FAIL"
     failure_class = FailureClass.NONE
