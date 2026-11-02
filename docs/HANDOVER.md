@@ -60,8 +60,6 @@ print a JSON result and exit:
 ```bash
 wet warmup                    # pre-download local models + auto-setup (SearXNG, browser)
 wet docs reindex <library>    # drop a cached docs index; next search re-indexes
-wet auth google               # authorize Google credential provider for Drive sync
-wet logout                    # clear the local Drive sync token
 ```
 
 ## Build, run, and verify
