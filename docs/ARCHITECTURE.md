@@ -13,7 +13,7 @@ model.
 ```text
 wet client (Claude Code / Codex / Cursor / Antigravity)
     |
-    | MCP protocol (stdio or HTTP)
+    | MCP protocol (Streamable HTTP)
     v
 wet server (FastMCP)
     |
@@ -156,18 +156,17 @@ If none is set:
 
 ## Mode matrix
 
-| Mode | Default? | Storage scope | Multi-user |
-|---|---|---|---|
-| stdio | Yes | Local user (`~/.wet/config.json`, perm 0600) | No |
-| HTTP self-host (single-user) | No | Shared local store (`~/.wet/config.json`), bind 127.0.0.1 | No |
-| HTTP self-host (multi-user) | No | Per-JWT-sub vault (`~/.wet/subs/<sub>/config.json`), bind 0.0.0.0 | Yes |
+wet has one transport, Streamable HTTP, served by `wet server start`. The mode
+is the `[server] auth` value in `~/.wet/config.toml`:
 
-The stdio default avoids OAuth complexity for single-machine personal
-use; HTTP self-host is recommended when multi-device sync, claude.ai web
-compatibility, or team sharing matters. Multi-user mode is triggered by
-setting `PUBLIC_URL` (with `MCP_DCR_SERVER_SECRET` required as proof of
-intentional multi-user deployment); without it HTTP binds 127.0.0.1 and
-reuses the single-user store.
+| `auth` | Bind | Storage scope | Multi-user |
+|---|---|---|---|
+| `no-auth` | loopback only | Shared local store under `~/.wet/` | No |
+| `token` | any | Shared local store under `~/.wet/`, one Bearer token (hash stored) | No |
+| `multi` | any | Per-sub namespace `~/.wet/subs/<sub>/` | Yes |
+
+Pick `no-auth` for one machine, `token` or `multi` for multi-device use,
+claude.ai web, or team sharing.
 
 ## Library docs search (Context7-parity)
 
