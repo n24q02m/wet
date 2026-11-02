@@ -118,7 +118,6 @@ live in `src/wet/sources/_smart_chunks.py`.
 | `~/.wet/cache.db` | Web search + extract cache (TTL gated) | SQLite WAL |
 | `~/.wet/config.json` | Encrypted credentials (mcp-core `PerPluginStore`) | AES-GCM, machine-bound key at `~/.wet/.secret` |
 | `~/.wet/downloads/` | Media download output dir | Filesystem |
-| `~/.wet/tokens/google_drive.json` | OAuth Device Code token (sync) | Filesystem 0600 perms |
 
 SearXNG runs as a bundled subprocess on `localhost:41592` (configurable
 via `WET_SEARXNG_PORT`). It is not persisted across restarts; SearXNG

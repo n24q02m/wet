@@ -91,7 +91,6 @@ mcp-name: io.github.n24q02m/wet
 - **Media** -- List + download images / videos / audio files. `analyze` was removed in v2.0.0 -- use `imagine-mcp.understand` for vision/audio inference
 - **Anti-bot** -- Stealth strategies bypass Cloudflare, Medium, LinkedIn, Twitter
 - **Zero Config** -- Built-in local reference embedding + reranking through fastretrieval, no API keys needed. Optional cloud models configured per task via the `[models.embed|rerank|chat|jev_score]` cells in `~/.wet/config.toml` (OpenRouter default; one `OPENROUTER_API_KEY` serves every cell)
-- **Sync** -- Cross-machine sync of indexed docs via Google Drive (OAuth Device Code, no browser redirect)
 
 ## Quick install
 
@@ -355,8 +354,6 @@ wet server start                # start the Streamable HTTP server (detached; --
 wet server status               # pid, lock and HTTP liveness
 wet server stop
 
-wet auth google                 # authorize the Google credential provider for Drive sync
-wet logout                      # clear the local Google Drive sync token
 wet warmup                      # pre-download local models + run auto-setup (SearXNG, browser) to avoid first-run delays
 wet docs reindex <library>      # drop the cached docs index for <library>; the next docs search re-indexes it
 ```
