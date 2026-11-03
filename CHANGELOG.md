@@ -2,6 +2,93 @@
 
 <!-- version list -->
 
+## v3.21.0-beta.1 (2026-11-03)
+
+### Bug Fixes
+
+- Adjust benchmark contract test to reflect actual workflow configurations
+  ([#1907](https://github.com/n24q02m/wet/pull/1907),
+  [`e293881`](https://github.com/n24q02m/wet/commit/e293881a7e388e0437665616dc5b746e79208c98))
+
+- Align plugin hook manifest test with quoted plugin root commands
+  ([#1911](https://github.com/n24q02m/wet/pull/1911),
+  [`74280f1`](https://github.com/n24q02m/wet/commit/74280f146c43aa14b8a71230237aab1b2c55e666))
+
+- Describe wet as a streamable-http server in server.json and drop the stdio smithery.yaml
+  ([#1916](https://github.com/n24q02m/wet/pull/1916),
+  [`f645319`](https://github.com/n24q02m/wet/commit/f64531976118852c51ab2966bf534237ce992ea7))
+
+- Describe wet as HTTP-only (plugin HTTP entry, README, HANDOVER, ARCHITECTURE)
+  ([#1915](https://github.com/n24q02m/wet/pull/1915),
+  [`babd32b`](https://github.com/n24q02m/wet/commit/babd32b1521a587e22b1dccc91c86462f23d7ae4))
+
+- Drop stale Google Drive sync and logout references from docs
+  ([#1920](https://github.com/n24q02m/wet/pull/1920),
+  [`a4355c7`](https://github.com/n24q02m/wet/commit/a4355c7feb5b577879a56cd1f64a44049fc20399))
+
+- Drop the prewarm hook that calls a nonexistent wet subcommand
+  ([#1914](https://github.com/n24q02m/wet/pull/1914),
+  [`7ea3790`](https://github.com/n24q02m/wet/commit/7ea379078c28efb448e7730d79c2a60fa24cb8ab))
+
+- Keep playwright browser cache and valid help topics in live protocol tests
+  ([#1913](https://github.com/n24q02m/wet/pull/1913),
+  [`b27b4d3`](https://github.com/n24q02m/wet/commit/b27b4d30dc2fdfef35e0088cc4c875cc90989bc0))
+
+- Quote CLAUDE_PLUGIN_ROOT in plugin hook commands
+  ([#1911](https://github.com/n24q02m/wet/pull/1911),
+  [`74280f1`](https://github.com/n24q02m/wet/commit/74280f146c43aa14b8a71230237aab1b2c55e666))
+
+- Remove relay and sync residue, add plugin hooks.json, point CD guard at n24q02m-wet
+  ([#1909](https://github.com/n24q02m/wet/pull/1909),
+  [`17d8510`](https://github.com/n24q02m/wet/commit/17d85109936cbad0b2ef39bcefa03f68e2f3130f))
+
+- Repair the direct benchmark runner after wet.credential_state was removed
+  ([#1917](https://github.com/n24q02m/wet/pull/1917),
+  [`2bcd680`](https://github.com/n24q02m/wet/commit/2bcd680e35fa8aeaf5cba437c919ff850fb9fb30))
+
+- Restore the multi-line benchmark command and scope the uvx cache pin in tests
+  ([#1917](https://github.com/n24q02m/wet/pull/1917),
+  [`2bcd680`](https://github.com/n24q02m/wet/commit/2bcd680e35fa8aeaf5cba437c919ff850fb9fb30))
+
+- Restrict default extract convert allowlist to working dir and temp dir
+  ([#1912](https://github.com/n24q02m/wet/pull/1912),
+  [`b95fa18`](https://github.com/n24q02m/wet/commit/b95fa18cca1728c788122ff1d474691719134385))
+
+- 🎨 palette: adjust benchmark contract test to reflect actual workflow configurations
+  ([#1907](https://github.com/n24q02m/wet/pull/1907),
+  [`e293881`](https://github.com/n24q02m/wet/commit/e293881a7e388e0437665616dc5b746e79208c98))
+
+- **deps**: Lock file maintenance ([#1918](https://github.com/n24q02m/wet/pull/1918),
+  [`a48bcc0`](https://github.com/n24q02m/wet/commit/a48bcc0a9183d521d717617863a30f4dc3ac0f2e))
+
+- **deps**: Lock file maintenance ([#1903](https://github.com/n24q02m/wet/pull/1903),
+  [`02d9db6`](https://github.com/n24q02m/wet/commit/02d9db67f38d9200f9f9f6aa6091114836a672ca))
+
+- **deps**: Update actions/setup-python action to v7.1.0
+  ([#1904](https://github.com/n24q02m/wet/pull/1904),
+  [`9fa1e4b`](https://github.com/n24q02m/wet/commit/9fa1e4b033d4ec8c5cd4f2ad87950ea9357475f4))
+
+- **deps**: Update dawidd6/action-send-mail action to v23
+  ([#1905](https://github.com/n24q02m/wet/pull/1905),
+  [`1aa1665`](https://github.com/n24q02m/wet/commit/1aa166555265cfb36e1219023a2f7274e7e80637))
+
+- **deps**: Update patch dependencies ([#1902](https://github.com/n24q02m/wet/pull/1902),
+  [`6660004`](https://github.com/n24q02m/wet/commit/6660004b63c2fc615f77f4d4c577f06d33688fa0))
+
+### Features
+
+- Add transitional legacy stub distribution for the renamed package
+  ([#1910](https://github.com/n24q02m/wet/pull/1910),
+  [`1edf075`](https://github.com/n24q02m/wet/commit/1edf075e7665b9323b0c39ec83eb86de9aab7af4))
+
+- Rename distribution to n24q02m-wet and resolve package version
+  ([#1908](https://github.com/n24q02m/wet/pull/1908),
+  [`8eac6db`](https://github.com/n24q02m/wet/commit/8eac6db09dc1e0fdde0b86c5db5a308fff87f45c))
+
+- ⚡ bolt: optimize url host extraction ([#1921](https://github.com/n24q02m/wet/pull/1921),
+  [`90f1625`](https://github.com/n24q02m/wet/commit/90f16259f1610fdb38280bbbae6927be5f2f11c1))
+
+
 ## v3.20.0 (2026-10-28)
 
 ### Bug Fixes
