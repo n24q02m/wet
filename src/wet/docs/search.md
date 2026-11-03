@@ -5,7 +5,7 @@ Search the web, academic papers, or library documentation.
 ## Actions
 
 ### search
-Web search via the `SEARCH_BACKENDS` provider chain with runtime fallback: `searxng` (self-host) | `tavily` | `brave` | `exa` | `kagi` (cloud, keyed) | `firecrawl` (key optional — keyless attempt) | `duckduckgo` | `startpage` (credential-free HTML scrape, uvx-safe; may be bot-challenged on datacenter IPs — the chain then advances to the next backend).
+Web search via the `SEARCH_BACKENDS` provider chain with runtime fallback: `searxng` (self-host) | `tavily` | `brave` | `exa` | `kagi` (cloud, keyed) | `firecrawl` (key optional — keyless attempt) | `keenable` (key optional — keyless public endpoint) | `duckduckgo` | `startpage` (credential-free HTML scrape, uvx-safe; may be bot-challenged on datacenter IPs — the chain then advances to the next backend).
 
 **Parameters:**
 - `query` (required): Search query string
