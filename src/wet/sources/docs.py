@@ -19,6 +19,14 @@ import os
 import re
 import zlib
 from collections.abc import Sequence
+from dataclasses import dataclass
+from typing import Any
+from urllib.parse import urljoin, urlparse
+
+import httpx
+from loguru import logger
+
+from wet.security import safe_httpx_client as _safe_httpx_client
 
 _SITEMAP_SKIP_RE = re.compile(
     "|".join(
@@ -55,14 +63,6 @@ _SPHINX_SKIP_RE = re.compile(
         )
     )
 )
-from dataclasses import dataclass
-from typing import Any
-from urllib.parse import urljoin, urlparse
-
-import httpx
-from loguru import logger
-
-from wet.security import safe_httpx_client as _safe_httpx_client
 
 # Bump this whenever discovery scoring or crawl logic changes.
 # Libraries cached with an older version are automatically re-indexed.
