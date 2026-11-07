@@ -33,21 +33,24 @@ from wet.security import safe_httpx_client as _safe_httpx_client
 DISCOVERY_VERSION = 27
 
 _SKIP_URL_PATTERNS_RE = re.compile(
-    "|".join(re.escape(p) for p in (
-        "/genindex",
-        "/searchindex",
-        "/modindex",
-        "/_modules/",
-        "/_sources/",
-        "/blog/",
-        "/changelog",
-        "/releases",
-        "/feed",
-        "/rss",
-        "/sitemap",
-        "/robots.txt",
-        "/search",
-    ))
+    "|".join(
+        re.escape(p)
+        for p in (
+            "/genindex",
+            "/searchindex",
+            "/modindex",
+            "/_modules/",
+            "/_sources/",
+            "/blog/",
+            "/changelog",
+            "/releases",
+            "/feed",
+            "/rss",
+            "/sitemap",
+            "/robots.txt",
+            "/search",
+        )
+    )
 )
 
 
