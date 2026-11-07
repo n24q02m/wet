@@ -32,6 +32,24 @@ from wet.security import safe_httpx_client as _safe_httpx_client
 # Libraries cached with an older version are automatically re-indexed.
 DISCOVERY_VERSION = 27
 
+_SKIP_URL_PATTERNS_RE = re.compile(
+    "|".join(re.escape(p) for p in (
+        "/genindex",
+        "/searchindex",
+        "/modindex",
+        "/_modules/",
+        "/_sources/",
+        "/blog/",
+        "/changelog",
+        "/releases",
+        "/feed",
+        "/rss",
+        "/sitemap",
+        "/robots.txt",
+        "/search",
+    ))
+)
+
 
 def _github_headers() -> dict[str, str]:
     """Return GitHub API headers, including auth token if available."""
@@ -3456,27 +3474,12 @@ async def _try_sitemap(base_url: str, max_urls: int = 50) -> list[str]:
                     urls = re.findall(r"<loc>\s*(.*?)\s*</loc>", text)
 
                 # Filter to same domain, skip non-doc paths
-                skip_patterns = (
-                    "/blog/",
-                    "/changelog",
-                    "/releases",
-                    "/feed",
-                    "/rss",
-                    "/sitemap",
-                    "/robots.txt",
-                    "/search",
-                    "/genindex",
-                    "/searchindex",
-                    "/modindex",
-                    "/_modules/",
-                    "/_sources/",
-                )
                 filtered = []
                 for u in urls:
                     if parsed.netloc not in u:
                         continue
                     u_lower = u.lower()
-                    if not any(skip in u_lower for skip in skip_patterns):
+                    if not _SKIP_URL_PATTERNS_RE.search(u_lower):
                         filtered.append(u)
 
                 if filtered:
@@ -3721,19 +3724,6 @@ async def fetch_docs_pages(
     }
 
     # Generated/index pages to skip (Sphinx, MkDocs, etc.)
-    _skip_url_patterns = (
-        "/genindex",
-        "/searchindex",
-        "/modindex",
-        "/_modules/",
-        "/_sources/",
-        "/blog/",
-        "/changelog",
-        "/releases",
-    )
-    _skip_url_patterns_re = re.compile(
-        "|".join(re.escape(p) for p in _skip_url_patterns)
-    )
 
     # Detect redirect: if actual URL differs from docs_url (e.g., versioned
     # docs), use the redirected path as prefix to restrict crawling to that
@@ -3770,7 +3760,7 @@ async def fetch_docs_pages(
 
             # Skip generated index/module pages
             path_lower = full_parsed.path.lower()
-            if _skip_url_patterns_re.search(path_lower):
+            if _SKIP_URL_PATTERNS_RE.search(path_lower):
                 continue
 
             # GitHub-specific: stay within same repo

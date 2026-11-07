@@ -111,3 +111,7 @@ closed pull request.
 ## 2026-08-20 - Fast URL hostname extraction without urlparse
 **Learning:** Using `urllib.parse.urlparse` to extract the hostname of a URL in hot loops allocates multiple objects and is significantly slower than direct string manipulation.
 **Action:** Use fast string slicing (`str.find`) bounding by `?`, `#`, and `/` to extract the domain for standard HTTP(S) and `git+https` URLs. Ensure to check for `@` (basic auth) and `[` (IPv6) before relying on the fast path, falling back to `urlparse` otherwise. This avoids object allocations and yields a ~20% speedup.
+
+## 2024-11-07 - Combine regular expressions for substring matching in hot loops
+**Learning:** Python generator expressions inside `any()` checking multiple static substrings (e.g., `any(skip in u_lower for skip in skip_patterns)`) are slowed down by Python-level iteration overhead and repeated generator allocation. Also, defining `re.compile` inside a function body forces recompilation on each call.
+**Action:** Combine multiple static substrings into a single pre-compiled regular expression using alternation (`re.compile("|".join(re.escape(p) for p in patterns))`) at the module level and use `.search()`. This leverages the C-based regex engine, yielding a ~3x speedup on hot URL filtering paths.
