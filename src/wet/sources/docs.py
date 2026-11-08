@@ -850,42 +850,6 @@ _AUTH_SEGMENTS = (
 )
 _AUTH_SEGMENTS_RE = re.compile("|".join(re.escape(seg) for seg in _AUTH_SEGMENTS))
 
-_SITEMAP_SKIP_RE = re.compile(
-    "|".join(
-        re.escape(p)
-        for p in (
-            "/blog/",
-            "/changelog",
-            "/releases",
-            "/feed",
-            "/rss",
-            "/sitemap",
-            "/robots.txt",
-            "/search",
-            "/genindex",
-            "/searchindex",
-            "/modindex",
-            "/_modules/",
-            "/_sources/",
-        )
-    )
-)
-
-_DOC_SKIP_RE = re.compile(
-    "|".join(
-        re.escape(p)
-        for p in (
-            "changelog",
-            "changes",
-            "genindex",
-            "modindex",
-            "searchindex",
-            "_modules/",
-            "_sources/",
-        )
-    )
-)
-
 
 def _get_doc_candidates(
     homepage: str, lib_name: str, registry: str
@@ -3492,12 +3456,27 @@ async def _try_sitemap(base_url: str, max_urls: int = 50) -> list[str]:
                     urls = re.findall(r"<loc>\s*(.*?)\s*</loc>", text)
 
                 # Filter to same domain, skip non-doc paths
+                skip_patterns = (
+                    "/blog/",
+                    "/changelog",
+                    "/releases",
+                    "/feed",
+                    "/rss",
+                    "/sitemap",
+                    "/robots.txt",
+                    "/search",
+                    "/genindex",
+                    "/searchindex",
+                    "/modindex",
+                    "/_modules/",
+                    "/_sources/",
+                )
                 filtered = []
                 for u in urls:
                     if parsed.netloc not in u:
                         continue
                     u_lower = u.lower()
-                    if not _SITEMAP_SKIP_RE.search(u_lower):
+                    if not any(skip in u_lower for skip in skip_patterns):
                         filtered.append(u)
 
                 if filtered:
@@ -3622,7 +3601,18 @@ def _parse_objects_inv(data: bytes, base_url: str) -> list[str]:
             continue
         # Skip non-doc paths
         uri_lower = uri.lower()
-        if _DOC_SKIP_RE.search(uri_lower):
+        if any(
+            skip in uri_lower
+            for skip in (
+                "changelog",
+                "changes",
+                "genindex",
+                "modindex",
+                "searchindex",
+                "_modules/",
+                "_sources/",
+            )
+        ):
             continue
         doc_urls.add(f"{base_url}{uri}")
 
