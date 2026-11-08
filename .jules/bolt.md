@@ -111,3 +111,7 @@ closed pull request.
 ## 2026-08-20 - Fast URL hostname extraction without urlparse
 **Learning:** Using `urllib.parse.urlparse` to extract the hostname of a URL in hot loops allocates multiple objects and is significantly slower than direct string manipulation.
 **Action:** Use fast string slicing (`str.find`) bounding by `?`, `#`, and `/` to extract the domain for standard HTTP(S) and `git+https` URLs. Ensure to check for `@` (basic auth) and `[` (IPv6) before relying on the fast path, falling back to `urlparse` otherwise. This avoids object allocations and yields a ~20% speedup.
+
+## 2026-11-06 - Micro-optimisation in I/O bound crawl code
+**Learning:** Replacing generator expressions inside `any()` with pre-compiled regular expressions in network-bound crawl code (like `_try_sitemap` or `_try_objects_inv` in `src/wet/sources/docs.py`) is a micro-optimisation. It saves less than 1 ms per 1000 URLs and the nanosecond CPU savings are completely dwarfed by I/O latency.
+**Action:** Apply regex union optimizations strictly in pure CPU-bound hot paths. Never apply them in I/O-bound contexts (e.g., handling network responses). Always include actual measurements from the codebase when proposing optimizations.
