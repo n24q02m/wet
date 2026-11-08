@@ -111,3 +111,7 @@ closed pull request.
 ## 2026-08-20 - Fast URL hostname extraction without urlparse
 **Learning:** Using `urllib.parse.urlparse` to extract the hostname of a URL in hot loops allocates multiple objects and is significantly slower than direct string manipulation.
 **Action:** Use fast string slicing (`str.find`) bounding by `?`, `#`, and `/` to extract the domain for standard HTTP(S) and `git+https` URLs. Ensure to check for `@` (basic auth) and `[` (IPv6) before relying on the fast path, falling back to `urlparse` otherwise. This avoids object allocations and yields a ~20% speedup.
+
+## 2024-05-18 - Rejected URL filtering regex micro-optimization
+**Learning:** Replacing generator expressions inside `any()` with pre-compiled regular expressions (`re.search()`) in I/O bound paths (like web crawling or sitemap fetching) is a micro-optimization. The nanosecond CPU savings are dwarfed by network latency, and the PR will be rejected if it lacks substantial measurement proving otherwise.
+**Action:** Do not apply regex compilation micro-optimizations to URL filtering logic inside network-bound crawl code. Only apply these optimizations strictly in pure CPU-bound hot paths where the savings are measurable.
