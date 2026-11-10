@@ -54,11 +54,13 @@ paste into `[server] token_hash`; clients send `Authorization: Bearer`.
 
 ## CLI
 
-`wet server start|stop|status` runs the HTTP server; the other subcommands
-print a JSON result and exit:
+`wet server start|stop|status` runs the HTTP server. `wet warmup` prints a JSON
+result; `wet config …` and `wet docs …` print plain text; `wet search` prints the
+tool's text answer from the running server.
 
 ```bash
 wet warmup                    # pre-download local models + auto-setup (SearXNG, browser)
+wet docs list                 # indexed library names (the input for `docs reindex`)
 wet docs reindex <library>    # drop a cached docs index; next search re-indexes
 ```
 

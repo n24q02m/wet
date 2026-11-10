@@ -996,6 +996,29 @@ class DocsDB:
         ).fetchone()
         return dict(row) if row else None
 
+    def list_libraries(self, limit: int | None = None) -> list[dict]:
+        """Every indexed library name, alphabetically, with its cached chunks.
+
+        This is the discovery half of maintenance by name: the names returned
+        here are exactly the ones ``get_library`` accepts (stored lowercased),
+        so an operator can copy one straight into a reindex call. ``limit`` is
+        opt-in: the shipped corpus is over a thousand libraries and a silent cap
+        would hide the names the caller is looking for.
+        """
+        sql = (
+            "SELECT l.name AS name, COUNT(DISTINCT v.id) AS versions,"
+            " (SELECT COUNT(*) FROM doc_chunks c WHERE c.library_id = l.id)"
+            " AS chunks"
+            " FROM libraries l LEFT JOIN versions v ON v.library_id = l.id"
+            " GROUP BY l.id ORDER BY l.name ASC"
+        )
+        params: tuple = ()
+        if limit is not None:
+            sql += " LIMIT ?"
+            params = (limit,)
+        rows = self._conn.execute(sql, params).fetchall()
+        return [dict(row) for row in rows]
+
     def find_libraries_by_prefix(self, name: str, limit: int = 20) -> list[dict]:
         """Return libraries whose names start with ``name``, alphabetically."""
         norm_name = name.lower().strip()
