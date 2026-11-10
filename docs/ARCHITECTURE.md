@@ -312,8 +312,8 @@ when the pool is empty.
 The legacy deprecation handler is gone. The `media` dispatcher now
 routes `action="analyze"` through the standard unknown-action branch
 with a special-cased migration string pointing to `imagine-mcp`'s
-`understand` action. `wet.llm.analyze_media` is preserved for unit
-tests but is unreachable from any MCP tool surface.
+`understand` action. The media-analysis helpers in `wet.llm` were
+removed with it, so the package carries no vision or audio code path.
 
 ### `docs_004_chunk_summaries` schema
 
