@@ -8,7 +8,7 @@ its control plane plus one thin consumer:
   payload written by the hull ``LifecycleLock``);
 - ``wet config …`` / ``wet token hash`` / ``wet users path`` — instance
   config management for ``~/.wet/config.toml``;
-- ``wet docs reindex|import|reembed`` — host-side docs-store maintenance;
+- ``wet docs list|reindex|import|reembed`` — host-side docs-store maintenance;
   these run WITHOUT the server (direct SQLite access);
 - ``wet search`` — a CONSUMER: talks to the running server over streamable
   HTTP MCP (initialize → notifications/initialized → tools/call). When the
@@ -521,6 +521,32 @@ def _cmd_users_path(args: argparse.Namespace) -> int:
 # ---------------------------------------------------------------------------
 
 
+def _cmd_docs_list(args: argparse.Namespace) -> int:
+    from wet.config import settings
+    from wet.db import DocsDB
+    from wet.runtime import DEFAULT_EMBEDDING_DIMS
+
+    dims = settings.embedding_dims or DEFAULT_EMBEDDING_DIMS
+    try:
+        db = DocsDB(settings.get_db_path(), embedding_dims=dims, model_identity="")
+    except (RuntimeError, sqlite3.Error) as exc:
+        # EmbeddingModelMismatch (a RuntimeError) lands here: the store was
+        # built under a different model, and a traceback would read as a crash
+        # rather than the refusal `docs import` already reports.
+        print(f"wet docs list failed: {exc}", file=sys.stderr)
+        return 1
+    try:
+        libraries = db.list_libraries()
+    finally:
+        db.close()
+    if not libraries:
+        print("no libraries indexed yet — the first docs search indexes one")
+        return 0
+    for lib in libraries:
+        print(f"{lib['name']}  {lib['versions']} version(s)  {lib['chunks']} chunks")
+    return 0
+
+
 def _cmd_docs_reindex(args: argparse.Namespace) -> int:
     from wet.config import settings
     from wet.db import DocsDB
@@ -533,7 +559,14 @@ def _cmd_docs_reindex(args: argparse.Namespace) -> int:
     try:
         lib = db.get_library(args.library)
         if not lib:
-            _emit({"error": f"Library '{args.library}' not found in index"})
+            _emit(
+                {
+                    "error": (
+                        f"Library '{args.library}' not found in index "
+                        f"(run `wet docs list`)"
+                    )
+                }
+            )
             return 1
         ver = db.get_best_version(lib["id"])
         if ver:
@@ -891,6 +924,10 @@ def build_parser() -> argparse.ArgumentParser:
         "docs", help="host-side docs-store maintenance (no server needed)"
     )
     docs_sub = p_docs.add_subparsers(dest="docs_action", required=True)
+    p_docs_list = docs_sub.add_parser(
+        "list", help="print the indexed library names that reindex accepts"
+    )
+    p_docs_list.set_defaults(func=_cmd_docs_list)
     p_docs_reindex = docs_sub.add_parser(
         "reindex", help="clear a library's chunks so the next search re-indexes"
     )

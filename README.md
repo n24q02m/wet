@@ -354,13 +354,20 @@ wet server start                # start the Streamable HTTP server (detached; --
 wet server status               # pid, lock and HTTP liveness
 wet server stop
 
-wet warmup                      # pre-download local models + run auto-setup (SearXNG, browser) to avoid first-run delays
+wet config init                 # write ~/.wet/config.toml; `config get|set` reads/edits one key
+wet token hash <token>          # print the storable scrypt hash for users.toml
+wet users path                  # print the users.toml path
+
+wet docs list                   # indexed library names (the input for `docs reindex`)
 wet docs reindex <library>      # drop the cached docs index for <library>; the next docs search re-indexes it
+
+wet search "<query>"            # call the running server; exits 2 when it is down
+wet warmup                      # pre-download local models + run auto-setup (SearXNG, browser) to avoid first-run delays
 ```
 
-`auth google` accepts an optional bring-your-own OAuth client via `--client-id`
-and `--client-secret` (single-user / local machine only; the token is written to
-the local store). Each subcommand prints a JSON result and exits.
+Every subcommand prints its result and exits; there is no interactive auth or
+credential flow in the CLI. Google Drive sync lives in
+[better-drive](https://github.com/n24q02m/better-drive), not in wet.
 
 | Capability | wet | Brave Search | Tavily | Firecrawl | Context7 |
 |---|---|---|---|---|---|

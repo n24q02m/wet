@@ -49,8 +49,9 @@ uv run ruff format --check .
 ### Running Locally
 
 ```bash
-# Run the server (SearXNG will auto-start as embedded subprocess)
-uv run wet
+# Run the server in the foreground (SearXNG auto-starts as an embedded subprocess).
+# Bare `wet` prints usage; there is no stdio mode.
+uv run wet server start --foreground
 
 # For LLM-based features, configure the [models.chat] cell or set:
 export OPENROUTER_API_KEY="your-key"
