@@ -18,9 +18,8 @@ analysis. Valid wet media actions: list (discover media on page),
 download (save to local).
 ```
 
-The `wet.llm.analyze_media` helper itself is preserved for tests
-that exercise it directly, but it is no longer reachable from any MCP
-tool surface.
+The media-analysis helpers that backed the action were removed along
+with it, so no media-analysis code path remains in the package.
 
 #### Replacement recipe
 
