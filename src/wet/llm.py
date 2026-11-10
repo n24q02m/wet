@@ -6,13 +6,15 @@ from dataclasses import dataclass
 # Chat cell client (single per-task cell, cached for the process lifetime)
 # ---------------------------------------------------------------------------
 
-# Process-shared OpenAI-spec client for the [models.chat] cell. One cell, one
-# client: base_url, api_key, and model come from the cell and never per call.
+# Process-shared pooled client for the [models.chat] cell. One cell, one client:
+# base_url and model come from the cell and never per call, while the key comes
+# from the cell's credential pool (hull key pool: 401/403 disables that key, 429
+# cools it down honouring Retry-After, exhaustion raises ProviderUnavailable).
 _chat_client = None
 
 
 def _chat_provider_client():
-    """Return the cached chat-cell client (built lazily on first use)."""
+    """Return the cached chat-cell pool client (built lazily on first use)."""
     global _chat_client
     if _chat_client is None:
         from wet.runtime import provider_client
@@ -57,7 +59,7 @@ class ChatResult:
 
 
 def has_llm_provider() -> bool:
-    """Whether the [models.chat] cell is configured (base_url + key + model)."""
+    """Whether the [models.chat] cell has a credential (cell key or pool)."""
     from wet.runtime import cell_configured
 
     return cell_configured("chat")
@@ -86,11 +88,13 @@ async def acompletion(
 ) -> ChatResult:
     """Run one chat completion via the [models.chat] provider cell.
 
-    The cell owns base_url, api_key, and model: the ``model``, ``api_base``
-    and ``api_key`` arguments are accepted for caller compatibility and
-    IGNORED -- the cell's model is verbatim, there are no provider prefixes.
+    The cell owns base_url and model, and its pool owns the key: the ``model``,
+    ``api_base`` and ``api_key`` arguments are accepted for caller compatibility
+    and IGNORED -- the cell's model is verbatim, there are no provider prefixes.
     ``fallbacks`` is likewise accepted and ignored: a single per-task cell has
-    no fallback chain, and its presence never fails the call.
+    no fallback chain, and its presence never fails the call. Key rotation
+    across the cell's pool happens inside the client (401/403 disable, 429
+    cooldown, redacted ``ProviderUnavailable`` when nothing is left).
     """
     client = _chat_provider_client()
 

@@ -2,11 +2,14 @@
 where SearXNG cannot run. All return the same JSON string {results, total, query}
 | {error} that server.py's search action already expects from searxng.search().
 
-Each cloud backend takes a LIST of API keys (CSV in the env): a single key keeps
-exactly today's behaviour, while multiple keys rotate automatically on a
-key-specific failure (HTTP 429 rate-limit / 401-403 auth) via the local
-``_rotate_keys`` primitive. An empty result from a working key is
-legitimate and never triggers rotation — only the PROVIDER chain advances on empty.
+Each cloud backend takes a LIST of API keys (CSV in the env). The keys are
+seeded into the provider's credential pool in hull's shared store and every
+request goes through it (``wet.keypool.pool_run``): a 401/403 disables that key,
+a 429 cools it down by ``Retry-After`` / ``rate_limit_reset``, a 5xx retries it
+once then rotates, and the next request picks up whatever is healthy -- across
+processes, because the state lives in the store rather than in this module. An
+empty result from a working key is legitimate and never triggers rotation: only
+the PROVIDER chain advances on empty.
 """
 
 from __future__ import annotations
@@ -26,10 +29,7 @@ from loguru import logger
 
 from wet import search_metrics
 from wet.config import settings
-
-# --- Local fallback / key-rotation primitives (de-host 2026-09) ------------
-# Inlined from the deleted shared chains / key-rotation modules; semantics
-# preserved exactly.
+from wet.keypool import PoolExhaustedError, pool_for_provider, pool_run, status_of_http
 
 
 def split_keys(raw: str | None) -> list[str]:
@@ -37,47 +37,6 @@ def split_keys(raw: str | None) -> list[str]:
     if not raw:
         return []
     return [k.strip() for k in raw.split(",") if k.strip()]
-
-
-_ROTATABLE_STATUS = {401, 403, 429}
-_ROTATABLE_NAMES = {"RateLimitError", "AuthenticationError", "PermissionDeniedError"}
-
-
-def _is_rotatable_error(exc: BaseException) -> bool:
-    """Whether ``exc`` is key-specific (rotate to the next key): a 429/401/403
-    status on the exception (as raised by ``_SearchHTTPError``) or a provider
-    SDK exception of a rate-limit/auth/permission class."""
-    status = getattr(exc, "status_code", None)
-    if isinstance(status, int) and status in _ROTATABLE_STATUS:
-        return True
-    return type(exc).__name__ in _ROTATABLE_NAMES
-
-
-async def _rotate_keys(
-    keys: list[str],
-    call: Callable[[str], Awaitable[str]],
-    *,
-    label: str = "provider",
-) -> str:
-    """Run ``call`` with each key in order; return the first success.
-
-    A key-specific failure (see ``_is_rotatable_error``) advances to the next
-    key; any other error propagates immediately. When every key fails
-    key-specifically, the LAST such error is re-raised (the caller formats it
-    — e.g. the ``"<Provider> HTTP <code>"`` envelope naming the provider).
-    """
-    if len(keys) <= 1:
-        return await call(keys[0] if keys else "")
-    last: BaseException | None = None
-    for key in keys:
-        try:
-            return await call(key)
-        except BaseException as exc:  # noqa: BLE001 - re-raised below
-            if not _is_rotatable_error(exc):
-                raise
-            last = exc
-    assert last is not None
-    raise last
 
 
 async def run_with_fallback(
@@ -126,13 +85,24 @@ class SearchBackend(Protocol):
 
 
 class _SearchHTTPError(Exception):
-    """A non-2xx response from a search provider, carrying ``status_code`` so
-    ``_is_rotatable_error`` classifies 429/401/403 as a rotatable
-    (key-specific) failure and advances to the next key. The message is the safe
-    ``"<Provider> HTTP <code>"`` form — it never carries the request body/key."""
+    """A non-2xx response from a search provider, in the tool-contract shape.
 
-    def __init__(self, provider: str, status_code: int) -> None:
+    Carries ``status_code`` (and the response ``headers`` when the caller has
+    them) so the credential pool can apply its rotation policy: 401/403 disable
+    the key, 429 cools it down by ``Retry-After`` / ``rate_limit_reset``, 5xx
+    retries once then rotates, anything else re-raises untouched. The message is
+    the safe ``"<Provider> HTTP <code>"`` form -- it never carries the request
+    body or the key.
+    """
+
+    def __init__(
+        self,
+        provider: str,
+        status_code: int,
+        headers: httpx.Headers | dict[str, str] | None = None,
+    ) -> None:
         self.status_code = status_code
+        self.headers = headers
         super().__init__(f"{provider} HTTP {status_code}")
 
 
@@ -140,15 +110,35 @@ async def _search_with_rotation(
     keys: list[str],
     attempt: Callable[[str], Awaitable[str]],
     provider: str,
+    *,
+    provider_id: str,
+    base_url: str,
 ) -> str:
-    """Rotate ``keys`` for one search provider, advancing only on a key-specific
-    failure (429/401/403). Returns the tool-contract error envelope when keys are
-    exhausted or a non-rotatable error occurs — type name only, never the
-    exception text (an httpx error may carry the request body, i.e. the key)."""
+    """Run one search over the provider's credential pool.
+
+    ``keys`` (the env/config CSV) are seeded into the pool on first use and the
+    pool's rotation applies: 401/403 disable the key, 429 cools it down, 5xx
+    retries once then rotates, anything else re-raises. Returns the tool-contract
+    error envelope when the pool is exhausted or the failure is not
+    credential-related -- the exhausted envelope is the last provider error
+    (``"<Provider> HTTP <code>"``) and otherwise a type name only, never the
+    exception text (an httpx error may carry the request body, i.e. the key).
+    """
     if not keys:
         return json.dumps({"error": f"{provider} search backend has no API key"})
     try:
-        return await _rotate_keys(keys, attempt, label=provider.lower())
+        pool = pool_for_provider(provider_id, keys=keys, base_url=base_url)
+        return await pool_run(
+            pool,
+            lambda credential: attempt(credential.api_key),
+            status_of=status_of_http,
+        )
+    except PoolExhaustedError as exc:
+        # Every key is disabled, cooling down or leased: name the provider (and
+        # the cooldown) through the pool's redacted last error.
+        return json.dumps(
+            {"error": exc.last_error or f"{provider} search backend exhausted"}
+        )
     except _SearchHTTPError as exc:
         return json.dumps(
             {"error": str(exc)}
@@ -461,7 +451,7 @@ class TavilyBackend:
                 },
             )
             if resp.status_code != 200:
-                raise _SearchHTTPError("Tavily", resp.status_code)
+                raise _SearchHTTPError("Tavily", resp.status_code, resp.headers)
             results = resp.json().get("results", [])
             mapped = [
                 {
@@ -509,6 +499,8 @@ class TavilyBackend:
             self.keys,
             lambda key: self._search_one(key, query, max_results, country),
             "Tavily",
+            provider_id=self.name,
+            base_url=self._URL,
         )
 
 
@@ -549,7 +541,7 @@ class BraveBackend:
         async with httpx.AsyncClient(timeout=30) as client:
             resp = await client.get(self._URL, params=params, headers=headers)
             if resp.status_code != 200:
-                raise _SearchHTTPError("Brave", resp.status_code)
+                raise _SearchHTTPError("Brave", resp.status_code, resp.headers)
             results = resp.json().get("web", {}).get("results", [])
             mapped = [
                 {
@@ -583,6 +575,8 @@ class BraveBackend:
                 key, query, max_results, time_range, language, region
             ),
             "Brave",
+            provider_id=self.name,
+            base_url=self._URL,
         )
 
 
@@ -617,7 +611,7 @@ class ExaBackend:
         async with httpx.AsyncClient(timeout=30) as client:
             resp = await client.post(self._URL, json=body, headers=headers)
             if resp.status_code != 200:
-                raise _SearchHTTPError("Exa", resp.status_code)
+                raise _SearchHTTPError("Exa", resp.status_code, resp.headers)
             results = resp.json().get("results", [])
             mapped = [
                 {
@@ -659,6 +653,8 @@ class ExaBackend:
                 key, query, max_results, include_domains, exclude_domains
             ),
             "Exa",
+            provider_id=self.name,
+            base_url=self._URL,
         )
 
 
@@ -919,7 +915,7 @@ class FirecrawlBackend:
         async with httpx.AsyncClient(timeout=30) as client:
             resp = await client.post(self._URL, json=body, headers=headers)
             if resp.status_code != 200:
-                raise _SearchHTTPError("Firecrawl", resp.status_code)
+                raise _SearchHTTPError("Firecrawl", resp.status_code, resp.headers)
             data = resp.json().get("data") or {}
         rows = data.get("search") or data.get("web") or []
         mapped = [
@@ -956,6 +952,8 @@ class FirecrawlBackend:
                 self.keys,
                 lambda key: self._search_one(key, query, max_results, time_range),
                 "Firecrawl",
+                provider_id=self.name,
+                base_url=self._URL,
             )
         return await _search_keyless(
             lambda: self._search_one(None, query, max_results, time_range), "Firecrawl"
@@ -989,7 +987,7 @@ class KagiBackend:
                 },
             )
             if resp.status_code != 200:
-                raise _SearchHTTPError("Kagi", resp.status_code)
+                raise _SearchHTTPError("Kagi", resp.status_code, resp.headers)
             rows = (resp.json().get("data") or {}).get("search") or []
         mapped = [
             {
@@ -1022,6 +1020,8 @@ class KagiBackend:
             self.keys,
             lambda key: self._search_one(key, query, max_results),
             "Kagi",
+            provider_id=self.name,
+            base_url=self._URL,
         )
 
 
@@ -1097,7 +1097,7 @@ class OpenRouterBackend:
                 headers=headers,
             )
             if resp.status_code != 200:
-                raise _SearchHTTPError("OpenRouter", resp.status_code)
+                raise _SearchHTTPError("OpenRouter", resp.status_code, resp.headers)
             choices = resp.json().get("choices") or [{}]
         message = choices[0].get("message") or {}
         seen: set[str] = set()
@@ -1139,6 +1139,8 @@ class OpenRouterBackend:
             self.keys,
             lambda key: self._search_one(key, query, max_results),
             "OpenRouter",
+            provider_id=self.name,
+            base_url=self.base_url,
         )
 
 
