@@ -2,6 +2,37 @@
 
 <!-- version list -->
 
+## v3.21.0-beta.2 (2026-11-10)
+
+### Bug Fixes
+
+- Document the shipped wet CLI surface and give docs reindex a next step
+  ([#1936](https://github.com/n24q02m/wet/pull/1936),
+  [`7ec3126`](https://github.com/n24q02m/wet/commit/7ec3126d1a52a930e33d62a996f295a0483f314e))
+
+- Drop stale references to removed llm media helpers
+  ([#1933](https://github.com/n24q02m/wet/pull/1933),
+  [`e67054a`](https://github.com/n24q02m/wet/commit/e67054a5642b03cc56ad99efead19b20b4285bf3))
+
+- Move discarded agent notes into docs/engineering-lessons.md
+  ([#1934](https://github.com/n24q02m/wet/pull/1934),
+  [`6000ffe`](https://github.com/n24q02m/wet/commit/6000ffe96696ba6d02b95351399a7faeeb68a638))
+
+- Publish the final wet-mcp stub from the release workflow
+  ([#1932](https://github.com/n24q02m/wet/pull/1932),
+  [`1af7f75`](https://github.com/n24q02m/wet/commit/1af7f754e7f461492100342febb32fdfc6cfd66b))
+
+- Remove the email notification and bot rate-limit jobs
+  ([#1931](https://github.com/n24q02m/wet/pull/1931),
+  [`41a3fc4`](https://github.com/n24q02m/wet/commit/41a3fc494efc4055fccb5a7987e0c16fda237fcb))
+
+### Features
+
+- Route every provider credential through hull's key pool
+  ([#1935](https://github.com/n24q02m/wet/pull/1935),
+  [`79f97d8`](https://github.com/n24q02m/wet/commit/79f97d82198651c85f49474802f1cce7729c7f73))
+
+
 ## v3.21.0-beta.1 (2026-11-03)
 
 ### Bug Fixes
