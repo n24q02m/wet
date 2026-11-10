@@ -78,7 +78,9 @@ streamable HTTP; with no server running they exit 2 and print a hint to run
 - LLM/Embed/Rerank/Chat: per-task provider cells `[models.embed|rerank|chat|jev_score]` in `~/.wet/config.toml` (each `base_url` + `api_key` + `model`, OpenAI-spec). OpenRouter is the pre-wired default for every cell.
   - Credentials: `api_key` in the cell, or `HULL_<TASK>_API_KEY` env injection (`HULL_EMBED_API_KEY` / `HULL_RERANK_API_KEY` / `HULL_CHAT_API_KEY` / `HULL_JEV_SCORE_API_KEY` — env wins over the file).
   - `OPENROUTER_API_KEY` env serves any cell that keeps the OpenRouter default `base_url` — one key can power every task.
-  - Empty embed/rerank cell -> local ONNX (fastretrieval); unkeyed chat cell -> LLM features off.
+  - Key pool (hull 0.5): every key above is seeded once into the provider's credential pool in `~/.hull/hull.db` (`WET_HULL_DB` overrides). A 401/403 disables that key and the call rotates to the next one; a 429 cools it down by `Retry-After` / `rate_limit_reset`; an exhausted pool raises `wet.keypool.ProviderUnavailable` (provider + cooldown, never a key). The legacy key is never removed from env/config.
+  - Multi-account: `[models.<task>] account = "<account id>"` (default: the provider's unaccounted pool), `provider = "<identity>"` overrides the identity derived from `base_url`. Managed through hull's `CredentialStore` / `AccountRegistry`.
+  - Empty embed/rerank cell -> local ONNX (fastretrieval); unkeyed chat cell -> LLM features off. A cell with no key still counts as configured when its pool holds credentials.
  - Local model cache: `FASTRETRIEVAL_CACHE_PATH`.
 - Search backends (`SEARCH_BACKENDS` CSV, runtime fallback — thử từng backend, rơi xuống backend kế khi error/empty): `searxng` (self-host) | `tavily` | `brave` | `exa` | `kagi` (keyed, `KAGI_API_KEY`) | `openrouter` (`OPENROUTER_API_KEY`, `openrouter:web_search` server tool) | `firecrawl` (key optional — không key vẫn thử keyless, `FIRECRAWL_API_KEY`) | `duckduckgo` | `startpage` (credential-free HTML scrape, uvx-safe; datacenter IP có thể bị bot-challenge → chain tự advance).
 - SearXNG: `WET_AUTO_SEARXNG` (default true), `SEARXNG_URL` (external mode)

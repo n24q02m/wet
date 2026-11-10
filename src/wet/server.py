@@ -356,6 +356,21 @@ async def _lifespan_startup() -> asyncio.Task | None:
     # 3. Initialize embedding backend (dual-backend: cloud or local)
     _embedding_dims = settings.embedding_dims or DEFAULT_EMBEDDING_DIMS
 
+    # 3b. Seed the provider key pools from the legacy single-key cells (once,
+    #     idempotent -- re-running only skips what the store already holds). The
+    #     env/config key is never removed; it stays the first-run seed.
+    try:
+        from hull_core.config.models import TASKS
+
+        from wet.keypool import migrate_legacy_cells
+
+        seeded = migrate_legacy_cells([model_cell(task) for task in TASKS])
+        added = sum(result.added for result in seeded)
+        if added:
+            logger.info(f"Provider key pool: seeded {added} credential(s) from config")
+    except Exception as e:  # pragma: no cover - never block startup
+        logger.warning(f"Provider key pool seed skipped: {e}")
+
     async def _init_backends_task():
         try:
             await _init_embedding_backend()

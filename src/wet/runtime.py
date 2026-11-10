@@ -10,10 +10,11 @@ One place wires the shared-core seams together:
 - per-sub storage roots: everything a caller writes lands under
   ``~/.wet/subs/<namespace>/`` (cache.db, snapshots), so mode-3 users on one
   process can never see each other's data (spec §4 Q2);
-- provider clients: one :class:`hull_core.providers.openai_spec.
-  OpenAICompatClient` per task cell (embed / rerank / chat / jev_score),
-  built with the mode-derived SSRF policy (loopback self-hosted providers are
-  a no-auth single-instance feature only).
+- provider clients: one :class:`wet.keypool.PooledProviderClient` per task cell
+  (embed / rerank / chat / jev_score), built with the mode-derived SSRF policy
+  (loopback self-hosted providers are a no-auth single-instance feature only)
+  and reading the cell's credential pool, so a 401/403 or a 429 rotates to the
+  next key instead of failing the feature.
 """
 
 from __future__ import annotations
@@ -29,7 +30,13 @@ from hull_core.auth.users import User, load_users
 from hull_core.config.models import DEFAULT_BASE_URL, ModelCell, resolve_model_cells
 from hull_core.config.settings import CONFIG_TEMPLATE, HullSettings, load_settings
 from hull_core.limits.limiter import SlidingWindowLimiter
-from hull_core.providers.openai_spec import OpenAICompatClient
+from loguru import logger
+
+from wet.keypool import (
+    PooledProviderClient,
+    credential_db_path,
+    pool_for_task,
+)
 
 # Default embedding dimensions for sqlite-vec when EMBEDDING_DIMS is unset.
 # Embeddings are truncated to this size, but a same-dim model swap still
@@ -63,8 +70,9 @@ def hull_settings() -> HullSettings:
 
 
 def reset_settings_cache() -> None:
-    """Drop the cached instance settings (config edited, tests)."""
+    """Drop the cached instance settings and pooled clients (config edited, tests)."""
     _cached_settings.cache_clear()
+    _PROVIDER_CLIENTS.clear()
 
 
 def load_users_for(settings: HullSettings) -> dict[str, User] | None:
@@ -127,24 +135,66 @@ def model_cell(task: str, settings: HullSettings | None = None) -> ModelCell:
     return replace(cell, api_key=fallback) if fallback else cell
 
 
+# One pooled client per cell identity: the client caches its per-credential
+# HTTP clients, so rebuilding it per tool call would throw away every
+# connection (and the rotation memo) each time.
+_PROVIDER_CLIENTS: dict[tuple, PooledProviderClient] = {}
+
+
 def provider_client(
     task: str,
     settings: HullSettings | None = None,
     *,
     timeout: float = 60.0,
-) -> OpenAICompatClient:
-    """Build an OpenAI-spec client for one task cell (SSRF policy by mode)."""
+) -> PooledProviderClient:
+    """Build (or reuse) the pooled provider client for one task cell.
+
+    The client serves the cell's ``base_url`` + ``model`` with a credential
+    from the cell's provider pool (hull key pool: 401/403 disables that key,
+    429 cools it down honouring ``Retry-After``, exhaustion surfaces as a
+    redacted :class:`wet.keypool.ProviderUnavailable`). SSRF policy is
+    mode-derived, as before.
+    """
     settings = settings if settings is not None else hull_settings()
-    return OpenAICompatClient(
-        model_cell(task, settings),
-        auth_mode=settings.server.auth,
-        timeout=timeout,
+    cell = model_cell(task, settings)
+    key = (
+        task,
+        cell.base_url,
+        cell.model,
+        cell.provider,
+        cell.account,
+        cell.api_key,
+        settings.server.auth,
+        timeout,
+        str(credential_db_path()),
     )
+    client = _PROVIDER_CLIENTS.get(key)
+    if client is None:
+        client = PooledProviderClient(
+            cell,
+            auth_mode=settings.server.auth,
+            timeout=timeout,
+        )
+        _PROVIDER_CLIENTS[key] = client
+    return client
 
 
 def cell_configured(task: str, settings: HullSettings | None = None) -> bool:
-    """True when the host configured a key for the task's cell."""
-    return model_cell(task, settings).configured
+    """True when the task's cell has a usable credential source.
+
+    A key in the cell (config or ``HULL_<TASK>_API_KEY`` / the OpenRouter
+    fallback) is the legacy single-key answer; a pool seeded through the
+    credential store answers for a keyless cell too, so a host that moved its
+    keys into the pool keeps the capability on.
+    """
+    cell = model_cell(task, settings)
+    if cell.configured:
+        return True
+    try:
+        return bool(pool_for_task(cell).credentials())
+    except Exception as exc:
+        logger.warning(f"provider pool unavailable for {task}: {exc}")
+        return False
 
 
 __all__ = [
