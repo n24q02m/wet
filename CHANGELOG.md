@@ -2,6 +2,49 @@
 
 <!-- version list -->
 
+## v3.21.0 (2026-11-12)
+
+### Bug Fixes
+
+- Apply the formatter to the docs DB guard ([#1925](https://github.com/n24q02m/wet/pull/1925),
+  [`461ff94`](https://github.com/n24q02m/wet/commit/461ff941a6131ccf63fe91ef4971496b0f6c5a31))
+
+- Keep the type check green under the stricter ty rules
+  ([#1925](https://github.com/n24q02m/wet/pull/1925),
+  [`461ff94`](https://github.com/n24q02m/wet/commit/461ff941a6131ccf63fe91ef4971496b0f6c5a31))
+
+- Point the config gap tests at the shared editor
+  ([#1939](https://github.com/n24q02m/wet/pull/1939),
+  [`d86cbb8`](https://github.com/n24q02m/wet/commit/d86cbb8db25d454c8c44d369d7ff6757bdc96508))
+
+- Report real bounds, failures and diagnostics on the MCP surface
+  ([#1938](https://github.com/n24q02m/wet/pull/1938),
+  [`b399a06`](https://github.com/n24q02m/wet/commit/b399a06535dcdab958432c00322255d51ff52b16))
+
+- Sync the lockfile to the 3.21.0b2 package version
+  ([#1937](https://github.com/n24q02m/wet/pull/1937),
+  [`7b57c06`](https://github.com/n24q02m/wet/commit/7b57c06d657a80398564da060a38edf0a53d003b))
+
+- **deps**: Lock file maintenance ([#1925](https://github.com/n24q02m/wet/pull/1925),
+  [`461ff94`](https://github.com/n24q02m/wet/commit/461ff941a6131ccf63fe91ef4971496b0f6c5a31))
+
+- **deps**: Update patch dependencies ([#1924](https://github.com/n24q02m/wet/pull/1924),
+  [`0ac7e2b`](https://github.com/n24q02m/wet/commit/0ac7e2be21c356263381dbe33d98e826679ba97d))
+
+### Features
+
+- Build on hull 0.6.1 ([#1939](https://github.com/n24q02m/wet/pull/1939),
+  [`d86cbb8`](https://github.com/n24q02m/wet/commit/d86cbb8db25d454c8c44d369d7ff6757bdc96508))
+
+- Build on hull 0.6.1 and share the config editor
+  ([#1939](https://github.com/n24q02m/wet/pull/1939),
+  [`d86cbb8`](https://github.com/n24q02m/wet/commit/d86cbb8db25d454c8c44d369d7ff6757bdc96508))
+
+- Share the config editor with the rest of the stack
+  ([#1939](https://github.com/n24q02m/wet/pull/1939),
+  [`d86cbb8`](https://github.com/n24q02m/wet/commit/d86cbb8db25d454c8c44d369d7ff6757bdc96508))
+
+
 ## v3.21.0-beta.2 (2026-11-10)
 
 ### Bug Fixes
