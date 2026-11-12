@@ -243,7 +243,7 @@ async def run_warmup() -> dict:
     # host may be offline — both are warnings, never warmup failures.
     try:
         from invisible_core._geoip_db import (
-            ensure_geoip_mmdb,  # ty: ignore[unresolved-import]  # optional [identity] extra
+            ensure_geoip_mmdb,  # ty: ignore[import-not-found]  # optional [identity] extra
         )
 
         mmdb_path = await asyncio.to_thread(ensure_geoip_mmdb)

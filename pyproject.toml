@@ -152,7 +152,7 @@ markers = [
 addopts = "-m 'not integration and not live and not full and not e2e'"
 
 [tool.ty]
-rules = { unresolved-import = "ignore", unresolved-attribute = "ignore", possibly-missing-attribute = "ignore", pydantic-discarded-extra-argument = "ignore", unused-ignore-comment = "ignore", unused-type-ignore-comment = "ignore" }
+rules = { import-not-found = "ignore", missing-attribute = "ignore", possibly-missing-attribute = "ignore", pydantic-discarded-extra-argument = "ignore", unused-ignore-comment = "ignore", unused-type-ignore-comment = "ignore" }
 
 [tool.semantic_release]
 version_toml = ["pyproject.toml:project.version"]

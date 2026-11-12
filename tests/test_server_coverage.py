@@ -1108,15 +1108,18 @@ async def test_background_index_embed_timeout():
 
 async def test_search_cached_index_no_results():
     """Line 1304: search returns empty results -> None."""
+    assert server._docs_db is not None
     server._docs_db.get_library.return_value = {
         "id": 1,
         "discovery_version": 999,
     }
+    assert server._docs_db is not None
     server._docs_db.get_best_version.return_value = {
         "id": 1,
         "chunk_count": 10,
         "version": "latest",
     }
+    assert server._docs_db is not None
     server._docs_db.search.return_value = []
 
     with patch("wet.server._embed", new_callable=AsyncMock, return_value=None):
@@ -1126,10 +1129,12 @@ async def test_search_cached_index_no_results():
 
 async def test_search_cached_index_version_zero_chunks():
     """Line 1289: version has chunk_count=0 -> None."""
+    assert server._docs_db is not None
     server._docs_db.get_library.return_value = {
         "id": 1,
         "discovery_version": 999,
     }
+    assert server._docs_db is not None
     server._docs_db.get_best_version.return_value = {
         "id": 1,
         "chunk_count": 0,

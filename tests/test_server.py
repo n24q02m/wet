@@ -590,6 +590,7 @@ async def test_search_expand_flag():
 
         assert "Search Results" in text(result)
         # Verify expanded query was passed to the configured chain.
+        assert mock_search.await_args is not None
         assert "OR" in mock_search.await_args.kwargs["query"]
 
 
