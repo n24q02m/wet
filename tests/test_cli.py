@@ -355,14 +355,14 @@ class TestConfigCommand:
     def test_get_missing_file_hints_init(self, capsys, config_dir):
         rc = cli.main(["config", "get", "server.port"])
 
-        assert rc == 1
+        assert rc == 2
         assert "config init" in capsys.readouterr().err
 
     def test_get_unknown_key_errors(self, capsys, config_dir):
         cli.main(["config", "init"])
         rc = cli.main(["config", "get", "server.nope"])
 
-        assert rc == 1
+        assert rc == 2
         assert "key not found" in capsys.readouterr().err
 
     def test_set_updates_existing_key(self, capsys, config_dir):
@@ -385,7 +385,7 @@ class TestConfigCommand:
         cli.main(["config", "init"])
         rc = cli.main(["config", "set", "models.nonsense.key", "x"])
 
-        assert rc == 1
+        assert rc == 2
         assert "edit the file directly" in capsys.readouterr().err
 
     def test_set_secret_value_is_not_echoed(self, capsys, config_dir):
