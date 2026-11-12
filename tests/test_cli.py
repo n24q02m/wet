@@ -240,9 +240,27 @@ class TestServerStop:
 
 
 class TestServerStatus:
+    def test_status_without_lock_probes_wet_port_override(
+        self, monkeypatch, capsys, locks_dir
+    ):
+        """``WET_PORT`` outranks the config file in the server, so the CLI has
+        to resolve it the same way or it probes a port nothing listens on."""
+        monkeypatch.setenv("WET_PORT", "8011")
+        with (
+            patch("wet.runtime.hull_settings", return_value=_hs(port=9103)),
+            patch("wet.cli._http_probe", return_value=False),
+        ):
+            rc = cli.main(["server", "status"])
+
+        assert rc == 1
+        out = capsys.readouterr().out
+        assert "port 8011" in out
+        assert "9103" not in out
+
     def test_status_without_lock_probes_config_port(
         self, monkeypatch, capsys, locks_dir
     ):
+        monkeypatch.delenv("WET_PORT", raising=False)
         with (
             patch("wet.runtime.hull_settings", return_value=_hs(port=9103)),
             patch("wet.cli._http_probe", return_value=False),

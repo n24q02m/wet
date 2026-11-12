@@ -81,8 +81,8 @@ async def test_run_search_chain_parallel_fanout():
     )
 
     with patch(
-        "wet.sources.search_backends.search_backends_from_env",
-        return_value=[b1, b2],
+        "wet.sources.search_backends.search_backends_with_skips",
+        return_value=([b1, b2], {}),
     ):
         with patch(
             "wet.sources.search_backends.chain_backend_names",
@@ -123,8 +123,8 @@ async def test_run_search_chain_parallel_with_one_failure():
     )
 
     with patch(
-        "wet.sources.search_backends.search_backends_from_env",
-        return_value=[b1, b2],
+        "wet.sources.search_backends.search_backends_with_skips",
+        return_value=([b1, b2], {}),
     ):
         with patch(
             "wet.sources.search_backends.chain_backend_names",
@@ -160,8 +160,8 @@ async def test_run_search_chain_parallel_false_uses_sequential():
     )
 
     with patch(
-        "wet.sources.search_backends.search_backends_from_env",
-        return_value=[b1, b2],
+        "wet.sources.search_backends.search_backends_with_skips",
+        return_value=([b1, b2], {}),
     ):
         with patch(
             "wet.sources.search_backends.chain_backend_names",

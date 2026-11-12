@@ -640,6 +640,21 @@ def test_search_tool_error_prints_detail_and_fails(monkeypatch, capsys):
     assert "boom detail" in capsys.readouterr().err
 
 
+def test_search_error_envelope_without_iserror_fails(monkeypatch, capsys):
+    """A server or proxy may drop ``isError`` while still returning
+    ``{"error": ...}``; the exit code is what a shell pipeline acts on."""
+    routes = {
+        "initialize": _init_ok(),
+        "notifications/initialized": _FakeResponse(b""),
+        "tools/call": _call_ok(json.dumps({"error": "Search backends [x] unbuilt"})),
+    }
+    monkeypatch.setattr(cli.urllib.request, "urlopen", _scripted_urlopen(routes, []))
+    rc = cli.main(["search", "q"])
+
+    assert rc == 1
+    assert "unbuilt" in capsys.readouterr().err
+
+
 def test_search_empty_result_prints_placeholder(monkeypatch, capsys):
     routes = {
         "initialize": _init_ok(),

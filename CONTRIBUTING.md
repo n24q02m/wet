@@ -34,7 +34,8 @@ Without mise, ensure you have Python 3.13+ and uv installed:
 ```bash
 uv sync --dev
 uv run pre-commit install
-uv run playwright install chromium
+uv run playwright install chromium   # crawl4ai's renderer
+uv run patchright install chromium   # extract(action="interact")
 ```
 
 3. **Run checks**

@@ -101,8 +101,8 @@ async def test_search_budget_enforcement():
 
     with patch("wet.sources.search_backends.settings.wet_search_budget", 1):
         with patch(
-            "wet.sources.search_backends.search_backends_from_env",
-            return_value=[b1, b2],
+            "wet.sources.search_backends.search_backends_with_skips",
+            return_value=([b1, b2], {}),
         ):
             # 1st call: b1 should be used
             res1 = await run_search_chain("test query")

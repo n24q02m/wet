@@ -303,10 +303,29 @@ def test_install_searxng_exception(mock_get_pip, _mock_find):
 
 
 @patch("subprocess.run")
-def test_setup_crawl4ai_success(mock_run):
+def test_setup_crawl4ai_installs_both_browser_builds(mock_run):
+    """crawl4ai drives playwright, ``extract interact`` drives patchright, and
+    each pins a DIFFERENT Chromium build — installing only playwright's left
+    every interact call failing with "Executable doesn't exist"."""
     mock_run.return_value = MagicMock(returncode=0)
+
     assert _setup_crawl4ai() is True
-    assert mock_run.call_count == 2
+
+    commands = [call.args[0] for call in mock_run.call_args_list]
+    assert ["playwright", "install", "chromium"] in [
+        cmd[2:5] for cmd in commands if len(cmd) > 4
+    ]
+    assert any(
+        cmd[1:3] == ["-m", "patchright"] and "chromium" in cmd for cmd in commands
+    ), commands
+    assert mock_run.call_count == 3  # migration + one install per consumer
+
+
+@patch("subprocess.run")
+def test_setup_crawl4ai_reports_a_failed_browser_install(mock_run):
+    """A failed install must not be reported as a completed setup."""
+    mock_run.return_value = MagicMock(returncode=1, stderr="boom")
+    assert _setup_crawl4ai() is False
 
 
 @patch("subprocess.run", side_effect=Exception("Test error"))

@@ -36,6 +36,26 @@ if TYPE_CHECKING:
     from hull_web.browsers.interact import InteractOps
 
 _VALID_ACTION_TYPES = {"click", "fill", "submit", "wait"}
+
+# patchright launches its OWN pinned Chromium build, so a host that only has
+# playwright's browser fails here with "Executable doesn't exist". That message
+# never reached the caller (the tool layer reported a bare "Error executing
+# tool extract"), which is the difference between a five-minute fix and a bug
+# report. Name the command inline instead.
+_BROWSER_MISSING_HINT = (
+    "patchright's Chromium is not installed: run "
+    "`python -m patchright install chromium` (the first-start setup does this)"
+)
+
+
+def _browser_launch_error(exc: Exception) -> str:
+    """Turn a browser-launch failure into an actionable one-line error."""
+    text = str(exc)
+    if "executable doesn't exist" in text.lower():
+        return f"{_BROWSER_MISSING_HINT}. Cause: {text}"
+    return text
+
+
 _DEFAULT_TIMEOUT_MS = 10000
 _MAX_ACTIONS_PER_CALL = 20
 
@@ -165,13 +185,21 @@ async def run_interact(
     persistent = False
     try:
         if session:
-            ops = await get_pool().get(session, url)
+            try:
+                ops = await get_pool().get(session, url)
+            except Exception as exc:
+                logger.error(f"interact session launch failed: {exc}")
+                return f"Error: browser launch failed: {_browser_launch_error(exc)}"
             page = ops._page  # type: ignore[attr-defined]
             persistent = True
         else:
             from hull_web.browsers.interact import open_interact_session
 
-            pw, browser, page, ops = await open_interact_session(url)
+            try:
+                pw, browser, page, ops = await open_interact_session(url)
+            except Exception as exc:
+                logger.error(f"interact browser launch failed: {exc}")
+                return f"Error: browser launch failed: {_browser_launch_error(exc)}"
 
         # Apply each action in order; first failure short-circuits.
         for action in actions:

@@ -92,7 +92,12 @@ RUN --mount=type=cache,target=/root/.cache/uv \
     else echo "full build: keeping local fastretrieval embed/rerank"; fi
 
 ENV PLAYWRIGHT_BROWSERS_PATH=/opt/playwright
-RUN mkdir -p /opt/playwright && if [ "$SLIM" != "1" ]; then uv run python -m playwright install chromium; fi
+# Two Chromium consumers with different pinned builds: crawl4ai drives
+# playwright, extract(action="interact") drives patchright. One build dir
+# each, so installing only playwright's breaks interact at launch.
+RUN mkdir -p /opt/playwright && if [ "$SLIM" != "1" ]; then \
+    uv run python -m playwright install chromium && \
+    uv run python -m patchright install chromium; fi
 
 # Non-root runtime. The code reads no WET_HOME-style env (config root is
 # Path.home()/.wet), so mount-friendliness comes from pinning HOME and
