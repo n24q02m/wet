@@ -2947,9 +2947,7 @@ async def _background_index_and_search(
                 f"docs database unavailable; {len(all_chunks)} chunks for "
                 f"'{library}' were not stored"
             )
-            _record_index_state(
-                ver_id, INDEX_STATE_FAILED, "docs database unavailable"
-            )
+            _record_index_state(ver_id, INDEX_STATE_FAILED, "docs database unavailable")
             return
 
         # Drop the previous content only now that its replacement is in hand.
