@@ -26,13 +26,11 @@ import argparse
 import importlib.metadata
 import json
 import os
-import re
 import signal
 import sqlite3
 import subprocess
 import sys
 import time
-import tomllib
 import urllib.error
 import urllib.request
 from pathlib import Path
@@ -45,9 +43,6 @@ LOCKS_DIR = Path.home() / ".config" / "mcp" / "locks"
 SERVER_LOG_NAME = "wet-server.log"
 
 _MCP_PROTOCOL_VERSION = "2025-06-18"
-
-_HEADER_RE = re.compile(r"^\[([^\]]+)\]$")
-_KEY_RE = re.compile(r"^([A-Za-z0-9_-]+)\s*=")
 
 
 # ---------------------------------------------------------------------------
@@ -401,95 +396,48 @@ def _cmd_server_status(args: argparse.Namespace) -> int:
 # ---------------------------------------------------------------------------
 
 
-def _looks_secret(key: str) -> bool:
-    lowered = key.lower()
-    if lowered.endswith("_hash"):
-        return False  # a scrypt hash is not the token; echoing it is the workflow
-    return any(word in lowered for word in ("api_key", "token", "secret", "password"))
-
-
-def _toml_scalar(raw: str) -> str:
-    """Coerce a CLI value into TOML text (quoted string when not TOML)."""
-    try:
-        parsed = tomllib.loads(f"v = {raw}")
-        value = parsed["v"]
-    except tomllib.TOMLDecodeError:
-        value = raw
-    if isinstance(value, bool):
-        return "true" if value else "false"
-    if isinstance(value, str):
-        return json.dumps(value, ensure_ascii=False)
-    return str(value)
-
-
 def _config_get(path: Path, key: str) -> int:
-    if not path.is_file():
-        print(f"no config at {path} (run `wet config init`)", file=sys.stderr)
-        return 1
-    data = tomllib.loads(path.read_text(encoding="utf-8"))
-    current: object = data
-    for part in key.split("."):
-        if isinstance(current, dict) and part in current:
-            current = current[part]
-        else:
-            print(f"key not found: {key} (in {path})", file=sys.stderr)
-            return 1
-    if isinstance(current, bool):
-        print("true" if current else "false")
+    """Print one dotted key, masking anything credential-shaped (like hull)."""
+    import tomllib
+
+    from hull_core.config.tomledit import (
+        ConfigError,
+        format_value,
+        get_value,
+        looks_secret,
+    )
+
+    try:
+        value = get_value(path, key)
+    except (ConfigError, tomllib.TOMLDecodeError) as exc:
+        hint = "" if path.is_file() else " (run `wet config init`)"
+        print(f"error: {exc}{hint}", file=sys.stderr)
+        return 2
+    if looks_secret(key):
+        print("*** (value not echoed)")
     else:
-        print(current)
+        print(format_value(value))
     return 0
 
 
 def _config_set(path: Path, key: str, raw_value: str) -> int:
-    if not path.is_file():
-        print(f"no config at {path} (run `wet config init`)", file=sys.stderr)
-        return 1
-    parts = key.split(".")
-    if len(parts) < 2:
-        print(
-            f"key must be dotted (<section>.<key>, e.g. server.port or "
-            f"models.embed.model): got {key!r}",
-            file=sys.stderr,
-        )
-        return 1
-    section, name = ".".join(parts[:-1]), parts[-1]
-    value_text = _toml_scalar(raw_value)
+    """Rewrite exactly one line so the template comments survive."""
+    import tomllib
 
-    lines = path.read_text(encoding="utf-8").splitlines(keepends=True)
-    section_idx: int | None = None
-    insert_at: int | None = None
-    replaced = False
-    for i, line in enumerate(lines):
-        stripped = line.strip()
-        header = _HEADER_RE.match(stripped)
-        if header:
-            if section_idx is not None:
-                insert_at = i  # next section begins: insert before it
-                break
-            if header.group(1) == section:
-                section_idx = i
-            continue
-        if section_idx is not None:
-            key_match = _KEY_RE.match(stripped)
-            if key_match and key_match.group(1) == name:
-                lines[i] = f"{name} = {value_text}\n"
-                replaced = True
-                break
-    if section_idx is None:
-        print(
-            f"section [{section}] not found in {path}; edit the file directly "
-            f"to add it (path: `wet config path`, template: `wet config show`)",
-            file=sys.stderr,
-        )
-        return 1
-    if not replaced:
-        lines.insert(
-            insert_at if insert_at is not None else len(lines),
-            f"{name} = {value_text}\n",
-        )
-    path.write_text("".join(lines), encoding="utf-8")
-    shown = "*** (value not echoed)" if _looks_secret(key) else value_text
+    from hull_core.config.tomledit import (
+        ConfigError,
+        looks_secret,
+        set_value,
+        toml_scalar,
+    )
+
+    try:
+        set_value(path, key, raw_value)
+    except (ConfigError, tomllib.TOMLDecodeError) as exc:
+        hint = "" if path.is_file() else " (run `wet config init`)"
+        print(f"error: {exc}{hint}", file=sys.stderr)
+        return 2
+    shown = "*** (value not echoed)" if looks_secret(key) else toml_scalar(raw_value)
     print(f"set {key} = {shown} in {path}")
     return 0
 
