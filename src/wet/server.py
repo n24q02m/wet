@@ -2938,20 +2938,32 @@ async def _background_index_and_search(
                     )
                     embeddings = None
 
+        # A caller can reach this task before the docs DB exists (the fetch and
+        # chunk work runs first); storing is the only part that needs it, so the
+        # guard sits here instead of failing the whole task early.
+        db = _docs_db
+        if db is None:
+            logger.error(
+                f"docs database unavailable; {len(all_chunks)} chunks for "
+                f"'{library}' were not stored"
+            )
+            _record_index_state(ver_id, INDEX_STATE_FAILED, "docs database unavailable")
+            return
+
         # Drop the previous content only now that its replacement is in hand.
         # This clear used to run at launch time in _do_docs_search, so every
         # docs search on an already-indexed library wiped it first and a failed
         # re-index left nothing behind.
-        _docs_db.clear_version_chunks(ver_id)
+        db.clear_version_chunks(ver_id)
 
         # Store chunks
-        _docs_db.add_chunks(
+        db.add_chunks(
             version_id=ver_id,
             library_id=lib_id,
             chunks=all_chunks,
             embeddings=embeddings,
         )
-        _docs_db.mark_version_indexed(ver_id, page_count, len(all_chunks))
+        db.mark_version_indexed(ver_id, page_count, len(all_chunks))
         # last_indexed_at is now written only by mark_library_indexed; before
         # the seed/index split upsert_library stamped it as a side effect,
         # which hid the fact that this path never marked the library. Left
@@ -2960,7 +2972,7 @@ async def _background_index_and_search(
         # caller-supplied `version`, so one library can own several rows in
         # `versions` (the table is UNIQUE(library_id, version)) and a
         # hardcoded 1 would be wrong.
-        _docs_db.mark_library_indexed(lib_id)
+        db.mark_library_indexed(lib_id)
         # 'done' with a note, not 'failed': the chunks ARE there and ARE
         # served. `set_index_state` writes the note to `index_error`, which the
         # status payload surfaces for every state -- while `_docs_indexing_message`
@@ -3003,6 +3015,7 @@ async def _search_cached_index(
     """
     from wet.sources.docs import DISCOVERY_VERSION
 
+    assert _docs_db is not None
     lib = _docs_db.get_library(lib_key)
 
     if lib:

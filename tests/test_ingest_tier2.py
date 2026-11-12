@@ -33,6 +33,7 @@ if "wet.sources.docs" not in sys.modules:
     assert _docs_spec is not None
     _docs_mod = importlib.util.module_from_spec(_docs_spec)
     sys.modules["wet.sources.docs"] = _docs_mod
+    assert _docs_spec.loader is not None
     _docs_spec.loader.exec_module(_docs_mod)
 else:
     _docs_mod = sys.modules["wet.sources.docs"]
@@ -43,6 +44,7 @@ if "wet.db" not in sys.modules:
     assert _db_spec is not None
     _db_mod = importlib.util.module_from_spec(_db_spec)
     sys.modules["wet.db"] = _db_mod
+    assert _db_spec.loader is not None
     _db_spec.loader.exec_module(_db_mod)
 else:
     _db_mod = sys.modules["wet.db"]
@@ -201,6 +203,7 @@ async def test_ingest_tier2_reads_homepage_when_discovery_has_no_docs_url(
     ):
         await ingest_tier2(db, "express")
 
+    assert fetch.await_args is not None
     assert fetch.await_args.args[0] == "https://expressjs.com/"
     assert db.get_library("express")["docs_url"] == "https://expressjs.com/"
 
