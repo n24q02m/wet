@@ -68,8 +68,8 @@ async def test_agent_uses_later_search_backend_and_keeps_provenance(
     )
     with (
         patch(
-            "wet.sources.search_backends.search_backends_from_env",
-            return_value=[first, second],
+            "wet.sources.search_backends.search_backends_with_skips",
+            return_value=([first, second], {}),
         ),
         patch(
             "wet.sources.searxng.search",
@@ -122,8 +122,8 @@ async def test_agent_uses_later_search_backend_after_error(_openrouter_env) -> N
     )
     with (
         patch(
-            "wet.sources.search_backends.search_backends_from_env",
-            return_value=[first, second],
+            "wet.sources.search_backends.search_backends_with_skips",
+            return_value=([first, second], {}),
         ),
         patch(
             "wet.sources.searxng.search",
@@ -158,8 +158,8 @@ async def test_agent_all_empty_search_keeps_no_results_contract(_openrouter_env)
     )
     with (
         patch(
-            "wet.sources.search_backends.search_backends_from_env",
-            return_value=[first, second],
+            "wet.sources.search_backends.search_backends_with_skips",
+            return_value=([first, second], {}),
         ),
         patch(
             "wet.sources.searxng.search",
@@ -184,8 +184,8 @@ async def test_agent_all_failed_search_is_hard_failure(_openrouter_env):
     second.search = AsyncMock(side_effect=RuntimeError("second backend down"))
     with (
         patch(
-            "wet.sources.search_backends.search_backends_from_env",
-            return_value=[first, second],
+            "wet.sources.search_backends.search_backends_with_skips",
+            return_value=([first, second], {}),
         ),
         patch(
             "wet.sources.searxng.search",
@@ -226,8 +226,8 @@ async def test_agent_uses_later_search_backend_after_malformed_results(_openrout
     )
     with (
         patch(
-            "wet.sources.search_backends.search_backends_from_env",
-            return_value=[first, second],
+            "wet.sources.search_backends.search_backends_with_skips",
+            return_value=([first, second], {}),
         ),
         patch(
             "wet.sources.searxng.search",
@@ -280,8 +280,8 @@ async def test_agent_preserves_multi_result_order_and_search_title_fallback(
     )
     with (
         patch(
-            "wet.sources.search_backends.search_backends_from_env",
-            return_value=[first],
+            "wet.sources.search_backends.search_backends_with_skips",
+            return_value=([first], {}),
         ),
         patch(
             "wet.sources.searxng.search",

@@ -1319,22 +1319,39 @@ def chain_backend_names() -> list[str]:
     return [n.strip().lower() for n in raw.split(",") if n.strip()]
 
 
-def search_backends_from_env(searxng_url: str | None = None) -> list[SearchBackend]:
-    """Resolve the ordered SEARCH_BACKENDS chain.
+def search_backends_with_skips(
+    searxng_url: str | None = None,
+) -> tuple[list[SearchBackend], dict[str, str]]:
+    """Resolve the ordered SEARCH_BACKENDS chain plus WHY each skip happened.
 
     Reads the CSV ``SEARCH_BACKENDS``; empty -> falls back to the single
-    ``SEARCH_BACKEND`` (back-compat). Backends that cannot be built (missing
-    key) are SKIPPED with a warning so a partially-configured chain still works
-    with whatever providers are available. ``searxng_url`` overrides the SearXNG
-    backend URL (the live auto-started instance).
+    ``SEARCH_BACKEND`` (back-compat). A backend that cannot be built (missing
+    key, or a key present while its required companion setting is not) is
+    SKIPPED so a partially-configured chain still works with whatever providers
+    are available. The ``ValueError`` message is the only place that knows the
+    real cause, so it is returned rather than logged and dropped: a chain whose
+    key IS set used to fail with the generic "missing API keys", which points
+    the operator at the one thing that is not wrong.
     """
     backends: list[SearchBackend] = []
+    skipped: dict[str, str] = {}
     for name in chain_backend_names():
         try:
             backends.append(_make_backend(name, searxng_url))
         except ValueError as exc:
             logger.warning(f"Skipping search backend {name!r}: {exc}")
-    return backends
+            skipped[name] = str(exc)
+    return backends, skipped
+
+
+def search_backends_from_env(searxng_url: str | None = None) -> list[SearchBackend]:
+    """Resolve the ordered SEARCH_BACKENDS chain (skip reasons discarded).
+
+    Thin wrapper over :func:`search_backends_with_skips` for callers that only
+    need the backends; the chain runner uses the tuple form so diagnostics can
+    name the real cause.
+    """
+    return search_backends_with_skips(searxng_url)[0]
 
 
 def _search_result_is_empty(payload: str) -> bool:
@@ -1392,7 +1409,7 @@ async def run_search_chain(
     silently dropped.
     """
     requested = chain_backend_names()
-    backends = search_backends_from_env(searxng_url)
+    backends, skipped = search_backends_with_skips(searxng_url)
     if region and backends:
         unsupported = [
             b.name for b in backends if b.name not in _REGION_SUPPORTED_BACKENDS
@@ -1449,11 +1466,17 @@ async def run_search_chain(
                 ensure_ascii=False,
             )
     if not backends:
-        msg = (
-            f"Search backends {requested} are missing API keys; configure a key or add searxng"
-            if requested
-            else "No search backend configured"
-        )
+        if skipped:
+            # Name each backend's real reason. "missing API keys" was wrong
+            # whenever the key was present (e.g. OPENROUTER_MODEL unset).
+            detail = "; ".join(f"{name}: {reason}" for name, reason in skipped.items())
+            msg = f"Search backends {requested} could not be built — {detail}"
+        else:
+            msg = (
+                f"Search backends {requested} are missing API keys; configure a key or add searxng"
+                if requested
+                else "No search backend configured"
+            )
         return json.dumps(
             {
                 "results": [],
@@ -1465,6 +1488,7 @@ async def run_search_chain(
                     "attempted": [],
                     "selected": None,
                     "fallback": "unavailable",
+                    **({"skipped": skipped} if skipped else {}),
                 },
             },
             ensure_ascii=False,
@@ -1536,6 +1560,7 @@ async def run_search_chain(
             "attempted": attempted,
             "selected": "+".join(successful_backends) if successful_backends else None,
             "fallback": "parallel_fanout" if successful_backends else "exhausted",
+            **({"skipped": skipped} if skipped else {}),
         }
         return json.dumps(data, ensure_ascii=False)
 
@@ -1612,6 +1637,7 @@ async def run_search_chain(
             if selected is None
             else ("none" if requested and selected == requested[0] else "used")
         ),
+        **({"skipped": skipped} if skipped else {}),
     }
     return json.dumps(data, ensure_ascii=False)
 
@@ -1632,4 +1658,5 @@ __all__ = [
     "run_search_chain",
     "search_backend_from_env",
     "search_backends_from_env",
+    "search_backends_with_skips",
 ]

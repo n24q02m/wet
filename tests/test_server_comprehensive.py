@@ -678,15 +678,18 @@ async def test_with_timeout_expired():
 
 
 def test_main():
-    """main() always serves HTTP: run_server_blocking with WET_HOST/WET_PORT."""
+    """main() always serves HTTP and leaves bind resolution to the listener.
+
+    Bind args live in ``run_server_blocking``/``resolve_bind``; ``main`` must not
+    resolve them a second time or the two could disagree again.
+    """
     with (
         patch.object(server, "run_server_blocking") as mock_serve,
         patch.dict(os.environ, {"WET_HOST": "127.0.0.9", "WET_PORT": "8777"}),
     ):
         server.main()
-    _, kwargs = mock_serve.call_args
-    assert kwargs["host"] == "127.0.0.9"
-    assert kwargs["port"] == 8777
+        mock_serve.assert_called_once_with()
+        assert server.resolve_bind() == ("127.0.0.9", 8777)
 
 
 # ---------------------------------------------------------------------------

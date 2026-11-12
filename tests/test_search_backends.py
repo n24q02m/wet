@@ -15,6 +15,7 @@ from wet.sources.search_backends import (
     run_search_chain,
     search_backend_from_env,
     search_backends_from_env,
+    search_backends_with_skips,
 )
 
 
@@ -87,10 +88,11 @@ async def test_tavily_error_never_leaks_api_key():
     assert "error" in json.loads(out)
 
 
-async def test_server_search_tavily_missing_key_degrades_gracefully(monkeypatch):
-    # New chain behaviour: a backend whose key is missing is SKIPPED; when the
-    # whole chain is empty the result is a clear (non-fatal) "missing API keys"
-    # envelope rather than the old hard "Error: TAVILY_API_KEY required".
+async def test_server_search_tavily_missing_key_names_the_real_cause(monkeypatch):
+    # Chain behaviour: a backend that cannot be built is SKIPPED; when the whole
+    # chain is empty the envelope names WHY per backend. The old generic
+    # "missing API keys" was wrong whenever the key was present but a companion
+    # setting was not (see the OPENROUTER_MODEL case below).
     monkeypatch.setenv("SEARCH_BACKENDS", "tavily")
     monkeypatch.delenv("TAVILY_API_KEY", raising=False)
     from wet.config import settings
@@ -102,8 +104,45 @@ async def test_server_search_tavily_missing_key_degrades_gracefully(monkeypatch)
     # The search action wraps results in untrusted-content guards, so assert on
     # substrings rather than parsing.
     result = await search(action="search", query="python tutorial")
-    assert "missing API keys" in text(result)
-    assert "tavily" in text(result)
+    assert "could not be built" in text(result)
+    assert "tavily: TAVILY_API_KEY required" in text(result)
+
+
+async def test_missing_companion_setting_is_named_not_misreported_as_a_key(
+    monkeypatch,
+):
+    """A SET key + unset companion setting used to surface as "missing API
+    keys", pointing the operator at the one thing that was fine."""
+    monkeypatch.setenv("SEARCH_BACKENDS", "openrouter")
+    monkeypatch.setenv("OPENROUTER_API_KEY", "sk-or-present")
+    monkeypatch.delenv("OPENROUTER_MODEL", raising=False)
+    from wet.config import settings
+
+    monkeypatch.setattr(settings, "openrouter_api_key", "sk-or-present", raising=False)
+    monkeypatch.setattr(settings, "openrouter_model", "", raising=False)
+    monkeypatch.setattr(settings, "search_backends", "openrouter", raising=False)
+    from wet.server import search
+
+    body = text(await search(action="search", query="python tutorial"))
+
+    assert "missing API keys" not in body
+    assert "OPENROUTER_MODEL required" in body
+
+
+def test_chain_reports_skip_reasons_for_each_backend(monkeypatch):
+    monkeypatch.setenv("SEARCH_BACKENDS", "brave,tavily")
+    monkeypatch.delenv("BRAVE_API_KEY", raising=False)
+    monkeypatch.delenv("TAVILY_API_KEY", raising=False)
+    from wet.config import settings
+
+    for name in ("brave_api_key", "tavily_api_key"):
+        monkeypatch.setattr(settings, name, "", raising=False)
+
+    backends, skipped = search_backends_with_skips()
+
+    assert backends == []
+    assert set(skipped) == {"brave", "tavily"}
+    assert "BRAVE_API_KEY required" in skipped["brave"]
 
 
 # ---------------------------------------------------------------------------
@@ -221,8 +260,8 @@ async def test_run_search_chain_falls_back_on_empty(monkeypatch):
     b1.name = "brave"
     b1.search = hit
     with unittest.mock.patch(
-        "wet.sources.search_backends.search_backends_from_env",
-        return_value=[b0, b1],
+        "wet.sources.search_backends.search_backends_with_skips",
+        return_value=([b0, b1], {}),
     ):
         out = json.loads(await run_search_chain("q"))
         assert out["results"][0]["url"] == "https://h/1"
@@ -248,8 +287,8 @@ async def test_run_search_chain_all_empty_is_legitimate_empty(monkeypatch):
     b1.name = "brave"
     b1.search = empty
     with unittest.mock.patch(
-        "wet.sources.search_backends.search_backends_from_env",
-        return_value=[b0, b1],
+        "wet.sources.search_backends.search_backends_with_skips",
+        return_value=([b0, b1], {}),
     ):
         out = json.loads(await run_search_chain("q"))
 
@@ -268,8 +307,8 @@ async def test_run_search_chain_reports_error_when_all_backends_fail(monkeypatch
     b1.name = "brave"
     b1.search = failed
     with unittest.mock.patch(
-        "wet.sources.search_backends.search_backends_from_env",
-        return_value=[b0, b1],
+        "wet.sources.search_backends.search_backends_with_skips",
+        return_value=([b0, b1], {}),
     ):
         out = json.loads(await run_search_chain("q"))
 
@@ -292,8 +331,8 @@ async def test_run_search_chain_advances_past_non_list_results(monkeypatch):
     b1.name = "brave"
     b1.search = hit
     with unittest.mock.patch(
-        "wet.sources.search_backends.search_backends_from_env",
-        return_value=[b0, b1],
+        "wet.sources.search_backends.search_backends_with_skips",
+        return_value=([b0, b1], {}),
     ):
         out = json.loads(await run_search_chain("q"))
 
@@ -316,8 +355,8 @@ async def test_run_search_chain_reports_skipped_configured_backend_as_fallback(
     backend.name = "searxng"
     backend.search = hit
     with unittest.mock.patch(
-        "wet.sources.search_backends.search_backends_from_env",
-        return_value=[backend],
+        "wet.sources.search_backends.search_backends_with_skips",
+        return_value=([backend], {}),
     ):
         out = json.loads(await run_search_chain("q"))
 
@@ -339,9 +378,12 @@ async def test_run_search_chain_empty_when_no_backends(monkeypatch):
     out = json.loads(await run_search_chain("q"))
     assert out["results"] == []
     assert "brave" in out["error"]
+    # The envelope names the real build failure and carries it per backend.
+    assert "BRAVE_API_KEY required" in out["error"]
     assert out["search_backend"] == {
         "requested": ["brave"],
         "attempted": [],
         "selected": None,
         "fallback": "unavailable",
+        "skipped": {"brave": "BRAVE_API_KEY required for the brave search backend"},
     }

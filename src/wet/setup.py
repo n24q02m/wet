@@ -2,7 +2,7 @@
 
 This module handles automatic first-run setup:
 - Install SearXNG from GitHub (metasearch engine)
-- Install Playwright browsers + system dependencies (for Crawl4AI)
+- Install the Playwright AND Patchright Chromium builds + system deps
 - Create configuration directories
 
 Setup runs automatically on first server start.
@@ -202,14 +202,52 @@ def _install_searxng() -> bool:
         return False
 
 
-def _setup_crawl4ai() -> bool:
-    """Run crawl4ai post-install setup.
+# One Chromium consumer per entry. wet drives TWO Playwright forks with
+# different pinned browser builds: crawl4ai uses ``playwright`` (build 1254
+# with playwright 1.65) and ``extract interact`` uses ``patchright`` (build
+# 1248 with patchright 1.64). ``ms-playwright`` keeps one directory per build,
+# so installing only playwright's left every interact call failing with
+# "Executable doesn't exist ... chrome-headless-shell-1248".
+_BROWSER_INSTALLERS = ("playwright", "patchright")
 
-    Delegates to ``crawl4ai.install.post_install()`` which handles:
-    - ``.crawl4ai`` home directory creation
-    - Playwright chromium + system deps (``--with-deps --force``)
-    - Patchright chromium for stealth/undetected mode
-    - Database migration
+
+def _install_browser(module: str) -> bool:
+    """Install Chromium (plus system deps) for one Playwright-compatible module.
+
+    ``--with-deps`` needs a system package manager, so it is retried without on
+    platforms where it is unsupported instead of failing the whole setup.
+    """
+    base = [sys.executable, "-m", module, "install", "chromium"]
+    for extra in (["--with-deps"], []):
+        try:
+            result = subprocess.run(
+                [*base, *extra],
+                stdin=subprocess.DEVNULL,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                timeout=900,
+            )
+        except subprocess.TimeoutExpired:
+            logger.warning(f"{module}: chromium install timed out (900 s)")
+            continue
+        if result.returncode == 0:
+            logger.info(f"{module}: chromium installed")
+            return True
+        logger.warning(
+            f"{module}: chromium install with {' '.join(extra) or 'no flags'} "
+            f"failed (exit {result.returncode}): "
+            f"{(result.stderr or '').strip()[:300]}"
+        )
+    return False
+
+
+def _setup_crawl4ai() -> bool:
+    """Run the crawl4ai post-install steps wet depends on.
+
+    - ``.crawl4ai`` home directory + database migration (``crawl4ai.install``)
+    - Chromium for ``playwright`` (crawl4ai's renderer)
+    - Chromium for ``patchright`` (``extract interact`` / stealth sessions)
 
     This ensures all required system libraries are installed on every OS
     (Windows, Ubuntu 20+, macOS, etc.) without requiring manual steps.
@@ -219,9 +257,6 @@ def _setup_crawl4ai() -> bool:
     """
     logger.info("Running crawl4ai setup (browsers + system deps)...")
     try:
-        import subprocess
-        import sys
-
         # 1. Setup home directory and run migration safely in a subprocess
         subprocess.run(
             [
@@ -234,13 +269,12 @@ def _setup_crawl4ai() -> bool:
             stderr=subprocess.DEVNULL,
         )
 
-        # 2. Run playwright install safely
-        subprocess.run(
-            [sys.executable, "-m", "playwright", "install", "chromium", "--with-deps"],
-            stdin=subprocess.DEVNULL,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-        )
+        # 2. Install the Chromium build each browser consumer pins
+        installed = [(m, _install_browser(m)) for m in _BROWSER_INSTALLERS]
+        missing = [m for m, ok in installed if not ok]
+        if missing:
+            logger.error(f"browser install failed for: {', '.join(missing)}")
+            return False
 
         logger.info("crawl4ai setup completed successfully")
         return True
@@ -258,7 +292,7 @@ def run_auto_setup() -> bool:
 
     Installs all required components:
     1. SearXNG (metasearch engine, from GitHub)
-    2. Playwright chromium + system deps (for Crawl4AI)
+    2. Playwright + Patchright chromium + system deps (crawl4ai, interact)
 
     Returns:
         True if setup succeeded or was already done, False on failure.

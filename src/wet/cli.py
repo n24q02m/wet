@@ -143,6 +143,30 @@ def _find_locks(port: int | None) -> list[Path]:
     return sorted(LOCKS_DIR.glob("wet-*.lock"))
 
 
+def _resolved_port() -> int:
+    """The port the server listens on when the CLI was not given ``--port``.
+
+    ``wet.server`` resolves its bind from ``WET_PORT`` BEFORE the config file
+    (container deployments set only the env var), so the CLI has to resolve the
+    same way: reading ``[server] port`` alone pointed every CLI command at 8000
+    while the server served 8011, and ``wet search`` reported "server is not
+    running" against a live server.
+    """
+    from wet.runtime import hull_settings
+
+    raw = os.environ.get("WET_PORT")
+    if raw:
+        try:
+            return int(raw)
+        except ValueError:
+            print(
+                f"wet: ignoring non-numeric WET_PORT={raw!r}; the server will "
+                "refuse to start with it set",
+                file=sys.stderr,
+            )
+    return hull_settings().server.port
+
+
 def _http_probe(port: int) -> bool:
     """GET /mcp — any HTTP response (including 401/4xx/5xx) means up."""
     try:
@@ -201,7 +225,7 @@ def _cmd_server_start(args: argparse.Namespace) -> int:
 
     hs = hull_settings()
     host = args.host or hs.server.host
-    port = args.port or hs.server.port
+    port = args.port or _resolved_port()
 
     if not args.foreground:
         # Key the scan to the resolved port (args.port or config): a live lock
@@ -347,11 +371,9 @@ def _cmd_server_stop(args: argparse.Namespace) -> int:
 
 
 def _cmd_server_status(args: argparse.Namespace) -> int:
-    from wet.runtime import hull_settings
-
     locks = _find_locks(args.port)
     if not locks:
-        port = args.port or hull_settings().server.port
+        port = args.port or _resolved_port()
         up = _http_probe(port)
         print("lock: none")
         print(f"http (port {port}): {'up' if up else 'down'}")
@@ -720,10 +742,25 @@ def _extract_rpc_response(body: str, content_type: str, request_id: int) -> dict
         return None
 
 
-def _cmd_search(args: argparse.Namespace) -> int:
-    from wet.runtime import hull_settings
+def _text_block_is_error(output: str) -> bool:
+    """Whether a tool's text block carries an error envelope.
 
-    base = (args.url or f"http://127.0.0.1:{hull_settings().server.port}").rstrip("/")
+    Belt-and-braces next to ``isError``: a proxy or an older server can drop
+    the flag while still returning ``{"error": ...}``, and the exit code is
+    what a shell pipeline (``wet search ... && ...``) acts on.
+    """
+    stripped = output.strip()
+    if not stripped.startswith("{"):
+        return False
+    try:
+        payload = json.loads(stripped)
+    except json.JSONDecodeError:
+        return False
+    return isinstance(payload, dict) and bool(payload.get("error"))
+
+
+def _cmd_search(args: argparse.Namespace) -> int:
+    base = (args.url or f"http://127.0.0.1:{_resolved_port()}").rstrip("/")
     url = f"{base}/mcp"
     token = args.token or os.environ.get("WET_TOKEN")
 
@@ -801,7 +838,7 @@ def _cmd_search(args: argparse.Namespace) -> int:
         if isinstance(item, dict) and item.get("type") == "text"
     ]
     output = "\n".join(part for part in texts if part)
-    if result.get("isError"):
+    if result.get("isError") or _text_block_is_error(output):
         print(output or "wet search: tool error (no detail returned)", file=sys.stderr)
         return 1
     print(output or "(empty result)")

@@ -28,7 +28,7 @@ from urllib.parse import urlparse
 
 from loguru import logger
 from mcp.server.mcpserver import MCPServer
-from mcp.types import ToolAnnotations
+from mcp.types import CallToolResult, TextContent, ToolAnnotations
 
 from wet import search_metrics
 from wet.cache import WebCache
@@ -81,6 +81,14 @@ _web_cache: "WebCache | _PerSubCache | None" = None
 _docs_db: DocsDB | None = None
 _embedding_dims: int = 0
 _backend_init_task: asyncio.Task | None = None
+
+# The (host, port) the listener ACTUALLY bound, recorded by
+# :func:`run_server_blocking` once the lock is held. None until then (tests and
+# in-process callers never bind). ``status`` reports this instead of the config
+# value, which is a default the process may have overridden: a container
+# started with ``WET_PORT=8011`` served 8011 while status (and `wet search`)
+# insisted on the configured 8000.
+_effective_bind: tuple[str, int] | None = None
 
 # Strong references to fire-and-forget background tasks. asyncio keeps only a
 # WEAK reference to a running task, so a task whose handle is discarded can be
@@ -848,6 +856,54 @@ def _payload(result: str | dict[str, Any] | list[Any]) -> dict[str, Any]:
     return data if isinstance(data, dict) else {"results": data}
 
 
+def _payload_is_error(payload: str) -> bool:
+    """Whether a helper payload is a failure rather than a result.
+
+    Two dialects exist below the tool boundary: the bare ``"Error: ..."``
+    string and a JSON envelope carrying a top-level ``error`` (the search
+    chain's "backends are missing API keys", a per-action validation message,
+    the region/budget refusals). Both are failures, so neither may be
+    persisted — a cached envelope replays for its whole TTL, which is how a
+    transient outage (or a config mistake since fixed) kept looking live.
+
+    Text that is simply not JSON is NOT classified as an error: helper results
+    are cached verbatim and the tool boundary decides what they mean.
+    """
+    if payload.startswith("Error"):
+        return True
+    try:
+        data = json.loads(payload)
+    except json.JSONDecodeError:
+        return False
+    return isinstance(data, dict) and bool(data.get("error"))
+
+
+async def _cache_get(kind: str, params: dict[str, Any]) -> str | None:
+    """Read a helper payload from the web cache, ignoring cached failures.
+
+    Entries written before the error guard existed can still hold an error
+    envelope; serving one would reproduce the bug on the read side.
+    """
+    if not _web_cache:
+        return None
+    cached = await asyncio.to_thread(_web_cache.get, kind, params, current_sub())
+    if not cached or _payload_is_error(cached):
+        return None
+    return cached
+
+
+async def _cache_set(
+    kind: str,
+    params: dict[str, Any],
+    payload: str,
+    ttl: int | None,
+) -> None:
+    """Persist a helper payload unless it is an error envelope."""
+    if not _web_cache or _payload_is_error(payload):
+        return
+    await asyncio.to_thread(_web_cache.set, kind, params, payload, ttl, current_sub())
+
+
 # Cap on diff text landed in a tool payload (token guard), matching the
 # ``token_budget`` convention used elsewhere in this file.
 _DIFF_MAX_CHARS = 20_000
@@ -941,6 +997,36 @@ def _wrap_tool(tool_name: str):
         return wrapper
 
     return decorator
+
+
+def _flag_error_result(func):
+    """Mark a first-party tool's failure payloads with ``isError``.
+
+    ``config`` returns plain dicts — server-owned data, so the XPIA boundary
+    does not apply — and the MCP layer forwarded them with ``isError=false``
+    even when the dict was ``{"error": ...}``: the same lie the wrapped tools
+    had. Successes pass through unchanged, so the outputSchema conversion and
+    the "config is not external content" contract are untouched.
+    """
+
+    @functools.wraps(func)
+    async def wrapper(*args, **kwargs):
+        result = await func(*args, **kwargs)
+        error = result.get("error") if isinstance(result, dict) else None
+        if isinstance(error, str) and error:
+            return CallToolResult(
+                content=[
+                    TextContent(
+                        type="text",
+                        text=json.dumps(result, ensure_ascii=False, indent=2),
+                    )
+                ],
+                structured_content=result,
+                is_error=True,
+            )
+        return result
+
+    return wrapper
 
 
 # Sub-operation timeouts (seconds) within docs search.
@@ -1164,18 +1250,21 @@ async def search(  # noqa: PLR0913
                 )
                 if cache_hit:
                     cached_content, cache_age = cache_hit
-                    try:
-                        cached_data = json.loads(cached_content)
-                        if isinstance(cached_data, dict) and cached_data.get("results"):
-                            cached_data["results"] = standardize_results(
-                                cached_data["results"],
-                                cache_age_seconds=cache_age,
-                                ttl_seconds=ttl,
-                            )
-                            return cached_data
-                    except json.JSONDecodeError:
-                        pass
-                    return _payload(cached_content)
+                    if not _payload_is_error(cached_content):
+                        try:
+                            cached_data = json.loads(cached_content)
+                            if isinstance(cached_data, dict) and cached_data.get(
+                                "results"
+                            ):
+                                cached_data["results"] = standardize_results(
+                                    cached_data["results"],
+                                    cache_age_seconds=cache_age,
+                                    ttl_seconds=ttl,
+                                )
+                                return cached_data
+                        except json.JSONDecodeError:
+                            pass
+                        return _payload(cached_content)
 
                 # Stale-While-Revalidate: serve stale if within 2x TTL window
                 try:
@@ -1190,19 +1279,22 @@ async def search(  # noqa: PLR0913
 
                 if stale_hit and isinstance(stale_hit, tuple) and len(stale_hit) == 2:
                     cached_content, cache_age = stale_hit
-                    try:
-                        cached_data = json.loads(cached_content)
-                        if isinstance(cached_data, dict) and cached_data.get("results"):
-                            cached_data["results"] = standardize_results(
-                                cached_data["results"],
-                                cache_age_seconds=cache_age,
-                                ttl_seconds=ttl,
-                            )
-                            cached_data["stale"] = True
-                            return cached_data
-                    except json.JSONDecodeError:
-                        pass
-                    return _payload(cached_content)
+                    if not _payload_is_error(cached_content):
+                        try:
+                            cached_data = json.loads(cached_content)
+                            if isinstance(cached_data, dict) and cached_data.get(
+                                "results"
+                            ):
+                                cached_data["results"] = standardize_results(
+                                    cached_data["results"],
+                                    cache_age_seconds=cache_age,
+                                    ttl_seconds=ttl,
+                                )
+                                cached_data["stale"] = True
+                                return cached_data
+                        except json.JSONDecodeError:
+                            pass
+                        return _payload(cached_content)
             # Optional query expansion (LLM-driven, opt-in)
             search_query = normalized_query or query
             expand_gate: dict[str, Any] | None = None
@@ -1318,10 +1410,7 @@ async def search(  # noqa: PLR0913
             if data is None:
                 if raw.startswith("Error"):
                     return _payload(raw)
-                if _web_cache:
-                    await asyncio.to_thread(
-                        _web_cache.set, "search", cache_params, raw, ttl, current_sub()
-                    )
+                await _cache_set("search", cache_params, raw, ttl)
                 return _payload(raw)
 
             # Quality-tracked rounds. With refine=True a round that fails the
@@ -1444,10 +1533,7 @@ async def search(  # noqa: PLR0913
                 )
 
             result = json.dumps(data, ensure_ascii=False, indent=2)
-            if _web_cache:
-                await asyncio.to_thread(
-                    _web_cache.set, "search", cache_params, result, ttl, current_sub()
-                )
+            await _cache_set("search", cache_params, result, ttl)
             return _payload(result)
 
         case "research":
@@ -1464,12 +1550,9 @@ async def search(  # noqa: PLR0913
                 "exclude_domains": exclude_domains,
                 "parallel": parallel,
             }
-            if _web_cache:
-                cached = await asyncio.to_thread(
-                    _web_cache.get, "research", cache_params, current_sub()
-                )
-                if cached:
-                    return _payload(cached)
+            cached = await _cache_get("research", cache_params)
+            if cached:
+                return _payload(cached)
             result = await _with_timeout(
                 _do_research(
                     query=query,
@@ -1481,15 +1564,7 @@ async def search(  # noqa: PLR0913
                 ),
                 "research",
             )
-            if _web_cache and not result.startswith("Error"):
-                await asyncio.to_thread(
-                    _web_cache.set,
-                    "research",
-                    cache_params,
-                    result,
-                    None,
-                    current_sub(),
-                )
+            await _cache_set("research", cache_params, result, None)
             return _payload(result)
 
         case "docs":
@@ -1658,7 +1733,6 @@ async def search(  # noqa: PLR0913
                 "research",
                 "search",
                 "similar",
-                "x",
             ]
             closest = (
                 difflib.get_close_matches(action, valid_actions, n=1)
@@ -1670,7 +1744,6 @@ async def search(  # noqa: PLR0913
                 "error": (
                     f"Error: Unknown action '{action}'.{suggestion} "
                     "Valid actions: search (web search), research (academic), "
-                    "x (X/Twitter search via xAI, returns synthesized answer + citations), "
                     "docs (library documentation, auto-indexing), "
                     "docs_resolve (library name → ranked library_id), "
                     "docs_query (version-aware docs query with token cap), "
@@ -1763,20 +1836,14 @@ async def extract(  # noqa: PLR0913
                 }
             urls = urls[:_MAX_EXTRACT_URLS]
             cache_params = {"urls": sorted(urls), "format": format, "stealth": stealth}
-            if _web_cache:
-                cached = await asyncio.to_thread(
-                    _web_cache.get, "extract", cache_params, current_sub()
-                )
-                if cached:
-                    return _payload(cached)
+            cached = await _cache_get("extract", cache_params)
+            if cached:
+                return _payload(cached)
             result = await _with_timeout(
                 _extract(urls=urls, format=format, stealth=stealth),
                 "extract",
             )
-            if _web_cache and not result.startswith("Error"):
-                await asyncio.to_thread(
-                    _web_cache.set, "extract", cache_params, result, None, current_sub()
-                )
+            await _cache_set("extract", cache_params, result, None)
             return _payload(result)
 
         case "batch":
@@ -1804,12 +1871,9 @@ async def extract(  # noqa: PLR0913
                 "depth": depth,
                 "max_pages": max_pages,
             }
-            if _web_cache:
-                cached = await asyncio.to_thread(
-                    _web_cache.get, "crawl", cache_params, current_sub()
-                )
-                if cached:
-                    return _payload(cached)
+            cached = await _cache_get("crawl", cache_params)
+            if cached:
+                return _payload(cached)
             result = await _with_timeout(
                 _crawl(
                     urls=urls,
@@ -1820,10 +1884,7 @@ async def extract(  # noqa: PLR0913
                 ),
                 "crawl",
             )
-            if _web_cache and not result.startswith("Error"):
-                await asyncio.to_thread(
-                    _web_cache.set, "crawl", cache_params, result, None, current_sub()
-                )
+            await _cache_set("crawl", cache_params, result, None)
             return _payload(result)
 
         case "map":
@@ -1837,20 +1898,14 @@ async def extract(  # noqa: PLR0913
                 "depth": depth,
                 "max_pages": max_pages,
             }
-            if _web_cache:
-                cached = await asyncio.to_thread(
-                    _web_cache.get, "map", cache_params, current_sub()
-                )
-                if cached:
-                    return _payload(cached)
+            cached = await _cache_get("map", cache_params)
+            if cached:
+                return _payload(cached)
             result = await _with_timeout(
                 _sitemap(urls=urls, depth=depth, max_pages=max_pages),
                 "map",
             )
-            if _web_cache and not result.startswith("Error"):
-                await asyncio.to_thread(
-                    _web_cache.set, "map", cache_params, result, None, current_sub()
-                )
+            await _cache_set("map", cache_params, result, None)
             return _payload(result)
 
         case "convert":
@@ -2209,11 +2264,18 @@ async def _handle_config_status() -> dict[str, Any]:
     from wet.runtime import hull_settings, sub_root
 
     hs = hull_settings()
+    # host/port are the EFFECTIVE bind, not the config default: a process
+    # started with WET_HOST/WET_PORT (or --host/--port) serves somewhere else,
+    # and reporting the default sent callers to a port nothing listens on. The
+    # configured values stay visible next to them for "what does my config say".
+    bind_host, bind_port = _effective_bind or resolve_bind()
     status = {
         "auth": {
             "mode": hs.server.auth,
-            "host": hs.server.host,
-            "port": hs.server.port,
+            "host": bind_host,
+            "port": bind_port,
+            "configured_host": hs.server.host,
+            "configured_port": hs.server.port,
             # The namespace of the caller reading this status (mode 3:
             # per-user storage roots live under ~/.wet/subs/<namespace>/).
             "namespace": current_sub(),
@@ -2348,6 +2410,7 @@ async def _handle_config_warmup() -> dict[str, Any]:
         open_world_hint=True,
     ),
 )
+@_flag_error_result
 async def config(
     action: str,
     key: str | None = None,
@@ -3322,6 +3385,33 @@ class ServerConfigError(ValueError):
     """Invalid server start configuration."""
 
 
+def _env_port() -> int | None:
+    """``WET_PORT`` as an int, or None when unset.
+
+    Container deployments set only this variable (docker-compose has no CLI
+    flag to pass), so it OUTRANKS the config file: it exists to override it.
+    """
+    raw = os.environ.get("WET_PORT")
+    return int(raw) if raw else None
+
+
+def resolve_bind(host: str | None = None, port: int | None = None) -> tuple[str, int]:
+    """The address the listener binds, in precedence order.
+
+    Explicit argument > ``WET_HOST``/``WET_PORT`` > ``~/.wet/config.toml``
+    ``[server]``. Single source of truth: ``status`` and the CLI read the
+    result through :data:`_effective_bind` instead of re-deriving it, which is
+    how they previously disagreed with the real listener.
+    """
+    from wet.runtime import hull_settings
+
+    hs = hull_settings()
+    return (
+        host or os.environ.get("WET_HOST") or hs.server.host,
+        port or _env_port() or hs.server.port,
+    )
+
+
 def run_server_blocking(
     host: str | None = None,
     port: int | None = None,
@@ -3334,13 +3424,14 @@ def run_server_blocking(
     auth = no-auth | token | multi). In no-auth mode a non-loopback bind is
     refused — an unauthenticated listener must never leave localhost.
     """
+    global _effective_bind
+
     import uvicorn
 
     from wet.runtime import hull_settings
 
     hs = hull_settings()
-    bind_host = host or hs.server.host
-    bind_port = port or hs.server.port
+    bind_host, bind_port = resolve_bind(host, port)
 
     if hs.server.auth == "no-auth" and not _is_loopback_host(bind_host):
         raise ServerConfigError(
@@ -3353,6 +3444,7 @@ def run_server_blocking(
 
     lock = LifecycleLock("wet", bind_port)
     with lock:
+        _effective_bind = (bind_host, bind_port)
         app = build_http_app(hs)
         logger.info(
             f"wet MCP endpoint: http://{bind_host}:{bind_port}/mcp "
@@ -3365,14 +3457,10 @@ def main() -> None:
     """Blocking server entry (used by `wet server start` and `python -m wet`).
 
     De-host: there is no stdio spawn mode and no ``--http`` flag anymore —
-    the server is always the HTTP MCP endpoint. Bind host/port come from
-    ``~/.wet/config.toml`` ([server] host/port), overridable via
-    WET_HOST / WET_PORT env for container deployments.
+    the server is always the HTTP MCP endpoint. Bind host/port resolve in
+    :func:`resolve_bind` (args > WET_HOST/WET_PORT > config).
     """
-    host = os.environ.get("WET_HOST") or None
-    port_env = os.environ.get("WET_PORT")
-    port = int(port_env) if port_env else None
-    run_server_blocking(host=host, port=port)
+    run_server_blocking()
 
 
 if __name__ == "__main__":  # pragma: no cover

@@ -335,7 +335,7 @@ In-repo references (Spec F single source of truth: setup docs live in
 | `search` | Web (SearXNG metasearch), news, images, academic research (Scholar / arXiv / PubMed / CrossRef / Semantic Scholar / BASE), library docs (HyDE + FTS5), find similar pages. Includes `docs_resolve` (library name -> ranked id), `docs_query` (version-aware + topic + 5000-token cap), `docs_lock_project` (Cabinets project pin via pyproject / package.json / go.mod / Cargo.toml manifest detection). |
 | `extract` | URL -> smart chunks dict (`clean_text` + `markdown` + `structured_data` + `code_blocks` + `metadata`) via web-core 5-strategy chain. Batch processing (up to 50 URLs), deep crawling, site mapping, local file conversion (PDF/DOCX/XLSX/PPTX/EPUB), structured extraction (JSON Schema) |
 | `media` | `list` (discover URLs from gallery pages), `download` (SSRF-safe). `analyze` was removed in v2.0.0 -- use `imagine-mcp.understand` instead |
-| `config` | `status`, `set`, `cache_clear`, `docs_reindex`, `warmup`, `setup_sync`, `setup_status`, `setup_skip`, `setup_reset`, `setup_complete` |
+| `config` | `status`, `set`, `cache_clear`, `docs_reindex`, `warmup` |
 | `help` | Per-tool documentation: `search`, `extract`, `media`, `config` |
 
 > **Media boundary**: For vision / audio understanding (image captioning,

@@ -130,6 +130,8 @@ class TestRunServerBlocking:
 
     def test_defaults_come_from_instance_config(self, monkeypatch):
         """host/port None -> [server].host/port from ~/.wet/config.toml."""
+        monkeypatch.delenv("WET_HOST", raising=False)
+        monkeypatch.delenv("WET_PORT", raising=False)
         hs = _hs(auth="no-auth", host="127.0.0.1", port=9310)
         monkeypatch.setattr("wet.runtime.hull_settings", lambda: hs)
 
@@ -169,40 +171,63 @@ class TestIsLoopbackHost:
 
 
 # ---------------------------------------------------------------------------
-# module main(): env-var bind overrides for container deployments
+# bind resolution: args > WET_HOST/WET_PORT > ~/.wet/config.toml
+#
+# One resolver (``resolve_bind``) feeds the listener, ``status`` and the CLI.
+# ``main()`` resolves nothing itself: it used to read the env vars, which left
+# ``wet server start --foreground`` (``run_server_blocking``) and the reported
+# status on the config port while the real listener was on WET_PORT.
 # ---------------------------------------------------------------------------
 
 
-class TestMainDispatch:
+class TestBindResolution:
     def test_no_env_defers_to_instance_config(self, monkeypatch):
         monkeypatch.delenv("WET_HOST", raising=False)
         monkeypatch.delenv("WET_PORT", raising=False)
-        with patch("wet.server.run_server_blocking") as mock_serve:
-            srv.main()
+        monkeypatch.setattr(
+            "wet.runtime.hull_settings",
+            lambda: _hs(host="127.0.0.1", port=9310),
+        )
 
-        mock_serve.assert_called_once_with(host=None, port=None)
+        assert srv.resolve_bind() == ("127.0.0.1", 9310)
 
     def test_wet_host_and_wet_port_override_bind(self, monkeypatch):
+        monkeypatch.setenv("WET_HOST", "0.0.0.0")
+        monkeypatch.setenv("WET_PORT", "8080")
+        monkeypatch.setattr(
+            "wet.runtime.hull_settings", lambda: _hs(host="127.0.0.1", port=9310)
+        )
+
+        assert srv.resolve_bind() == ("0.0.0.0", 8080)
+
+    def test_wet_port_only_pins_port(self, monkeypatch):
+        monkeypatch.delenv("WET_HOST", raising=False)
+        monkeypatch.setenv("WET_PORT", "9090")
+        monkeypatch.setattr(
+            "wet.runtime.hull_settings", lambda: _hs(host="127.0.0.1", port=9310)
+        )
+
+        assert srv.resolve_bind() == ("127.0.0.1", 9090)
+
+    def test_explicit_arguments_beat_the_env(self, monkeypatch):
+        monkeypatch.setenv("WET_HOST", "0.0.0.0")
+        monkeypatch.setenv("WET_PORT", "8080")
+
+        assert srv.resolve_bind("127.0.0.1", 7000) == ("127.0.0.1", 7000)
+
+    def test_invalid_wet_port_fails_loudly(self, monkeypatch):
+        """A typo'd WET_PORT aborts startup instead of silently auto-porting."""
+        monkeypatch.setenv("WET_PORT", "not-a-port")
+
+        with pytest.raises(ValueError, match="not-a-port"):
+            srv.resolve_bind()
+
+    def test_main_delegates_to_the_blocking_entry(self, monkeypatch):
+        """main() must not resolve the bind itself: that copy is how the env
+        override stopped reaching the listener."""
         monkeypatch.setenv("WET_HOST", "0.0.0.0")
         monkeypatch.setenv("WET_PORT", "8080")
         with patch("wet.server.run_server_blocking") as mock_serve:
             srv.main()
 
-        mock_serve.assert_called_once_with(host="0.0.0.0", port=8080)
-
-    def test_wet_port_only_pins_port(self, monkeypatch):
-        monkeypatch.delenv("WET_HOST", raising=False)
-        monkeypatch.setenv("WET_PORT", "9090")
-        with patch("wet.server.run_server_blocking") as mock_serve:
-            srv.main()
-
-        mock_serve.assert_called_once_with(host=None, port=9090)
-
-    def test_invalid_wet_port_fails_loudly(self, monkeypatch):
-        """A typo'd WET_PORT aborts startup instead of silently auto-porting."""
-        monkeypatch.setenv("WET_PORT", "not-a-port")
-        with patch("wet.server.run_server_blocking") as mock_serve:
-            with pytest.raises(ValueError, match="not-a-port"):
-                srv.main()
-
-        mock_serve.assert_not_called()
+        mock_serve.assert_called_once_with()

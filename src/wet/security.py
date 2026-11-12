@@ -101,11 +101,16 @@ def build_external_tool_result(
     * ``structuredContent`` — the same object, plus the envelope markers.
 
     ``source`` labels which upstream the content came from (``"web"`` by
-    default, ``"x"`` for X/Twitter posts). A single tool that fans out to
-    several upstreams (``search`` handles both SearXNG and xAI) passes the
-    per-action source through so the envelope marker names the real origin.
+    default); a tool that fans out to several upstreams passes the per-action
+    source through so the envelope marker names the real origin.
 
-    Error payloads (``{"error": "Error: ..."}``) are handled asymmetrically.
+    Error payloads are handled asymmetrically. A payload with a non-empty
+    top-level ``error`` string — both dialects: a bare ``"Error: ..."`` and a
+    JSON envelope such as the search chain's "backends are missing API keys"
+    — IS a failure, so the result carries ``is_error=True``. That flag is the
+    only channel an MCP client (and ``wet search``) branches on; leaving it
+    false made every failed call read as a successful one.
+
     The boundary cannot prove an error string is free of embedded external
     content: ``interact`` / ``agent`` build their error from an exception repr
     (``f"Error: ... {exc}"``), and a Playwright/locator ``exc`` routinely
@@ -118,7 +123,7 @@ def build_external_tool_result(
     exception-repr error is the vuln.
     """
     error = payload.get("error")
-    if isinstance(error, str) and error.startswith("Error"):
+    if isinstance(error, str) and error:
         return CallToolResult(
             content=[
                 TextContent(
@@ -127,6 +132,7 @@ def build_external_tool_result(
                 )
             ],
             structured_content=mark_external_payload(payload, source),
+            is_error=True,
         )
 
     marked = mark_external_payload(payload, source)
