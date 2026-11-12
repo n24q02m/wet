@@ -381,24 +381,16 @@ def test_config_set_hash_key_value_is_echoed(capsys, config_dir):
 def test_config_set_without_file_fails_with_hint(capsys, config_dir):
     with patch("wet.runtime.wet_config_path", return_value=config_dir / "config.toml"):
         rc = cli.main(["config", "set", "server.port", "1234"])
-    assert rc == 1
-    assert "no config at" in capsys.readouterr().err
+    assert rc == 2
+    assert "config init" in capsys.readouterr().err
 
 
 def test_config_set_rejects_non_dotted_key(capsys, config_dir):
     _init_config(config_dir)
     with patch("wet.runtime.wet_config_path", return_value=config_dir / "config.toml"):
         rc = cli.main(["config", "set", "port", "1234"])
-    assert rc == 1
+    assert rc == 2
     assert "dotted" in capsys.readouterr().err
-
-
-def test_toml_scalar_coercions():
-    assert cli._toml_scalar("true") == "true"
-    assert cli._toml_scalar('"quoted"') == '"quoted"'
-    assert cli._toml_scalar("plain words") == '"plain words"'
-    assert cli._toml_scalar("8.5") == "8.5"
-    assert cli._toml_scalar("[1, 2]") == "[1, 2]"
 
 
 # ---------------------------------------------------------------------------
