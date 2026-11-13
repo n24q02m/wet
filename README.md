@@ -251,9 +251,10 @@ filter for research; other providers use their own search capabilities.
 
 **Browser render backends** -- `BROWSER_BACKENDS` (CSV, escalation chain) picks
 the headless render leg of `extract`: `native` (in-process chromium, the
-zero-config default), `browserless` (self-host render service -- set
-`BROWSERLESS_URL` + `BROWSERLESS_TOKEN`), and `cf-browser-rendering` (Cloudflare
-Browser Rendering -- set `CF_ACCOUNT_ID` + `CF_BROWSER_RENDERING_TOKEN`). Empty
+zero-config default), `cf-browser-rendering` (Cloudflare Browser Rendering -- set
+`CF_ACCOUNT_ID` + `CF_BROWSER_RENDERING_TOKEN`), and `browserless` (only against a
+third-party managed instance -- set `BROWSERLESS_URL` + `BROWSERLESS_TOKEN`; the
+project's own self-hosted render service was retired). Empty
 chain falls back to `native`. Set `CAPSOLVER_API_KEY` to append an optional,
 key-gated CAPTCHA tier as the last escalation step.
 
