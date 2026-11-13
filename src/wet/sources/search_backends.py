@@ -1303,19 +1303,23 @@ def chain_backend_names() -> list[str]:
     """The ordered backend names in the chain (no construction, no keys needed).
 
     Reads the CSV ``SEARCH_BACKENDS``; empty -> the single ``SEARCH_BACKEND``
-    (back-compat). Used to decide whether the embedded SearXNG must be started
+    (back-compat). Used to decide whether a self-hosted engine must be reached
     before running the chain.
 
     Config is host-only since the per-sub bucket removal (de-host 2026-09):
     every mode reads the ``SEARCH_BACKENDS`` env var, falling back to the
-    single ``SEARCH_BACKEND``, then to the historical ``searxng`` default.
+    single ``SEARCH_BACKEND``, then to the external default
+    ``tavily,duckduckgo``. The project no longer ships a SearXNG instance
+    (retired 2026-11), so an unset chain must never point at one:
+    ``searxng`` remains available only when a caller configures a
+    third-party URL explicitly.
     """
     config = _request_search_config()
     raw = _config_value(config, "SEARCH_BACKENDS", settings.search_backends).strip()
     if not raw:
         raw = _config_value(config, "SEARCH_BACKEND", settings.search_backend).strip()
     if not raw:
-        raw = "searxng"
+        raw = "tavily,duckduckgo"
     return [n.strip().lower() for n in raw.split(",") if n.strip()]
 
 
