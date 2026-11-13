@@ -1033,6 +1033,10 @@ class KeenableBackend:
     ``X-API-Key`` (rotating like the other keyed backends). Body is
     ``{query, max_results}``; results live at ``results[]`` with
     ``{title, url, description, snippet}``.
+
+    ``time_range``, ``language``, ``include_domains``, ``exclude_domains``,
+    ``categories`` and ``region`` are ignored. Without a key the query is sent
+    to Keenable's keyless public endpoint.
     """
 
     name = "keenable"
@@ -1065,8 +1069,9 @@ class KeenableBackend:
             {
                 "url": r.get("url", ""),
                 "title": r.get("title", ""),
-                "snippet": r.get("description")
-                or (r.get("snippet") or "")[: self._SNIPPET_MAX_CHARS],
+                "snippet": (r.get("description") or r.get("snippet") or "")[
+                    : self._SNIPPET_MAX_CHARS
+                ],
                 "source": "keenable",
             }
             for r in rows
@@ -1094,6 +1099,8 @@ class KeenableBackend:
                 self.keys,
                 lambda key: self._search_one(key, query, max_results),
                 "Keenable",
+                provider_id=self.name,
+                base_url=self._URL,
             )
         return await _search_keyless(
             lambda: self._search_one(None, query, max_results), "Keenable"

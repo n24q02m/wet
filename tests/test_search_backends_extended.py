@@ -202,6 +202,7 @@ async def test_keenable_keyless_uses_public_endpoint():
                         "description": "",
                         "snippet": "x" * 900,
                     },
+                    {"url": "https://k/3", "title": "K3", "description": "y" * 900},
                     {"title": "no url"},
                 ]
             }
@@ -214,9 +215,14 @@ async def test_keenable_keyless_uses_public_endpoint():
     assert "X-API-Key" not in headers
     assert headers["X-Keenable-Title"] == "wet"
     assert body == {"query": "q", "max_results": 5}
-    assert [r["url"] for r in out["results"]] == ["https://k/1", "https://k/2"]
+    assert [r["url"] for r in out["results"]] == [
+        "https://k/1",
+        "https://k/2",
+        "https://k/3",
+    ]
     assert out["results"][0]["snippet"] == "d1"
     assert out["results"][1]["snippet"] == "x" * 500
+    assert out["results"][2]["snippet"] == "y" * 500
 
 
 async def test_keenable_keyed_uses_search_endpoint():
