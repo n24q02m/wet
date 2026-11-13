@@ -13,8 +13,8 @@ Xem `AGENTS.md` va `README.md` de hieu architecture va configuration.
   - `cache.py`, `db.py`, `embedder.py`, `reranker.py` -- Infrastructure
   - `identity.py` -- Coherent browsing identity across the strategy chain
   - `docs_import.py`, `docs_reembed.py` -- Offline docs maintenance (no running server needed)
-  - `setup.py`, `setup_tool.py` -- First-run SearXNG install + warmup logic (MCP-callable)
-  - `sources/` -- Data source integrations (crawler, docs, searxng, search backends/strategies)
+  - `setup.py`, `setup_tool.py` -- First-run browser warmup + local-model setup (MCP-callable); the SearXNG install path is retained but off by default (`WET_AUTO_SEARXNG`)
+  - `sources/` -- Data source integrations (crawler, docs, search backends/strategies; the third-party searxng client lives in `sources/searxng.py`)
   - `alembic/` -- Docs DB migrations
 - `tests/` -- Mirror source modules
 
