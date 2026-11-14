@@ -1025,6 +1025,88 @@ class KagiBackend:
         )
 
 
+class KeenableBackend:
+    """Keenable Search API (https://keenable.ai).
+
+    Key optional: without one the request goes to the keyless public endpoint
+    ``POST /v1/search/public``; with keys it uses ``POST /v1/search`` with
+    ``X-API-Key`` (rotating like the other keyed backends). Body is
+    ``{query, max_results}``; results live at ``results[]`` with
+    ``{title, url, description, snippet}``.
+
+    ``time_range``, ``language``, ``include_domains``, ``exclude_domains``,
+    ``categories`` and ``region`` are ignored. Without a key the query is sent
+    to Keenable's keyless public endpoint.
+    """
+
+    name = "keenable"
+
+    _URL = "https://api.keenable.ai/v1/search"
+    _PUBLIC_URL = "https://api.keenable.ai/v1/search/public"
+    _SNIPPET_MAX_CHARS = 500
+
+    def __init__(self, keys: list[str]) -> None:
+        self.keys = keys
+
+    async def _search_one(self, key, query: str, max_results: int) -> str:
+        headers = {
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+            "X-Keenable-Title": "wet",
+        }
+        if key:
+            headers["X-API-Key"] = key
+        async with httpx.AsyncClient(timeout=30) as client:
+            resp = await client.post(
+                self._URL if key else self._PUBLIC_URL,
+                json={"query": query, "max_results": min(max(max_results, 1), 20)},
+                headers=headers,
+            )
+            if resp.status_code != 200:
+                raise _SearchHTTPError("Keenable", resp.status_code)
+            rows = resp.json().get("results") or []
+        mapped = [
+            {
+                "url": r.get("url", ""),
+                "title": r.get("title", ""),
+                "snippet": (r.get("description") or r.get("snippet") or "")[
+                    : self._SNIPPET_MAX_CHARS
+                ],
+                "source": "keenable",
+            }
+            for r in rows
+            if isinstance(r, dict) and r.get("url")
+        ]
+        return json.dumps(
+            {"results": mapped, "total": len(mapped), "query": query},
+            ensure_ascii=False,
+            indent=2,
+        )
+
+    async def search(
+        self,
+        query: str,
+        max_results: int = 10,
+        time_range=None,
+        language=None,
+        include_domains=None,
+        exclude_domains=None,
+        categories="general",
+        region=None,
+    ) -> str:
+        if self.keys:
+            return await _search_with_rotation(
+                self.keys,
+                lambda key: self._search_one(key, query, max_results),
+                "Keenable",
+                provider_id=self.name,
+                base_url=self._URL,
+            )
+        return await _search_keyless(
+            lambda: self._search_one(None, query, max_results), "Keenable"
+        )
+
+
 # Every server-side web_search is billed (Exa: $0.007/search) and the docs
 # default lets the model run up to 30 per request; wet's backend contract is
 # one search per call, so cap both the tool (``max_uses``) and the request
@@ -1233,6 +1315,13 @@ def _make_backend(name: str, searxng_url: str | None = None) -> SearchBackend:
                 _config_value(config, "FIRECRAWL_API_KEY", settings.firecrawl_api_key)
             )
         )
+    if name == "keenable":
+        # Key optional: without one the keyless public endpoint is used.
+        return KeenableBackend(
+            split_keys(
+                _config_value(config, "KEENABLE_API_KEY", settings.keenable_api_key)
+            )
+        )
     if name == "duckduckgo":
         return DuckDuckGoBackend()
     if name == "startpage":
@@ -1281,7 +1370,7 @@ def has_uvx_runnable_backend() -> bool:
             _config_value(config, "EXA_API_KEY", settings.exa_api_key)
         ):
             return True
-        if name in ("duckduckgo", "startpage", "firecrawl"):
+        if name in ("duckduckgo", "startpage", "firecrawl", "keenable"):
             # credential-free / keyless-capable: plain httpx, no local spawn
             return True
         if name == "kagi" and split_keys(

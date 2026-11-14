@@ -15,6 +15,7 @@ from wet.sources.search_backends import (
     DuckDuckGoBackend,
     FirecrawlBackend,
     KagiBackend,
+    KeenableBackend,
     StartpageBackend,
     _make_backend,
     chain_backend_names,
@@ -179,6 +180,73 @@ async def test_startpage_recency_maps_to_with_date_param():
         await StartpageBackend().search("q", time_range="day")
         params = get.call_args.kwargs["params"]
     assert params["with_date"] == "d"
+
+
+# --- keenable ---------------------------------------------------------------
+
+
+async def test_keenable_keyless_uses_public_endpoint():
+    with unittest.mock.patch("httpx.AsyncClient.post") as post:
+        post.return_value = _resp(
+            json_data={
+                "results": [
+                    {
+                        "url": "https://k/1",
+                        "title": "K1",
+                        "description": "d1",
+                        "snippet": "s",
+                    },
+                    {
+                        "url": "https://k/2",
+                        "title": "K2",
+                        "description": "",
+                        "snippet": "x" * 900,
+                    },
+                    {"url": "https://k/3", "title": "K3", "description": "y" * 900},
+                    {"title": "no url"},
+                ]
+            }
+        )
+        out = json.loads(await KeenableBackend([]).search("q", max_results=5))
+        url = post.call_args.args[0]
+        headers = post.call_args.kwargs["headers"]
+        body = post.call_args.kwargs["json"]
+    assert url == "https://api.keenable.ai/v1/search/public"
+    assert "X-API-Key" not in headers
+    assert headers["X-Keenable-Title"] == "wet"
+    assert body == {"query": "q", "max_results": 5}
+    assert [r["url"] for r in out["results"]] == [
+        "https://k/1",
+        "https://k/2",
+        "https://k/3",
+    ]
+    assert out["results"][0]["snippet"] == "d1"
+    assert out["results"][1]["snippet"] == "x" * 500
+    assert out["results"][2]["snippet"] == "y" * 500
+
+
+async def test_keenable_keyed_uses_search_endpoint():
+    with unittest.mock.patch("httpx.AsyncClient.post") as post:
+        post.return_value = _resp(json_data={"results": []})
+        await KeenableBackend(["kn-k"]).search("q")
+        url = post.call_args.args[0]
+        headers = post.call_args.kwargs["headers"]
+    assert url == "https://api.keenable.ai/v1/search"
+    assert headers["X-API-Key"] == "kn-k"
+
+
+async def test_keenable_http_error_returns_error_json():
+    with unittest.mock.patch("httpx.AsyncClient.post") as post:
+        post.return_value = _resp(status_code=429)
+        out = json.loads(await KeenableBackend([]).search("q"))
+    assert "error" in out
+
+
+def test_make_backend_keenable_without_key(monkeypatch):
+    monkeypatch.setattr(search_backends.settings, "keenable_api_key", "")
+    backend = _make_backend("keenable")
+    assert isinstance(backend, KeenableBackend)
+    assert backend.keys == []
 
 
 # --- firecrawl --------------------------------------------------------------

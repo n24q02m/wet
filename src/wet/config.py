@@ -82,7 +82,8 @@ class Settings(BaseSettings):
     Environment variables:
     - SEARXNG_URL: SearXNG instance URL (default http://localhost:41592)
     - SEARCH_BACKENDS: CSV provider chain (searxng | tavily | brave | exa |
-      kagi | openrouter | firecrawl | duckduckgo | startpage)
+      kagi | openrouter | firecrawl | keenable | duckduckgo |
+      startpage)
     - RERANK_ENABLED / RERANK_TOP_N: search-chain rerank toggles
     - RESPECT_ROBOTS_TXT: enforce robots.txt for extract and crawl
     - BROWSER_BACKENDS: CSV (native | browserless); the Cloudflare
@@ -121,6 +122,7 @@ class Settings(BaseSettings):
     exa_api_key: str = ""  # env EXA_API_KEY
     firecrawl_api_key: str = ""  # env FIRECRAWL_API_KEY (optional — keyless fallback)
     kagi_api_key: str = ""  # env KAGI_API_KEY
+    keenable_api_key: str = ""  # env KEENABLE_API_KEY (optional — keyless)
     # OpenRouter web-search backend (keyed). The query runs through a chat
     # completion with the openrouter:web_search server tool; sources come back
     # as url_citation annotations. Engine selects the search provider when
