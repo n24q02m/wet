@@ -675,6 +675,34 @@ async def sitemap(
     return json.dumps(all_urls, ensure_ascii=False, indent=2)
 
 
+# Crawl4AI ``result.media`` key per MIME major type, for a URL whose response
+# *is* a media file.
+_DIRECT_MEDIA_KEYS = {"image": "images", "video": "videos", "audio": "audios"}
+
+
+async def _probe_direct_media(url: str) -> tuple[str, dict] | None:
+    """Return ``(media key, item)`` when ``url`` serves a media file itself.
+
+    A browser renders a bare image/video/audio response as a near-empty viewer
+    page, which the crawler rejects (anti-bot "minimal text" or a failed
+    load). One HEAD through the SSRF-guarded client tells that case apart
+    from a real page failure. Any probe error means "not media".
+    """
+    try:
+        async with _safe_httpx_client(timeout=15, follow_redirects=True) as client:
+            response = await client.head(url)
+            response.raise_for_status()
+    except Exception as e:
+        logger.debug(f"Direct media probe failed for {url}: {e}")
+        return None
+    content_type = response.headers.get("content-type", "").split(";")[0].strip()
+    major = content_type.split("/")[0].lower()
+    key = _DIRECT_MEDIA_KEYS.get(major)
+    if key is None:
+        return None
+    return key, {"src": str(response.url), "type": major, "content_type": content_type}
+
+
 async def list_media(
     url: str,
     media_type: str = "all",
@@ -705,9 +733,17 @@ async def list_media(
         )
 
         if not result.success:
-            return json.dumps({"error": result.error_message or "Failed to load page"})
-
-        media = result.media or {}
+            error = {"error": result.error_message or "Failed to load page"}
+            # A robots.txt-enforced failure must not be fetched again.
+            if settings.respect_robots_txt:
+                return json.dumps(error)
+            direct = await _probe_direct_media(url)
+            if direct is None:
+                return json.dumps(error)
+            key, item = direct
+            media = {key: [item]}
+        else:
+            media = result.media or {}
 
         output: dict[str, list] = {}
 

@@ -11,20 +11,12 @@ Usage:
 """
 
 import json
-import os
-import socket
-import subprocess
-import sys
-import time
-import warnings
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from pathlib import Path
 from threading import Thread
 
-import httpx
 import pytest
+from live_http import live_mcp_session, wet_server_env
 from mcp.client.session import ClientSession
-from mcp.client.streamable_http import streamable_http_client
 from structured import payload
 
 pytestmark = [pytest.mark.live, pytest.mark.timeout(120)]
@@ -45,43 +37,6 @@ def parse(r) -> str:
 def parse_allow_error(r) -> str:
     """Extract text from MCP tool result, including error responses."""
     return r.content[0].text
-
-
-def _free_port() -> int:
-    with socket.socket() as sock:
-        sock.bind(("127.0.0.1", 0))
-        return sock.getsockname()[1]
-
-
-def _server_env(tmp_path: Path, searxng_url: str) -> tuple[dict, Path]:
-    """Env for a real local-only server process: tmp instance home, no cells."""
-    local_state = tmp_path / "local-state"
-    local_state.mkdir(parents=True, exist_ok=True)
-    port = _free_port()
-    env = {
-        **os.environ,
-        "LOG_LEVEL": "WARNING",
-        # Windows Path.home() reads USERPROFILE; POSIX reads HOME.
-        "HOME": str(local_state),
-        "USERPROFILE": str(local_state),
-        "XDG_CONFIG_HOME": str(local_state),
-        "LOCALAPPDATA": str(local_state),
-        "APPDATA": str(local_state),
-        "CACHE_DIR": str(tmp_path),
-        "DOCS_DB_PATH": str(tmp_path / "docs.db"),
-        "EMBEDDING_DIMS": "0",
-        "RERANK_ENABLED": "true",
-        "DISABLE_LOCAL_EMBED": "false",
-        "DISABLE_LOCAL_RERANK": "false",
-        "SEARCH_BACKENDS": "searxng",
-        "SEARXNG_URL": searxng_url,
-        "WET_AUTO_SEARXNG": "false",
-        # De-host: model cells live in config.toml, which the tmp home lacks —
-        # no cloud cell is configured, so the server runs the local ONNX legs.
-        "WET_HOST": "127.0.0.1",
-        "WET_PORT": str(port),
-    }
-    return env, local_state
 
 
 class _SearxngHandler(BaseHTTPRequestHandler):
@@ -133,17 +88,6 @@ def searxng_server():
         thread.join(timeout=5)
 
 
-def _wait_until_up(port: int, timeout: float = 60.0) -> None:
-    deadline = time.monotonic() + timeout
-    while time.monotonic() < deadline:
-        try:
-            httpx.get(f"http://127.0.0.1:{port}/mcp", timeout=2.0)
-            return  # any HTTP response (incl. 4xx) means the listener is up
-        except httpx.HTTPError:
-            time.sleep(0.25)
-    raise RuntimeError(f"wet server on port {port} never came up")
-
-
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
@@ -152,39 +96,9 @@ def _wait_until_up(port: int, timeout: float = 60.0) -> None:
 @pytest.fixture
 async def mcp_session(searxng_server: str, tmp_path):
     """Start a real local-only wet HTTP server; yield an MCP session."""
-    env, _state = _server_env(tmp_path, searxng_server)
-    port = int(env["WET_PORT"])
-    log_path = tmp_path / "server.log"
-    with open(log_path, "ab") as log_fh:
-        proc = subprocess.Popen(
-            [sys.executable, "-m", "wet.server"],
-            env=env,
-            stdout=log_fh,
-            stderr=log_fh,
-        )
-    try:
-        _wait_until_up(port)
-        url = f"http://127.0.0.1:{port}/mcp"
-        async with streamable_http_client(url) as (read_stream, write_stream):
-            async with ClientSession(read_stream, write_stream) as session:
-                await session.initialize()
-                yield session
-    except (RuntimeError, ExceptionGroup) as exc:
-        msg = str(exc).lower()
-        if "cancel scope" in msg or "different task" in msg:
-            warnings.warn(
-                f"Suppressed teardown error: {exc}",
-                RuntimeWarning,
-                stacklevel=1,
-            )
-        else:
-            raise
-    finally:
-        proc.terminate()
-        try:
-            proc.wait(timeout=10)
-        except subprocess.TimeoutExpired:
-            proc.kill()
+    env = wet_server_env(tmp_path, searxng_url=searxng_server)
+    async with live_mcp_session(env, tmp_path / "server.log") as session:
+        yield session
 
 
 # ---------------------------------------------------------------------------

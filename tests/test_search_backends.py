@@ -224,6 +224,23 @@ def test_chain_falls_back_to_single_backend(monkeypatch):
     assert chain_backend_names() == ["tavily"]
 
 
+def test_chain_defaults_to_external_chain_when_unset(monkeypatch):
+    """Zero config -> the documented ``tavily,duckduckgo`` chain.
+
+    The settings defaults themselves must not name a backend: the project no
+    longer ships a SearXNG instance, so an unset chain resolving to the local
+    ``searxng`` would block every search in a pip-less uv venv.
+    """
+    from wet.config import Settings
+
+    monkeypatch.delenv("SEARCH_BACKENDS", raising=False)
+    monkeypatch.delenv("SEARCH_BACKEND", raising=False)
+    monkeypatch.setattr(
+        "wet.sources.search_backends.settings", Settings(_env_file=None)
+    )
+    assert chain_backend_names() == ["tavily", "duckduckgo"]
+
+
 def test_chain_skips_missing_key_backends(monkeypatch):
     monkeypatch.setenv("SEARCH_BACKENDS", "tavily,searxng")
     monkeypatch.delenv("TAVILY_API_KEY", raising=False)

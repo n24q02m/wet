@@ -1975,7 +1975,7 @@ async def test_search_cached_index_zero_chunks():
 
 @pytest.mark.asyncio
 async def test_discover_docs_url_searxng_timeout():
-    """Test _discover_docs_url SearXNG fallback timeout (lines 1388-1389)."""
+    """Test _discover_docs_url configured-search fallback timeout (offline)."""
     with (
         patch(
             "wet.sources.docs.discover_library",
@@ -1983,7 +1983,7 @@ async def test_discover_docs_url_searxng_timeout():
             return_value=None,
         ),
         patch(
-            "wet.server.ensure_searxng",
+            "wet.sources.search_backends.run_search_chain",
             new_callable=AsyncMock,
             side_effect=TimeoutError,
         ),
