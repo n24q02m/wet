@@ -129,6 +129,7 @@ artifacts = ["src/wet/data/**/*.json"]
 [tool.hatch.build.targets.sdist]
 include = [
     "src/wet/**/*.py",
+    "src/wet/**/*.json",
     "src/wet/**/*.yml",
     "src/wet/**/*.md",
     "src/wet/**/*.ini",
