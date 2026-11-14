@@ -2,6 +2,22 @@
 
 <!-- version list -->
 
+## v3.22.0-beta.4 (2026-11-14)
+
+### Bug Fixes
+
+- Let renovate merge only after every check is green
+  ([#1953](https://github.com/n24q02m/wet/pull/1953),
+  [`f1f8b4c`](https://github.com/n24q02m/wet/commit/f1f8b4ccaa440aa0174282a9a288712c7fbd1a5a))
+
+- Ratchet the coverage gate to the lowest matrix leg
+  ([#1955](https://github.com/n24q02m/wet/pull/1955),
+  [`41668cc`](https://github.com/n24q02m/wet/commit/41668cc99a3a6010a96c9452d50e7b5eb0031546))
+
+- Ship the Tier 1 library seed in the wheel ([#1954](https://github.com/n24q02m/wet/pull/1954),
+  [`4973f91`](https://github.com/n24q02m/wet/commit/4973f91ffd55279b8f867615f0a8c5353bc2cf9d))
+
+
 ## v3.22.0-beta.3 (2026-11-14)
 
 ### Bug Fixes
