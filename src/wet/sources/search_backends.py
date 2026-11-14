@@ -1328,12 +1328,33 @@ def _make_backend(name: str, searxng_url: str | None = None) -> SearchBackend:
     raise ValueError(f"Unknown search backend: {name}")
 
 
+# Zero-config chain: Tavily when keyed, DuckDuckGo (credential-free) always.
+# The project no longer ships a SearXNG instance, so it is never a default.
+_DEFAULT_SEARCH_CHAIN = ("tavily", "duckduckgo")
+
+
 def search_backend_from_env() -> SearchBackend:
-    """Single-backend resolver (back-compat). Raises on missing key/unknown name."""
-    name = _config_value(
-        _request_search_config(), "SEARCH_BACKEND", settings.search_backend or "searxng"
-    ).lower()
-    return _make_backend(name)
+    """Single-backend resolver (back-compat).
+
+    An explicit ``SEARCH_BACKEND`` raises on a missing key or unknown name.
+    Unset, it picks the first backend of the default chain that can be built.
+    """
+    name = (
+        _config_value(
+            _request_search_config(), "SEARCH_BACKEND", settings.search_backend
+        )
+        .strip()
+        .lower()
+    )
+    if name:
+        return _make_backend(name)
+    *keyed, keyless = _DEFAULT_SEARCH_CHAIN
+    for default_name in keyed:
+        try:
+            return _make_backend(default_name)
+        except ValueError:
+            continue
+    return _make_backend(keyless)
 
 
 # The local SearXNG auto-spawn URL (mirrors the ``searxng_url`` default in
@@ -1407,7 +1428,7 @@ def chain_backend_names() -> list[str]:
     if not raw:
         raw = _config_value(config, "SEARCH_BACKEND", settings.search_backend).strip()
     if not raw:
-        raw = "tavily,duckduckgo"
+        return list(_DEFAULT_SEARCH_CHAIN)
     return [n.strip().lower() for n in raw.split(",") if n.strip()]
 
 

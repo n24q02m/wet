@@ -24,6 +24,7 @@ import httpx
 import httpx2
 from mcp.client.session import ClientSession
 from mcp.client.streamable_http import streamable_http_client
+from process_lifeline import stop_supervised, supervised_argv
 
 # The exact de-hosted tool registry (mirrors tests/test_tool_names.py).
 EXPECTED_WET_TOOLS = [
@@ -93,18 +94,30 @@ def wet_server_env(tmp_path: Path, *, searxng_url: str | None = None) -> dict:
     return env
 
 
-def spawn_wet_server(env: dict, log_path: Path) -> subprocess.Popen[bytes]:
-    """Start ``python -m wet.server``; the caller owns termination."""
+def spawn_supervised(
+    argv: list[str], env: dict, log_path: Path
+) -> subprocess.Popen[bytes]:
+    """Start ``argv`` under ``process_lifeline``; stop it with ``stop_supervised``.
+
+    The returned process is the supervisor. Its stdin is the lifeline: closing
+    it, or this process dying by any means, stops the whole server tree.
+    """
     log_fh = open(log_path, "ab")
     proc = subprocess.Popen(
-        [sys.executable, "-m", "wet.server"],
+        supervised_argv(argv),
         env=env,
+        stdin=subprocess.PIPE,
         stdout=log_fh,
         stderr=log_fh,
         close_fds=True,
     )
     log_fh.close()  # the child owns its inherited handle
     return proc
+
+
+def spawn_wet_server(env: dict, log_path: Path) -> subprocess.Popen[bytes]:
+    """Start ``python -m wet.server`` supervised; stop it with ``stop_supervised``."""
+    return spawn_supervised([sys.executable, "-m", "wet.server"], env, log_path)
 
 
 def _log_tail(log_path: Path, chars: int = 2000) -> str:
@@ -167,11 +180,7 @@ async def wet_http_server(env: dict, log_path: Path) -> AsyncGenerator[int]:
         wait_until_up(proc, port, log_path)
         yield port
     finally:
-        proc.terminate()
-        try:
-            proc.wait(timeout=10)
-        except subprocess.TimeoutExpired:
-            proc.kill()
+        stop_supervised(proc)
 
 
 @asynccontextmanager

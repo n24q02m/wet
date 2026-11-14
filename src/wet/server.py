@@ -1109,7 +1109,11 @@ async def _with_timeout(coro, action: str) -> Any:
 
 
 async def _run_configured_search(*, timeout: float | None = None, **kwargs: Any) -> str:
-    """Run the configured backend chain, auto-starting local SearXNG."""
+    """Run the configured backend chain.
+
+    A local SearXNG is auto-started only when opted in (``WET_AUTO_SEARXNG``)
+    and ``searxng`` is in the chain.
+    """
     searxng_url = None
     if (
         settings.auto_searxng_enabled()
@@ -1165,7 +1169,7 @@ async def search(  # noqa: PLR0913
     """Find information across web, academic sources, or library docs. Returns search result listings (titles, URLs, snippets) -- NOT full page content. To read full content from a URL, use the `extract` tool instead.
 
     Actions:
-    - search: Web search via SearXNG. Example: search(action="search", query="python async patterns")
+    - search: Web search via the SEARCH_BACKENDS chain (default: Tavily when keyed, then DuckDuckGo). Example: search(action="search", query="python async patterns")
     - research: Academic/scientific search (Google Scholar, arXiv, PubMed). Example: search(action="research", query="transformer attention mechanism")
     - docs: Search library documentation with auto-indexing. Example: search(action="docs", query="how to create routes", library="fastapi")
     - docs_resolve: Free-form library name to ranked library_id list. Example: search(action="docs_resolve", query="react")

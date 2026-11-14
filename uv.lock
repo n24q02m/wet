@@ -1707,7 +1707,7 @@ web = [
 
 [[package]]
 name = "n24q02m-wet"
-version = "3.21.0"
+version = "3.22.0b2"
 source = { editable = "." }
 dependencies = [
     { name = "aiolimiter" },
@@ -1743,6 +1743,7 @@ invisible = [
 [package.dev-dependencies]
 dev = [
     { name = "pre-commit" },
+    { name = "psutil" },
     { name = "pytest" },
     { name = "pytest-asyncio" },
     { name = "pytest-cov" },
@@ -1783,6 +1784,7 @@ provides-extras = ["identity", "invisible"]
 [package.metadata.requires-dev]
 dev = [
     { name = "pre-commit" },
+    { name = "psutil", specifier = ">=7.2.2" },
     { name = "pytest" },
     { name = "pytest-asyncio" },
     { name = "pytest-cov", specifier = ">=7.1.0" },

@@ -88,8 +88,9 @@ uv run wet server start --foreground
 - Per-task chain selection: `EMBEDDING_MODELS` / `RERANK_MODELS` /
   `LLM_MODELS` (CSV `provider/model`, order = litellm fallback; provider
   inferred from the prefix; keys never select a model).
-- Cloud search backends are an optional fallback chain (`SEARCH_BACKENDS`:
-  Tavily, Brave, Exa, Kagi, OpenRouter, Firecrawl) over the embedded SearXNG.
+- Web search is the `SEARCH_BACKENDS` fallback chain (Tavily, Brave, Exa,
+  Kagi, OpenRouter, Firecrawl, DuckDuckGo, Startpage, SearXNG). Unset, it is
+  `tavily,duckduckgo`; SearXNG is opt-in via `SEARXNG_URL`.
 - `DISABLE_LOCAL_BROWSER|SEARCH|EMBED|RERANK` opt out of in-process local
   fallbacks (slim containers).
 

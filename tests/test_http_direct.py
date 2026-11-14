@@ -12,6 +12,9 @@ protocol; excluded from the default ``pytest`` invocation but runs under
 
 from __future__ import annotations
 
+from contextlib import suppress
+
+import psutil
 import pytest
 from live_http import (
     EXPECTED_WET_TOOLS,
@@ -49,3 +52,21 @@ async def test_http_direct_tools_list_returns_expected_tools(tmp_path):
                 f"missing={set(EXPECTED_WET_TOOLS) - set(tool_names)} "
                 f"unexpected={set(tool_names) - set(EXPECTED_WET_TOOLS)}"
             )
+
+
+def _cmdline(proc: psutil.Process) -> str:
+    with suppress(psutil.Error):
+        return " ".join(proc.cmdline())
+    return ""
+
+
+async def test_http_server_tree_is_gone_after_context_exit(tmp_path):
+    """Leaving the context stops every process the server run started."""
+    async with wet_http_server(wet_server_env(tmp_path), tmp_path / "server.log"):
+        tree = psutil.Process().children(recursive=True)
+        assert any("wet.server" in _cmdline(p) for p in tree), [
+            _cmdline(p) for p in tree
+        ]
+
+    _, alive = psutil.wait_procs(tree, timeout=5)
+    assert alive == [], f"leaked: {[(p.pid, _cmdline(p)) for p in alive]}"
