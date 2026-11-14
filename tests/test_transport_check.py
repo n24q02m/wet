@@ -306,11 +306,13 @@ async def test_search_proceeds_in_uvx_with_cloud_key(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_search_proceeds_in_uvx_with_external_searxng(monkeypatch):
-    """uvx=True + an external SEARXNG_URL (not the local default) -> the
-    guard lets 'search' through; the chain defaults to searxng-only so it
-    still calls ensure_searxng, same as the non-uvx flow."""
+    """uvx=True + an external SEARXNG_URL -> the guard lets 'search' through.
+
+    The chain default is external (tavily,duckduckgo) since the project retired
+    its own SearXNG instance, so a searxng-only chain is now explicit.
+    """
     srv = _force_uvx(monkeypatch, True)
-    monkeypatch.delenv("SEARCH_BACKENDS", raising=False)
+    monkeypatch.setenv("SEARCH_BACKENDS", "searxng")
     monkeypatch.delenv("SEARCH_BACKEND", raising=False)
     monkeypatch.setenv("SEARXNG_URL", "https://searxng.example.com")
 
@@ -328,7 +330,8 @@ async def test_search_proceeds_in_uvx_with_external_searxng(monkeypatch):
 
         assert "needs a search backend" not in text(result)
         assert "Search Results" in text(result)
-        mock_ensure.assert_called_once()
+        # An external URL needs no local spawn, and auto-start is off by default.
+        mock_ensure.assert_not_called()
 
 
 @pytest.mark.asyncio

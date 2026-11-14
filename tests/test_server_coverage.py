@@ -498,6 +498,69 @@ async def test_rerank_fewer_results_than_top_n():
 
 
 # ---------------------------------------------------------------------------
+# web cache: failures are never persisted
+# ---------------------------------------------------------------------------
+
+
+def test_payload_is_error_recognises_every_failure_dialect():
+    """Both helper dialects count, including the ones without an "Error" prefix
+    and the ones that still carry a results list."""
+    assert server._payload_is_error("Error: backend exploded")
+    assert server._payload_is_error('{"error": "Search backends [x] are unbuilt"}')
+    assert server._payload_is_error('{"results": [], "total": 0, "error": "region"}')
+
+
+def test_payload_is_error_accepts_results_arrays_and_opaque_text():
+    # Opaque text is cached verbatim by design; the tool boundary decides.
+    assert not server._payload_is_error("<html>body</html>")
+    assert not server._payload_is_error(
+        '{"results": [{"url": "https://e"}], "total": 1}'
+    )
+    assert not server._payload_is_error('[{"url": "https://e"}]')
+    # An empty error string is not a failure.
+    assert not server._payload_is_error('{"results": [], "error": ""}')
+
+
+async def test_cache_set_skips_error_envelopes(_mock_web_cache):
+    await server._cache_set(
+        "search", {"query": "q"}, '{"error": "Search backends [x] unbuilt"}', 3600
+    )
+    _mock_web_cache.set.assert_not_called()
+
+    await server._cache_set("search", {"query": "q"}, '{"results": [], "total": 0}', 60)
+    _mock_web_cache.set.assert_called_once()
+
+
+async def test_cache_get_ignores_entries_written_before_the_guard(_mock_web_cache):
+    """An error envelope cached by an older build must not be replayed."""
+    _mock_web_cache.get.return_value = '{"error": "Search backends [x] unbuilt"}'
+    assert await server._cache_get("search", {"query": "q"}) is None
+
+    _mock_web_cache.get.return_value = '{"results": [], "total": 0}'
+    assert await server._cache_get("search", {"query": "q"}) == (
+        '{"results": [], "total": 0}'
+    )
+
+
+async def test_search_does_not_cache_an_error_envelope(_mock_web_cache, monkeypatch):
+    """Live bug: a missing OPENROUTER_MODEL produced an error envelope that was
+    cached for an hour and replayed (0.00 s) after the config was fixed."""
+    envelope = json.dumps(
+        {"error": "Search backends ['openrouter'] could not be built — x"}
+    )
+    monkeypatch.setattr(
+        server,
+        "_run_configured_search",
+        AsyncMock(return_value=envelope),
+    )
+
+    result = await server.search(action="search", query="python asyncio")
+
+    assert "could not be built" in text(result)
+    _mock_web_cache.set.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
 # search tool: cache hit paths (lines 511, 535, 540)
 # ---------------------------------------------------------------------------
 
@@ -1045,15 +1108,18 @@ async def test_background_index_embed_timeout():
 
 async def test_search_cached_index_no_results():
     """Line 1304: search returns empty results -> None."""
+    assert server._docs_db is not None
     server._docs_db.get_library.return_value = {
         "id": 1,
         "discovery_version": 999,
     }
+    assert server._docs_db is not None
     server._docs_db.get_best_version.return_value = {
         "id": 1,
         "chunk_count": 10,
         "version": "latest",
     }
+    assert server._docs_db is not None
     server._docs_db.search.return_value = []
 
     with patch("wet.server._embed", new_callable=AsyncMock, return_value=None):
@@ -1063,10 +1129,12 @@ async def test_search_cached_index_no_results():
 
 async def test_search_cached_index_version_zero_chunks():
     """Line 1289: version has chunk_count=0 -> None."""
+    assert server._docs_db is not None
     server._docs_db.get_library.return_value = {
         "id": 1,
         "discovery_version": 999,
     }
+    assert server._docs_db is not None
     server._docs_db.get_best_version.return_value = {
         "id": 1,
         "chunk_count": 0,
@@ -1160,15 +1228,14 @@ async def test_discover_docs_url_with_language():
 
 
 def test_main_entry_point():
-    """main() always serves HTTP: run_server_blocking with WET_HOST/WET_PORT."""
+    """main() always serves HTTP and leaves bind resolution to the entry point
+    (WET_HOST/WET_PORT are read by ``resolve_bind`` inside it)."""
     with (
         patch.object(server, "run_server_blocking") as mock_serve,
         patch.dict(os.environ, {"WET_HOST": "127.0.0.9", "WET_PORT": "8777"}),
     ):
         server.main()
-    _, kwargs = mock_serve.call_args
-    assert kwargs["host"] == "127.0.0.9"
-    assert kwargs["port"] == 8777
+    mock_serve.assert_called_once_with()
 
 
 # ---------------------------------------------------------------------------

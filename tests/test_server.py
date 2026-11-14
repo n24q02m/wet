@@ -211,7 +211,9 @@ async def test_search_missing_query():
 async def test_extract_success():
     """Test extract action success path."""
     with patch("wet.server._extract", new_callable=AsyncMock) as mock_extract:
-        mock_extract.return_value = "Extracted Content"
+        mock_extract.return_value = json.dumps(
+            {"https://example.com": {"text": "Extracted Content"}}
+        )
 
         result = await extract(action="extract", urls=["https://example.com"])
 
@@ -229,7 +231,9 @@ async def test_extract_success():
 async def test_extract_with_options():
     """Test extract action with custom options."""
     with patch("wet.server._extract", new_callable=AsyncMock) as mock_extract:
-        mock_extract.return_value = "Extracted Content"
+        mock_extract.return_value = json.dumps(
+            {"https://example.com": {"text": "Extracted Content"}}
+        )
 
         result = await extract(
             action="extract",
@@ -258,7 +262,7 @@ async def test_extract_missing_urls():
 async def test_crawl_success():
     """Test crawl action success path."""
     with patch("wet.server._crawl", new_callable=AsyncMock) as mock_crawl:
-        mock_crawl.return_value = "Crawl Results"
+        mock_crawl.return_value = json.dumps({"pages": [{"text": "Crawl Results"}]})
 
         result = await extract(
             action="crawl",
@@ -284,7 +288,7 @@ async def test_crawl_success():
 async def test_crawl_defaults():
     """Test crawl action with defaults."""
     with patch("wet.server._crawl", new_callable=AsyncMock) as mock_crawl:
-        mock_crawl.return_value = "Crawl Results"
+        mock_crawl.return_value = json.dumps({"pages": [{"text": "Crawl Results"}]})
 
         result = await extract(action="crawl", urls=["https://example.com"])
 
@@ -310,7 +314,7 @@ async def test_crawl_missing_urls():
 async def test_map_success():
     """Test map action success path."""
     with patch("wet.server._sitemap", new_callable=AsyncMock) as mock_sitemap:
-        mock_sitemap.return_value = "Sitemap Content"
+        mock_sitemap.return_value = json.dumps({"urls": [{"text": "Sitemap Content"}]})
 
         result = await extract(
             action="map", urls=["https://example.com"], depth=3, max_pages=50
@@ -329,7 +333,7 @@ async def test_map_success():
 async def test_map_defaults():
     """Test map action with defaults."""
     with patch("wet.server._sitemap", new_callable=AsyncMock) as mock_sitemap:
-        mock_sitemap.return_value = "Sitemap Content"
+        mock_sitemap.return_value = json.dumps({"urls": [{"text": "Sitemap Content"}]})
 
         result = await extract(action="map", urls=["https://example.com"])
 
@@ -586,6 +590,7 @@ async def test_search_expand_flag():
 
         assert "Search Results" in text(result)
         # Verify expanded query was passed to the configured chain.
+        assert mock_search.await_args is not None
         assert "OR" in mock_search.await_args.kwargs["query"]
 
 

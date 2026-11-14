@@ -7,14 +7,14 @@ Xem `AGENTS.md` va `README.md` de hieu architecture va configuration.
 
 - `src/wet/` -- Package chinh (src layout)
   - `server.py` -- FastMCP server (orchestrator, file lon nhat); always the HTTP MCP endpoint (no stdio mode)
-  - `cli.py` -- `wet` control plane: `server start|stop|status`, `config`, `token hash`, `users path`, `docs reindex|import|reembed`, `search`, `warmup`
+  - `cli.py` -- `wet` control plane: `server start|stop|status`, `config`, `token hash`, `users path`, `docs list|reindex|import|reembed`, `search`, `warmup`
   - `runtime.py` -- Bridge to hull-core (settings, auth mode, users store, per-sub namespace)
   - `config.py` -- Pydantic Settings (singleton)
   - `cache.py`, `db.py`, `embedder.py`, `reranker.py` -- Infrastructure
   - `identity.py` -- Coherent browsing identity across the strategy chain
   - `docs_import.py`, `docs_reembed.py` -- Offline docs maintenance (no running server needed)
-  - `setup.py`, `setup_tool.py` -- First-run SearXNG install + warmup logic (MCP-callable)
-  - `sources/` -- Data source integrations (crawler, docs, searxng, search backends/strategies)
+  - `setup.py`, `setup_tool.py` -- First-run browser warmup + local-model setup (MCP-callable); the SearXNG install path is retained but off by default (`WET_AUTO_SEARXNG`)
+  - `sources/` -- Data source integrations (crawler, docs, search backends/strategies; the third-party searxng client lives in `sources/searxng.py`)
   - `alembic/` -- Docs DB migrations
 - `tests/` -- Mirror source modules
 
@@ -45,7 +45,7 @@ mise run dev       # uv run wet server start --foreground
 Script entry points (all `wet.cli:main`): `n24q02m-wet` (canonical, matches the PyPI dist), `wet` (short alias) and `wet-mcp` (legacy alias).
 `wet search` and other server-backed subcommands talk to the running server over
 streamable HTTP; with no server running they exit 2 and print a hint to run
-`wet server start`. `wet docs reindex|import|reembed` work without a server.
+`wet server start`. `wet docs list|reindex|import|reembed` work without a server.
 
 ## Cau hinh quan trong
 
@@ -78,11 +78,12 @@ streamable HTTP; with no server running they exit 2 and print a hint to run
 - LLM/Embed/Rerank/Chat: per-task provider cells `[models.embed|rerank|chat|jev_score]` in `~/.wet/config.toml` (each `base_url` + `api_key` + `model`, OpenAI-spec). OpenRouter is the pre-wired default for every cell.
   - Credentials: `api_key` in the cell, or `HULL_<TASK>_API_KEY` env injection (`HULL_EMBED_API_KEY` / `HULL_RERANK_API_KEY` / `HULL_CHAT_API_KEY` / `HULL_JEV_SCORE_API_KEY` — env wins over the file).
   - `OPENROUTER_API_KEY` env serves any cell that keeps the OpenRouter default `base_url` — one key can power every task.
-  - Empty embed/rerank cell -> local ONNX (fastretrieval); unkeyed chat cell -> LLM features off.
+  - Key pool (hull 0.5): every key above is seeded once into the provider's credential pool in `~/.hull/hull.db` (`WET_HULL_DB` overrides). A 401/403 disables that key and the call rotates to the next one; a 429 cools it down by `Retry-After` / `rate_limit_reset`; an exhausted pool raises `wet.keypool.ProviderUnavailable` (provider + cooldown, never a key). The legacy key is never removed from env/config.
+  - Multi-account: `[models.<task>] account = "<account id>"` (default: the provider's unaccounted pool), `provider = "<identity>"` overrides the identity derived from `base_url`. Managed through hull's `CredentialStore` / `AccountRegistry`.
+  - Empty embed/rerank cell -> local ONNX (fastretrieval); unkeyed chat cell -> LLM features off. A cell with no key still counts as configured when its pool holds credentials.
  - Local model cache: `FASTRETRIEVAL_CACHE_PATH`.
-- Search backends (`SEARCH_BACKENDS` CSV, runtime fallback — thử từng backend, rơi xuống backend kế khi error/empty): `searxng` (self-host) | `tavily` | `brave` | `exa` | `kagi` (keyed, `KAGI_API_KEY`) | `openrouter` (`OPENROUTER_API_KEY`, `openrouter:web_search` server tool) | `firecrawl` (key optional — không key vẫn thử keyless, `FIRECRAWL_API_KEY`) | `duckduckgo` | `startpage` (credential-free HTML scrape, uvx-safe; datacenter IP có thể bị bot-challenge → chain tự advance).
-- SearXNG: `WET_AUTO_SEARXNG` (default true), `SEARXNG_URL` (external mode)
-- Browser render backends (headless leg of `extract`): `BROWSER_BACKENDS` (CSV escalation chain: `native` | `browserless` | `invisible`; empty = `native`), `BROWSERLESS_URL`/`BROWSERLESS_TOKEN` (self-host browserless), `STEALTHFOX_BINARY` (path to a patched Firefox build for the `invisible` tier — skips the engine download, seal still verified), `CAPSOLVER_API_KEY` (optional key-gated captcha tier)
+- Search backends (`SEARCH_BACKENDS` CSV, runtime fallback — thử từng backend, rơi xuống backend kế khi error/empty): `tavily` | `brave` | `exa` | `kagi` (keyed, `KAGI_API_KEY`) | `openrouter` (`OPENROUTER_API_KEY`, `openrouter:web_search` server tool) | `firecrawl` (key optional — không key vẫn thử keyless, `FIRECRAWL_API_KEY`) | `duckduckgo` | `startpage` (credential-free HTML scrape, uvx-safe; datacenter IP có thể bị bot-challenge → chain tự advance). Backend `searxng` (self-host) đã ngưng: không cấu hình `SEARXNG_URL` nữa; search phải đi qua backend external.
+- Browser render backends (headless leg of `extract`): `BROWSER_BACKENDS` (CSV escalation chain: `native` | `cf-browser-rendering` | `invisible`; empty = `native`), `CF_BROWSER_RENDERING_TOKEN`. `browserless` chỉ dùng với instance managed bên thứ ba (`BROWSERLESS_URL`/`BROWSERLESS_TOKEN`); service self-host của project đã bị gỡ cùng DNS. `STEALTHFOX_BINARY` (path to a patched Firefox build for the `invisible` tier — skips the engine download, seal still verified), `CAPSOLVER_API_KEY` (optional key-gated captcha tier)
 - Identity layer (one coherent person across the chain): `WET_IDENTITY_SEED` (int pin; default 0 = derive once and persist per namespace under `~/.wet/subs/<sub>/identity.json`), `IDENTITY_PROFILE_DIR` (persistent browser profile dir; default `~/.wet/subs/<sub>/profiles`). Requires the optional `n24q02m-hull[identity]` extra (`invisible-core`); without it strategies keep legacy behavior (warn once). First identity build may download a GeoIP mmdb (egress) and resolve locale/timezone from the egress IP — `timezone_mismatch` behind a proxy falls back to en-US/UTC, never raises to MCP callers
 - Robots policy: `RESPECT_ROBOTS_TXT` (default `false`); set `true` to enforce `robots.txt` for the ScrapingAgent extract chain and Crawl4AI `crawl`, `sitemap`, and `list_media` actions
 - Disable-local toggles (skip heavy in-process fallbacks per capability): `DISABLE_LOCAL_BROWSER`, `DISABLE_LOCAL_SEARCH`, `DISABLE_LOCAL_EMBED`, `DISABLE_LOCAL_RERANK`

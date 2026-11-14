@@ -1,6 +1,6 @@
 [project]
 name = "n24q02m-wet"
-version = "3.21.0-beta.1"
+version = "3.21.0"
 description = "Open-source MCP server for AI agents: web search, content extraction, and library docs."
 readme = "README.md"
 license = { text = "Apache-2.0" }
@@ -26,7 +26,9 @@ dependencies = [
     # with the remote render backends (BrowserlessClient / RemoteRenderStrategy)
     # for the browser provider chain + the under-rendered escalation fix.
     # (Browser rendering is native chromium or self-hosted browserless only.)
-    "n24q02m-hull[web]>=0.4,<0.5",
+    # 0.5 adds the provider key pool + account registry
+    # (`hull_core.credentials`) every provider call now rotates through.
+    "n24q02m-hull[web]>=0.6.1,<0.7",
     # MCP Server
     "mcp[cli]>=2.3.0,<3",
     # HTTP Client
@@ -85,8 +87,8 @@ dependencies = [
 # Seeded-identity + invisible browser tier (E1-e/E1-f): opt-in at install time,
 # enabled at runtime via BROWSER_BACKENDS=invisible / WET_IDENTITY_SEED. Without
 # these extras strategies keep legacy behavior (warn-once). See AGENTS.md.
-identity = ["n24q02m-hull[identity]>=0.4,<0.5"]
-invisible = ["n24q02m-hull[invisible]>=0.4,<0.5"]
+identity = ["n24q02m-hull[identity]>=0.6.1,<0.7"]
+invisible = ["n24q02m-hull[invisible]>=0.6.1,<0.7"]
 
 [dependency-groups]
 dev = [
@@ -150,7 +152,7 @@ markers = [
 addopts = "-m 'not integration and not live and not full and not e2e'"
 
 [tool.ty]
-rules = { unresolved-import = "ignore", unresolved-attribute = "ignore", possibly-missing-attribute = "ignore", pydantic-discarded-extra-argument = "ignore", unused-ignore-comment = "ignore", unused-type-ignore-comment = "ignore" }
+rules = { import-not-found = "ignore", missing-attribute = "ignore", possibly-missing-attribute = "ignore", pydantic-discarded-extra-argument = "ignore", unused-ignore-comment = "ignore", unused-type-ignore-comment = "ignore" }
 
 [tool.semantic_release]
 version_toml = ["pyproject.toml:project.version"]

@@ -7,7 +7,10 @@ longer exercised. No network or model calls — server spawn, hull
 settings, DocsDB and reembed/warmup are mocked.
 """
 
+import argparse
+import re
 import tomllib
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -237,9 +240,27 @@ class TestServerStop:
 
 
 class TestServerStatus:
+    def test_status_without_lock_probes_wet_port_override(
+        self, monkeypatch, capsys, locks_dir
+    ):
+        """``WET_PORT`` outranks the config file in the server, so the CLI has
+        to resolve it the same way or it probes a port nothing listens on."""
+        monkeypatch.setenv("WET_PORT", "8011")
+        with (
+            patch("wet.runtime.hull_settings", return_value=_hs(port=9103)),
+            patch("wet.cli._http_probe", return_value=False),
+        ):
+            rc = cli.main(["server", "status"])
+
+        assert rc == 1
+        out = capsys.readouterr().out
+        assert "port 8011" in out
+        assert "9103" not in out
+
     def test_status_without_lock_probes_config_port(
         self, monkeypatch, capsys, locks_dir
     ):
+        monkeypatch.delenv("WET_PORT", raising=False)
         with (
             patch("wet.runtime.hull_settings", return_value=_hs(port=9103)),
             patch("wet.cli._http_probe", return_value=False),
@@ -334,14 +355,14 @@ class TestConfigCommand:
     def test_get_missing_file_hints_init(self, capsys, config_dir):
         rc = cli.main(["config", "get", "server.port"])
 
-        assert rc == 1
+        assert rc == 2
         assert "config init" in capsys.readouterr().err
 
     def test_get_unknown_key_errors(self, capsys, config_dir):
         cli.main(["config", "init"])
         rc = cli.main(["config", "get", "server.nope"])
 
-        assert rc == 1
+        assert rc == 2
         assert "key not found" in capsys.readouterr().err
 
     def test_set_updates_existing_key(self, capsys, config_dir):
@@ -364,7 +385,7 @@ class TestConfigCommand:
         cli.main(["config", "init"])
         rc = cli.main(["config", "set", "models.nonsense.key", "x"])
 
-        assert rc == 1
+        assert rc == 2
         assert "edit the file directly" in capsys.readouterr().err
 
     def test_set_secret_value_is_not_echoed(self, capsys, config_dir):
@@ -419,8 +440,63 @@ class TestUsersPath:
 
 
 # ---------------------------------------------------------------------------
-# wet docs reindex / reembed
+# wet docs list / reindex / reembed
 # ---------------------------------------------------------------------------
+
+
+class TestDocsListSubcommand:
+    """`wet docs list` prints the names `docs reindex` accepts."""
+
+    def _patch_docs_db(self, monkeypatch, mock_db):
+        monkeypatch.setattr("wet.db.DocsDB", lambda *a, **k: mock_db)
+
+    def test_lists_each_library_with_counts(self, monkeypatch, capsys):
+        mock_db = MagicMock()
+        mock_db.list_libraries.return_value = [
+            {"name": "requests", "versions": 1, "chunks": 412},
+            {"name": "torch", "versions": 2, "chunks": 900},
+        ]
+        self._patch_docs_db(monkeypatch, mock_db)
+
+        rc = cli.main(["docs", "list"])
+
+        assert rc == 0
+        out = capsys.readouterr().out
+        assert "requests  1 version(s)  412 chunks" in out
+        assert "torch  2 version(s)  900 chunks" in out
+        mock_db.list_libraries.assert_called_once_with()
+        mock_db.close.assert_called_once_with()
+
+    def test_empty_store_explains_the_first_index(self, monkeypatch, capsys):
+        mock_db = MagicMock()
+        mock_db.list_libraries.return_value = []
+        self._patch_docs_db(monkeypatch, mock_db)
+
+        rc = cli.main(["docs", "list"])
+
+        assert rc == 0
+        assert "no libraries indexed yet" in capsys.readouterr().out
+
+    def test_docs_help_lists_the_list_action(self, capsys):
+        with pytest.raises(SystemExit) as excinfo:
+            cli.main(["docs", "--help"])
+
+        assert excinfo.value.code == 0
+        assert "list" in capsys.readouterr().out
+
+    def test_identity_mismatch_names_the_failure(self, monkeypatch, capsys):
+        """A store built under another model must not print a traceback."""
+        from wet.db import EmbeddingModelMismatch
+
+        def _mismatched(*args, **kwargs):
+            raise EmbeddingModelMismatch("built with dims=768, now configured 1024")
+
+        monkeypatch.setattr("wet.db.DocsDB", _mismatched)
+
+        rc = cli.main(["docs", "list"])
+
+        assert rc == 1
+        assert "wet docs list failed: built with dims=768" in capsys.readouterr().err
 
 
 class TestDocsReindexSubcommand:
@@ -454,6 +530,19 @@ class TestDocsReindexSubcommand:
         mock_db.get_best_version.assert_not_called()
         assert rc == 1
         assert "not found" in capsys.readouterr().out
+
+    def test_reindex_unknown_library_names_the_discovery_command(
+        self, monkeypatch, capsys
+    ):
+        """A dead end must name the command that fixes it (like config get/set)."""
+        mock_db = MagicMock()
+        mock_db.get_library.return_value = None
+        self._patch_docs_db(monkeypatch, mock_db)
+
+        rc = cli.main(["docs", "reindex", "ghost-lib"])
+
+        assert rc == 1
+        assert "`wet docs list`" in capsys.readouterr().out
 
 
 class TestDocsReembedSubcommand:
@@ -542,3 +631,134 @@ class TestWarmupSubcommand:
             rc = cli.main(["warmup"])
 
         assert rc == 1
+
+
+# ---------------------------------------------------------------------------
+# documented commands vs the shipped parser
+# ---------------------------------------------------------------------------
+
+_DOC_ROOT = Path(__file__).resolve().parents[1]
+_DOC_FILES = (
+    _DOC_ROOT / "README.md",
+    _DOC_ROOT / "CONTRIBUTING.md",
+    _DOC_ROOT / "AGENTS.md",
+    _DOC_ROOT / "CLAUDE.md",
+    _DOC_ROOT / "skills" / "wet" / "SKILL.md",
+    *sorted((_DOC_ROOT / "docs").glob("*.md")),
+)
+
+# `uv run wet …` and `uvx [--flags] --from <dist> wet …` are launchers, not
+# part of the command surface.
+_LAUNCHER_RE = re.compile(r"^(?:uv\s+run\s+|uvx\s+.*?--from\s+\S+\s+)")
+_PLACEHOLDERS = {"…", "...", "<command>", "<subcommand>"}
+
+
+_SHELL_LANGS = {"bash", "sh", "shell", "console", "zsh"}
+
+
+def _spans(text: str) -> list[str]:
+    """Every candidate command a markdown doc teaches.
+
+    Two surfaces carry commands: backticked inline code and fenced shell
+    blocks. Prose that merely starts with "wet" ("wet runs zero-config …") and
+    non-shell fences (architecture diagrams, ``text`` notes) are not commands,
+    so only ``bash``/``sh``/``console`` fences are read.
+    """
+    spans: list[str] = []
+    fence_lang: str | None = None
+    for line in text.splitlines():
+        if line.lstrip().startswith("```"):
+            fence_lang = None if fence_lang is not None else line.strip()[3:].strip()
+            continue
+        if fence_lang is not None:
+            if fence_lang.lower() in _SHELL_LANGS:
+                command = line.split(" #", 1)[0].strip()
+                if command:
+                    spans.append(command)
+        else:
+            spans.extend(re.findall(r"`([^`\n]+)`", line))
+    return spans
+
+
+def _wet_verb(span: str) -> str | None:
+    """Return the first argument after ``wet``, or None when not a wet call."""
+    token = span.strip()
+    while True:
+        match = _LAUNCHER_RE.match(token)
+        if not match:
+            break
+        token = token[match.end() :]
+    if not token.startswith("wet"):
+        return None
+    if len(token) > 3 and token[3] not in " \t":
+        return None  # `wet-mcp` / `n24q02m-wet` are script names, not calls
+    rest = token[3:].strip()
+    if not rest:
+        return None  # a bare `wet` is documented and legal: it prints usage
+    return rest.split()[0]
+
+
+def _parser_vocabulary() -> tuple[set[str], set[str]]:
+    parser = cli.build_parser()
+    subcommands: set[str] = set()
+    flags: set[str] = set()
+    for action in parser._actions:
+        flags.update(action.option_strings)
+        if isinstance(action, argparse._SubParsersAction):
+            subcommands.update(action.choices)
+    return subcommands, flags
+
+
+class TestDocumentedCommands:
+    """Every command the docs teach must exist in the parser.
+
+    Palette F-1/F-3 (2026-11-11): the skill and README taught `wet doctor`,
+    `wet auth`, `wet logout`, `auth google --client-id/--client-secret` and a
+    bare-`wet` stdio passthrough with `--http`. The de-hosted CLI has none of
+    them, so a reader's first command died in argparse with `invalid choice`.
+    """
+
+    def test_every_documented_subcommand_exists(self):
+        subcommands, flags = _parser_vocabulary()
+        unknown: dict[str, str] = {}
+        seen: set[str] = set()
+
+        for path in _DOC_FILES:
+            for span in _spans(path.read_text(encoding="utf-8")):
+                verb = _wet_verb(span)
+                if verb is None or verb in _PLACEHOLDERS or verb.startswith("<"):
+                    continue
+                if verb.startswith("-"):
+                    if verb not in flags:
+                        unknown.setdefault(span, path.name)
+                    continue
+                seen.add(verb)
+                if verb not in subcommands:
+                    unknown.setdefault(span, path.name)
+
+        assert not unknown, f"documented but absent from the parser: {unknown}"
+        # The scanner must actually be reading the docs, not skipping them.
+        assert {"server", "config", "docs", "warmup", "search"} <= seen
+
+    def test_removed_oauth_surface_is_not_documented(self):
+        text = "\n".join(p.read_text(encoding="utf-8") for p in _DOC_FILES)
+        for retired in ("auth google", "--client-id", "--client-secret"):
+            assert retired not in text
+
+    def test_scanner_would_catch_the_retired_commands(self):
+        """Prove the guard fails on the strings F-1/F-3 removed."""
+        assert _wet_verb("wet doctor") == "doctor"
+        assert _wet_verb("wet auth") == "auth"
+        assert _wet_verb("wet --http") == "--http"
+        assert (
+            _wet_verb("uvx --python 3.13 --from n24q02m-wet wet server start")
+            == "server"
+        )
+        assert _wet_verb("uv run wet") is None
+        assert _wet_verb("wet-mcp") is None
+
+        subcommands, flags = _parser_vocabulary()
+        assert "doctor" not in subcommands
+        assert "auth" not in subcommands
+        assert "logout" not in subcommands
+        assert "--http" not in flags

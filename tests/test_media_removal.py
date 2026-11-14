@@ -6,7 +6,7 @@ the 2-minor-version deprecation grace period started in Phase 1 commit
 
 - analyze returns the unknown-action error string with a migration hint.
 - analyze is NOT in the valid_actions list.
-- analyze does NOT invoke wet.llm.analyze_media (no warning, no work).
+- analyze does NOT touch any LLM media helper (no warning, no work).
 - list + download still work (no regression from the removal).
 - The docs page no longer advertises analyze as available.
 """

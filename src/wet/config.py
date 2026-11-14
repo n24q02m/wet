@@ -173,7 +173,7 @@ class Settings(BaseSettings):
     # On Windows, Docker path handles lxml/build-tool constraints that would
     # otherwise block the subprocess path -- so auto-start works cross-platform
     # as long as Docker Desktop OR build tools are available.
-    wet_auto_searxng: bool = True
+    wet_auto_searxng: bool = False
     wet_searxng_port: int = 41592
 
     # Tool execution timeout (seconds, 0 = no timeout)

@@ -34,7 +34,8 @@ Without mise, ensure you have Python 3.13+ and uv installed:
 ```bash
 uv sync --dev
 uv run pre-commit install
-uv run playwright install chromium
+uv run playwright install chromium   # crawl4ai's renderer
+uv run patchright install chromium   # extract(action="interact")
 ```
 
 3. **Run checks**
@@ -49,8 +50,9 @@ uv run ruff format --check .
 ### Running Locally
 
 ```bash
-# Run the server (SearXNG will auto-start as embedded subprocess)
-uv run wet
+# Run the server in the foreground (SearXNG auto-starts as an embedded subprocess).
+# Bare `wet` prints usage; there is no stdio mode.
+uv run wet server start --foreground
 
 # For LLM-based features, configure the [models.chat] cell or set:
 export OPENROUTER_API_KEY="your-key"

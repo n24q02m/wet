@@ -94,6 +94,31 @@ async def test_unknown_action_type_returns_error(_fake_browser):
 
 
 @pytest.mark.asyncio
+async def test_browser_launch_failure_names_the_install_command(monkeypatch):
+    """The clean-install failure (patchright's build absent) must reach the
+    caller with the fix in it, not as a bare "Error executing tool extract"."""
+    import types as _types
+
+    async def _missing_browser(url, headless=True, timeout_ms=30000):
+        raise RuntimeError(
+            "BrowserType.launch: Executable doesn't exist at "
+            "C:\\ms-playwright\\chromium_headless_shell-1248\\"
+            "chrome-headless-shell.exe"
+        )
+
+    stub = _types.ModuleType("hull_web.browsers.interact")
+    stub.open_interact_session = _missing_browser
+    monkeypatch.setitem(sys.modules, "hull_web.browsers.interact", stub)
+
+    out = await io.run_interact(
+        url="https://example.com", actions=[{"type": "wait", "value": "100"}]
+    )
+
+    assert isinstance(out, str)
+    assert out.startswith("Error: browser launch failed")
+    assert "python -m patchright install chromium" in out
+
+
 async def test_single_click_action(_fake_browser):
     result = await io.run_interact(
         url="https://example.com", actions=[{"type": "click", "selector": "#btn"}]

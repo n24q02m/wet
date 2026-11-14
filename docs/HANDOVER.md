@@ -54,11 +54,13 @@ paste into `[server] token_hash`; clients send `Authorization: Bearer`.
 
 ## CLI
 
-`wet server start|stop|status` runs the HTTP server; the other subcommands
-print a JSON result and exit:
+`wet server start|stop|status` runs the HTTP server. `wet warmup` prints a JSON
+result; `wet config …` and `wet docs …` print plain text; `wet search` prints the
+tool's text answer from the running server.
 
 ```bash
 wet warmup                    # pre-download local models + auto-setup (SearXNG, browser)
+wet docs list                 # indexed library names (the input for `docs reindex`)
 wet docs reindex <library>    # drop a cached docs index; next search re-indexes
 ```
 
@@ -90,6 +92,42 @@ uv run wet server start --foreground
   Tavily, Brave, Exa, Kagi, OpenRouter, Firecrawl) over the embedded SearXNG.
 - `DISABLE_LOCAL_BROWSER|SEARCH|EMBED|RERANK` opt out of in-process local
   fallbacks (slim containers).
+
+## Provider credentials -- key pools and accounts
+
+Every provider credential wet resolves goes through hull's shared pool
+(`hull_core.credentials`, hull 0.5). Two surfaces read it: the four task cells
+(`[models.<task>]`) and the cloud search backends' `*_API_KEY` CSV.
+
+- Store: `~/.hull/hull.db` (hull's default; `WET_HULL_DB` overrides the path).
+  Keys are sealed with `~/.hull/.credential-key`; rows keep a 4-character hint
+  only. The tables are additive, so an older hull ignores them and a newer wet
+  keeps reading a file an older wet wrote.
+- Rotation (hull's policy, identical in hull's TypeScript mirror): `401`/`403`
+  disable that credential and the call moves to the next; `429` cools it down
+  by `Retry-After` / `rate_limit_reset` (clamped 1 s..1 h, default 60 s); `5xx`
+  retries the same credential once then rotates; any other status re-raises
+  untouched. Attempts are bounded, and an exhausted pool raises
+  `wet.keypool.ProviderUnavailable` naming the provider and the cooldown --
+  never a key.
+- Concurrency: a call leases its credential, so two concurrent calls never get
+  the same key while another could serve. A pool with a single usable
+  credential is shared instead (there is no rotation decision to protect, and
+  wet's batched embedding fan-out would otherwise turn one healthy key into
+  spurious exhaustion errors); that entry is still health-tracked.
+- Backward compatibility: the cell `api_key` / `HULL_<TASK>_API_KEY` /
+  `OPENROUTER_API_KEY` material is **never removed**. On startup (and on the
+  first provider call, for CLI paths that skip the server) it is seeded into
+  the pool once; re-running only skips what the store already holds.
+- Multi-account: `[models.<task>] account = "<account id>"` (or a unique
+  account name) selects a named account's pool; omit it for the provider's
+  default pool. The provider identity is `[models.<task>] provider` when set,
+  else derived from `base_url`. An unknown account, or one registered for a
+  different provider, fails closed with `wet.keypool.ProviderConfigError`
+  rather than spending another identity's quota. Accounts and extra keys are
+  managed with hull's API (`CredentialStore`, `AccountRegistry`).
+- Config owns the endpoint: a cell's `base_url` and `model` are used verbatim
+  for every credential of its pool; the store entry contributes the key.
 
 ## Multi-user HTTP self-host
 

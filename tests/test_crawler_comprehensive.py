@@ -200,6 +200,7 @@ async def test_crawl_robots_blocked_result_is_excluded(monkeypatch):
         result_json = await crawler.crawl(["https://safe.com"], depth=0)
 
     assert json.loads(result_json) == []
+    assert mock_crawler.arun.await_args is not None
     assert mock_crawler.arun.await_args.kwargs["config"].check_robots_txt is True
 
 
@@ -270,6 +271,7 @@ async def test_sitemap_robots_blocked_result_is_excluded_when_enabled(monkeypatc
         result_json = await crawler.sitemap(["https://safe.com"], depth=0)
 
     assert json.loads(result_json) == []
+    assert mock_crawler.arun.await_args is not None
     assert mock_crawler.arun.await_args.kwargs["config"].check_robots_txt is True
 
 
@@ -292,6 +294,7 @@ async def test_sitemap_failed_result_keeps_legacy_output_when_disabled(monkeypat
         result_json = await crawler.sitemap(["https://safe.com"], depth=0)
 
     assert json.loads(result_json) == [{"url": "https://safe.com", "depth": 0}]
+    assert mock_crawler.arun.await_args is not None
     assert mock_crawler.arun.await_args.kwargs["config"].check_robots_txt is False
 
 
@@ -365,6 +368,7 @@ async def test_list_media_robots_blocked_result_returns_error(monkeypatch):
         result_json = await crawler.list_media("https://safe.com")
 
     assert json.loads(result_json) == {"error": "robots.txt disallows the URL"}
+    assert mock_crawler.arun.await_args is not None
     assert mock_crawler.arun.await_args.kwargs["config"].check_robots_txt is True
 
 

@@ -374,12 +374,15 @@ async def test_fetch_and_chunk_docs():
 
 @pytest.mark.asyncio
 async def test_do_docs_search_cached():
+    assert server._docs_db is not None
     server._docs_db.get_library.return_value = {"id": 1, "discovery_version": 999}
+    assert server._docs_db is not None
     server._docs_db.get_best_version.return_value = {
         "id": 1,
         "chunk_count": 10,
         "version": "latest",
     }
+    assert server._docs_db is not None
     server._docs_db.search.return_value = [{"content": "res"}]
 
     with (
@@ -395,6 +398,7 @@ async def test_do_docs_search_cached():
 
 @pytest.mark.asyncio
 async def test_do_docs_search_new():
+    assert server._docs_db is not None
     server._docs_db.get_library.return_value = None
 
     with (
@@ -557,10 +561,12 @@ async def test_do_docs_search_db_not_init():
 async def test_do_docs_search_force_reindex():
     from wet.sources.docs import DISCOVERY_VERSION
 
+    assert server._docs_db is not None
     server._docs_db.get_library.return_value = {
         "id": 1,
         "discovery_version": DISCOVERY_VERSION - 1,
     }
+    assert server._docs_db is not None
     server._docs_db.get_best_version.return_value = None
 
     with (
@@ -586,6 +592,7 @@ async def test_do_docs_search_force_reindex():
 
 @pytest.mark.asyncio
 async def test_do_docs_search_discovery_timeout():
+    assert server._docs_db is not None
     server._docs_db.get_library.return_value = None
     with patch("wet.server.asyncio.wait_for", side_effect=TimeoutError):
         res = await server._do_docs_search("test", "test")
@@ -595,6 +602,7 @@ async def test_do_docs_search_discovery_timeout():
 @pytest.mark.asyncio
 @_skip_win_iocp
 async def test_do_docs_search_no_docs_but_repo():
+    assert server._docs_db is not None
     server._docs_db.get_library.return_value = None
     with (
         patch(
@@ -617,6 +625,7 @@ async def test_do_docs_search_no_docs_but_repo():
 @pytest.mark.asyncio
 @_skip_win_iocp
 async def test_do_docs_search_fallback_searxng():
+    assert server._docs_db is not None
     server._docs_db.get_library.return_value = None
     with (
         patch(
@@ -639,6 +648,7 @@ async def test_do_docs_search_fallback_searxng():
 @pytest.mark.asyncio
 @_skip_win_iocp
 async def test_do_docs_search_fetch_timeout():
+    assert server._docs_db is not None
     server._docs_db.get_library.return_value = None
     with (
         patch(
@@ -678,15 +688,18 @@ async def test_with_timeout_expired():
 
 
 def test_main():
-    """main() always serves HTTP: run_server_blocking with WET_HOST/WET_PORT."""
+    """main() always serves HTTP and leaves bind resolution to the listener.
+
+    Bind args live in ``run_server_blocking``/``resolve_bind``; ``main`` must not
+    resolve them a second time or the two could disagree again.
+    """
     with (
         patch.object(server, "run_server_blocking") as mock_serve,
         patch.dict(os.environ, {"WET_HOST": "127.0.0.9", "WET_PORT": "8777"}),
     ):
         server.main()
-    _, kwargs = mock_serve.call_args
-    assert kwargs["host"] == "127.0.0.9"
-    assert kwargs["port"] == 8777
+        mock_serve.assert_called_once_with()
+        assert server.resolve_bind() == ("127.0.0.9", 8777)
 
 
 # ---------------------------------------------------------------------------

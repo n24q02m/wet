@@ -2,6 +2,80 @@
 
 <!-- version list -->
 
+## v3.21.0 (2026-11-12)
+
+### Bug Fixes
+
+- Apply the formatter to the docs DB guard ([#1925](https://github.com/n24q02m/wet/pull/1925),
+  [`461ff94`](https://github.com/n24q02m/wet/commit/461ff941a6131ccf63fe91ef4971496b0f6c5a31))
+
+- Keep the type check green under the stricter ty rules
+  ([#1925](https://github.com/n24q02m/wet/pull/1925),
+  [`461ff94`](https://github.com/n24q02m/wet/commit/461ff941a6131ccf63fe91ef4971496b0f6c5a31))
+
+- Point the config gap tests at the shared editor
+  ([#1939](https://github.com/n24q02m/wet/pull/1939),
+  [`d86cbb8`](https://github.com/n24q02m/wet/commit/d86cbb8db25d454c8c44d369d7ff6757bdc96508))
+
+- Report real bounds, failures and diagnostics on the MCP surface
+  ([#1938](https://github.com/n24q02m/wet/pull/1938),
+  [`b399a06`](https://github.com/n24q02m/wet/commit/b399a06535dcdab958432c00322255d51ff52b16))
+
+- Sync the lockfile to the 3.21.0b2 package version
+  ([#1937](https://github.com/n24q02m/wet/pull/1937),
+  [`7b57c06`](https://github.com/n24q02m/wet/commit/7b57c06d657a80398564da060a38edf0a53d003b))
+
+- **deps**: Lock file maintenance ([#1925](https://github.com/n24q02m/wet/pull/1925),
+  [`461ff94`](https://github.com/n24q02m/wet/commit/461ff941a6131ccf63fe91ef4971496b0f6c5a31))
+
+- **deps**: Update patch dependencies ([#1924](https://github.com/n24q02m/wet/pull/1924),
+  [`0ac7e2b`](https://github.com/n24q02m/wet/commit/0ac7e2be21c356263381dbe33d98e826679ba97d))
+
+### Features
+
+- Build on hull 0.6.1 ([#1939](https://github.com/n24q02m/wet/pull/1939),
+  [`d86cbb8`](https://github.com/n24q02m/wet/commit/d86cbb8db25d454c8c44d369d7ff6757bdc96508))
+
+- Build on hull 0.6.1 and share the config editor
+  ([#1939](https://github.com/n24q02m/wet/pull/1939),
+  [`d86cbb8`](https://github.com/n24q02m/wet/commit/d86cbb8db25d454c8c44d369d7ff6757bdc96508))
+
+- Share the config editor with the rest of the stack
+  ([#1939](https://github.com/n24q02m/wet/pull/1939),
+  [`d86cbb8`](https://github.com/n24q02m/wet/commit/d86cbb8db25d454c8c44d369d7ff6757bdc96508))
+
+
+## v3.21.0-beta.2 (2026-11-10)
+
+### Bug Fixes
+
+- Document the shipped wet CLI surface and give docs reindex a next step
+  ([#1936](https://github.com/n24q02m/wet/pull/1936),
+  [`7ec3126`](https://github.com/n24q02m/wet/commit/7ec3126d1a52a930e33d62a996f295a0483f314e))
+
+- Drop stale references to removed llm media helpers
+  ([#1933](https://github.com/n24q02m/wet/pull/1933),
+  [`e67054a`](https://github.com/n24q02m/wet/commit/e67054a5642b03cc56ad99efead19b20b4285bf3))
+
+- Move discarded agent notes into docs/engineering-lessons.md
+  ([#1934](https://github.com/n24q02m/wet/pull/1934),
+  [`6000ffe`](https://github.com/n24q02m/wet/commit/6000ffe96696ba6d02b95351399a7faeeb68a638))
+
+- Publish the final wet-mcp stub from the release workflow
+  ([#1932](https://github.com/n24q02m/wet/pull/1932),
+  [`1af7f75`](https://github.com/n24q02m/wet/commit/1af7f754e7f461492100342febb32fdfc6cfd66b))
+
+- Remove the email notification and bot rate-limit jobs
+  ([#1931](https://github.com/n24q02m/wet/pull/1931),
+  [`41a3fc4`](https://github.com/n24q02m/wet/commit/41a3fc494efc4055fccb5a7987e0c16fda237fcb))
+
+### Features
+
+- Route every provider credential through hull's key pool
+  ([#1935](https://github.com/n24q02m/wet/pull/1935),
+  [`79f97d8`](https://github.com/n24q02m/wet/commit/79f97d82198651c85f49474802f1cce7729c7f73))
+
+
 ## v3.21.0-beta.1 (2026-11-03)
 
 ### Bug Fixes

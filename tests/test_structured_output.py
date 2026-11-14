@@ -175,12 +175,79 @@ def test_exception_repr_error_reaches_marked_structured_channel():
     assert sc["_untrusted_warning"] == UNTRUSTED_WARNING
 
 
+async def test_error_payload_sets_is_error():
+    """A failed call must say so, not just carry the word "error".
+
+    ``isError`` is the only channel an MCP client branches on; while every
+    failure came back ``isError=false`` the client (and ``wet search``) treated
+    a failed search as a successful one.
+    """
+    result = await _srv().search(action="nope")
+
+    assert isinstance(result, CallToolResult)
+    assert result.is_error is True
+
+
+def test_envelope_without_the_error_prefix_also_sets_is_error():
+    """The search chain's failures ("backends are missing API keys") never had
+    the ``"Error"`` prefix the old branch keyed on, so they leaked through as
+    successes."""
+    from wet.security import build_external_tool_result
+
+    result = build_external_tool_result(
+        "search",
+        {
+            "results": [],
+            "total": 0,
+            "error": "Search backends ['tavily'] are missing API keys",
+        },
+    )
+
+    assert result.is_error is True
+    # The XPIA asymmetry is unchanged: text unwrapped, structured marked.
+    assert "<untrusted_search_content>" not in text(result)
+    assert payload(result)["_untrusted_source"] == "web"
+
+
+def test_successful_payload_is_not_flagged_as_error():
+    from wet.security import build_external_tool_result
+
+    result = build_external_tool_result(
+        "search", {"results": [{"url": "https://example.com/x"}], "total": 1}
+    )
+
+    assert not result.is_error
+
+
 async def test_config_returns_structured_content_without_markers():
     result = await _srv().config(action="nope")
 
+    data = payload(result)
+    assert "Unknown action" in data["error"]
+    assert data["valid_actions"]
+    assert "_untrusted_source" not in data
+
+
+async def test_config_error_payload_sets_is_error():
+    """``config`` reports its failures the same way: as a failed call.
+
+    Two of the four live BUG-1 repros were config actions (a bogus key, an
+    action the README claimed existed), and both came back ``isError=false``.
+    """
+    result = await _srv().config(action="set", key="bogus_key", value="x")
+
+    assert isinstance(result, CallToolResult)
+    assert result.is_error is True
+    assert "Invalid key" in payload(result)["error"]
+    # Server-owned data keeps its own contract: no XPIA markers added.
+    assert "_untrusted_source" not in payload(result)
+
+
+async def test_config_success_stays_a_plain_dict():
+    result = await _srv().config(action="status")
+
     assert isinstance(result, dict)
-    assert "Unknown action" in result["error"]
-    assert "_untrusted_source" not in result
+    assert "auth" in result
 
 
 # --- FastMCP accepts the CallToolResult and validates it against the schema -

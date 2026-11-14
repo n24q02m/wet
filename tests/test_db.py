@@ -44,6 +44,7 @@ if "wet.sources.docs" not in sys.modules:
     assert _docs_spec is not None
     _docs_mod = importlib.util.module_from_spec(_docs_spec)
     sys.modules["wet.sources.docs"] = _docs_mod
+    assert _docs_spec.loader is not None
     _docs_spec.loader.exec_module(_docs_mod)
 else:
     _docs_mod = sys.modules["wet.sources.docs"]
@@ -55,6 +56,7 @@ if "wet.db" not in sys.modules:
     assert _db_spec is not None
     _db_mod = importlib.util.module_from_spec(_db_spec)
     sys.modules["wet.db"] = _db_mod
+    assert _db_spec.loader is not None
     _db_spec.loader.exec_module(_db_mod)
 else:
     _db_mod = sys.modules["wet.db"]
@@ -195,6 +197,44 @@ class TestLibraryCRUD:
         lib = db.get_library("pytorch")
         assert lib is not None
         assert lib["name"] == "pytorch"
+
+    def test_list_libraries_is_alphabetical_with_chunk_counts(self, db):
+        """`wet docs list` reads names here; they must match get_library."""
+        react_id = db.upsert_library(name="React")
+        ver_id = db.upsert_version(react_id, version="1.0")
+        db.add_chunks(
+            ver_id,
+            react_id,
+            [{"content": "hooks are functions", "chunk_index": 0}],
+        )
+        db.upsert_library(name="fastapi")
+
+        rows = db.list_libraries()
+
+        assert [row["name"] for row in rows] == ["fastapi", "react"]
+        assert {row["name"]: row["chunks"] for row in rows} == {
+            "fastapi": 0,
+            "react": 1,
+        }
+        assert {row["name"]: row["versions"] for row in rows} == {
+            "fastapi": 0,
+            "react": 1,
+        }
+
+    def test_list_libraries_empty_store(self, db):
+        assert db.list_libraries() == []
+
+    def test_list_libraries_is_not_silently_capped(self, db):
+        """The shipped corpus is >1000 names; a default cap would hide rows."""
+        for i in range(205):
+            db.upsert_library(name=f"lib-{i:03d}")
+
+        rows = db.list_libraries()
+
+        assert len(rows) == 205
+        assert rows[0]["name"] == "lib-000"
+        assert rows[-1]["name"] == "lib-204"
+        assert len(db.list_libraries(limit=10)) == 10
 
 
 # -----------------------------------------------------------------------

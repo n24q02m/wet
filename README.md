@@ -83,7 +83,7 @@ mcp-name: io.github.n24q02m/wet
 
 ## Features
 
-- **Web Search** -- Embedded SearXNG metasearch (Google, Bing, DuckDuckGo, Brave) with query expansion, TTL cache (1 h general / 5 min time-sensitive), standardized citation format, and 200-token snippet cap. Optional cloud search backends (Tavily, Brave, Exa, Kagi, OpenRouter, Firecrawl) as a fallback chain via `SEARCH_BACKENDS`
+- **Web Search** -- Multi-backend metasearch with query expansion, TTL cache (1 h general / 5 min time-sensitive), standardized citation format, and 200-token snippet cap. Backends run as a fallback chain via `SEARCH_BACKENDS`; the zero-config default is `tavily,duckduckgo` (Tavily when keyed, DuckDuckGo always) and the rest are Tavily, Brave, Exa, Kagi, OpenRouter, Firecrawl, Startpage
 - **Academic Research** -- Search Google Scholar, Semantic Scholar, arXiv, PubMed, CrossRef, BASE
 - **Library Docs** -- Auto-discover and index documentation with FTS5 hybrid search, HyDE-enhanced retrieval, and version-specific docs
 - **Content Extract** -- 5-strategy escalation chain via `n24q02m-web-core` `ScrapingAgent` (`basic_http` -> `tls_spoof` -> render backends from `BROWSER_BACKENDS` (`native` / `browserless` / `cf-browser-rendering`) -> optional key-gated `captcha`), markitdown bridge for low-tier HTML/MD fallback, smart chunks structured output (clean text + markdown + JSON-LD + code blocks + metadata), batch processing (up to 50 URLs), deep crawling, site mapping
@@ -213,8 +213,8 @@ via `HULL_EMBED_API_KEY` / `HULL_RERANK_API_KEY` / `HULL_CHAT_API_KEY` /
 
 ## Configuration
 
-wet runs zero-config out of the box: web search uses an embedded local SearXNG,
-and embedding/reranking fall back to the bundled local ONNX models through
+wet runs zero-config out of the box: web search falls back to credential-free
+DuckDuckGo (Tavily when a key is present), and embedding/reranking fall back to the bundled local ONNX models through
 fastretrieval when no cloud keys are set. For higher-quality results, configure
 the per-task provider cells in `~/.wet/config.toml`. Operational settings are
 plain environment variables (no app prefix) -- in HTTP self-host mode configure them via environment variables or ~/.wet/config.toml.
@@ -232,9 +232,10 @@ an unkeyed chat cell disables LLM features (e.g. `extract(action="agent")`).
 `FASTRETRIEVAL_CACHE_PATH` controls the local model cache.
 
 **Search backends** -- `SEARCH_BACKENDS` is an ordered runtime fallback chain:
-`searxng` (default, local or external via `SEARXNG_URL`), keyed `tavily` / `brave` /
-`exa` / `kagi` / `openrouter`, optional-key `firecrawl`, and credential-free `duckduckgo` /
-`startpage`. Keyed providers use `TAVILY_API_KEY`, `BRAVE_API_KEY`, `EXA_API_KEY`,
+`tavily` / `brave` / `exa` / `kagi` / `openrouter` (keyed), `firecrawl` (optional key),
+and credential-free `duckduckgo` / `startpage`. The default chain is
+`tavily,duckduckgo`; `searxng` is no longer shipped as a self-hosted instance and is
+reachable only by setting `SEARCH_BACKENDS=searxng` plus a third-party `SEARXNG_URL`. Keyed providers use `TAVILY_API_KEY`, `BRAVE_API_KEY`, `EXA_API_KEY`,
 `KAGI_API_KEY`, or `OPENROUTER_API_KEY` (comma-separate for rotation). The
 `openrouter` backend runs the query through a chat completion with the
 `openrouter:web_search` server tool and maps the returned `url_citation`
@@ -246,14 +247,15 @@ is absent; rejection or a DuckDuckGo/Startpage bot challenge advances the chain.
 Result reranking uses the configured rerank cell ([models.rerank] — cloud via
 OpenRouter by default, or local ONNX when unkeyed); the same chain serves web
 search, research, similar-page search, agent search, and docs
-discovery/indexing fallbacks. SearXNG retains its science-category
-filter for research; other providers use their own search capabilities.
+discovery/indexing fallbacks. Providers use their own search capabilities;
+category filters that only SearXNG exposed are no longer applied by default.
 
 **Browser render backends** -- `BROWSER_BACKENDS` (CSV, escalation chain) picks
 the headless render leg of `extract`: `native` (in-process chromium, the
-zero-config default), `browserless` (self-host render service -- set
-`BROWSERLESS_URL` + `BROWSERLESS_TOKEN`), and `cf-browser-rendering` (Cloudflare
-Browser Rendering -- set `CF_ACCOUNT_ID` + `CF_BROWSER_RENDERING_TOKEN`). Empty
+zero-config default), `cf-browser-rendering` (Cloudflare Browser Rendering -- set
+`CF_ACCOUNT_ID` + `CF_BROWSER_RENDERING_TOKEN`), and `browserless` (only against a
+third-party managed instance -- set `BROWSERLESS_URL` + `BROWSERLESS_TOKEN`; the
+project's own self-hosted render service was retired). Empty
 chain falls back to `native`. Set `CAPSOLVER_API_KEY` to append an optional,
 key-gated CAPTCHA tier as the last escalation step.
 
@@ -332,10 +334,10 @@ In-repo references (Spec F single source of truth: setup docs live in
 
 | Tool | Description |
 |:-----|:------------|
-| `search` | Web (SearXNG metasearch), news, images, academic research (Scholar / arXiv / PubMed / CrossRef / Semantic Scholar / BASE), library docs (HyDE + FTS5), find similar pages. Includes `docs_resolve` (library name -> ranked id), `docs_query` (version-aware + topic + 5000-token cap), `docs_lock_project` (Cabinets project pin via pyproject / package.json / go.mod / Cargo.toml manifest detection). |
+| `search` | Web (multi-backend metasearch), news, images, academic research (Scholar / arXiv / PubMed / CrossRef / Semantic Scholar / BASE), library docs (HyDE + FTS5), find similar pages. Includes `docs_resolve` (library name -> ranked id), `docs_query` (version-aware + topic + 5000-token cap), `docs_lock_project` (Cabinets project pin via pyproject / package.json / go.mod / Cargo.toml manifest detection). |
 | `extract` | URL -> smart chunks dict (`clean_text` + `markdown` + `structured_data` + `code_blocks` + `metadata`) via web-core 5-strategy chain. Batch processing (up to 50 URLs), deep crawling, site mapping, local file conversion (PDF/DOCX/XLSX/PPTX/EPUB), structured extraction (JSON Schema) |
 | `media` | `list` (discover URLs from gallery pages), `download` (SSRF-safe). `analyze` was removed in v2.0.0 -- use `imagine-mcp.understand` instead |
-| `config` | `status`, `set`, `cache_clear`, `docs_reindex`, `warmup`, `setup_sync`, `setup_status`, `setup_skip`, `setup_reset`, `setup_complete` |
+| `config` | `status`, `set`, `cache_clear`, `docs_reindex`, `warmup` |
 | `help` | Per-tool documentation: `search`, `extract`, `media`, `config` |
 
 > **Media boundary**: For vision / audio understanding (image captioning,
@@ -354,17 +356,24 @@ wet server start                # start the Streamable HTTP server (detached; --
 wet server status               # pid, lock and HTTP liveness
 wet server stop
 
-wet warmup                      # pre-download local models + run auto-setup (SearXNG, browser) to avoid first-run delays
+wet config init                 # write ~/.wet/config.toml; `config get|set` reads/edits one key
+wet token hash <token>          # print the storable scrypt hash for users.toml
+wet users path                  # print the users.toml path
+
+wet docs list                   # indexed library names (the input for `docs reindex`)
 wet docs reindex <library>      # drop the cached docs index for <library>; the next docs search re-indexes it
+
+wet search "<query>"            # call the running server; exits 2 when it is down
+wet warmup                      # pre-download local models + browser deps to avoid first-run delays
 ```
 
-`auth google` accepts an optional bring-your-own OAuth client via `--client-id`
-and `--client-secret` (single-user / local machine only; the token is written to
-the local store). Each subcommand prints a JSON result and exits.
+Every subcommand prints its result and exits; there is no interactive auth or
+credential flow in the CLI. Google Drive sync lives in
+[better-drive](https://github.com/n24q02m/better-drive), not in wet.
 
 | Capability | wet | Brave Search | Tavily | Firecrawl | Context7 |
 |---|---|---|---|---|---|
-| Web search | Yes (SearXNG aggregation) | Yes | Yes | No | No |
+| Web search | Yes (multi-backend chain) | Yes | Yes | No | No |
 | Extract URL | Yes (5-strategy chain) | No | Yes (basic) | Yes | No |
 | Media list / download | Yes | No | No | No | No |
 | Library docs search | Yes (Tier 1 curated + Tier 2 on-demand, version-aware, Cabinets) | No | No | No | Yes |

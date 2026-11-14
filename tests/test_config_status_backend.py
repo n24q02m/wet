@@ -77,6 +77,60 @@ async def test_status_names_sqlite_even_with_stale_backend_env(
     assert (await _handle_config_status())["database"]["backend"] == "sqlite"
 
 
+async def test_status_reports_the_effective_bind_not_the_config_default(
+    monkeypatch, _status_backends
+):
+    """``status`` must name the listener, not the config default.
+
+    A container started with ``WET_PORT=8011`` serves 8011; reporting the
+    configured 8000 sent every caller (and ``wet search``) to a dead port.
+    """
+    from wet import server
+
+    class _Server:
+        auth = "no-auth"
+        host = "127.0.0.1"
+        port = 8000
+
+    class _Settings:
+        server = _Server()
+
+    monkeypatch.setattr(server, "_effective_bind", ("0.0.0.0", 8011), raising=False)
+    monkeypatch.setattr("wet.runtime.hull_settings", lambda: _Settings())
+
+    status = await server._handle_config_status()
+
+    assert status["auth"]["host"] == "0.0.0.0"
+    assert status["auth"]["port"] == 8011
+    assert status["auth"]["configured_host"] == "127.0.0.1"
+    assert status["auth"]["configured_port"] == 8000
+
+
+async def test_status_falls_back_to_the_resolved_bind_before_serving(
+    monkeypatch, _status_backends
+):
+    """Called outside a live listener (tests, single-shot status) the payload
+    still names what a server started now would bind, honouring WET_PORT."""
+    from wet import server
+
+    class _Server:
+        auth = "no-auth"
+        host = "127.0.0.1"
+        port = 8000
+
+    class _Settings:
+        server = _Server()
+
+    monkeypatch.setattr(server, "_effective_bind", None, raising=False)
+    monkeypatch.setattr("wet.runtime.hull_settings", lambda: _Settings())
+    monkeypatch.setenv("WET_PORT", "8022")
+
+    status = await server._handle_config_status()
+
+    assert status["auth"]["port"] == 8022
+    assert status["auth"]["configured_port"] == 8000
+
+
 async def test_status_reports_the_local_docs_path(monkeypatch, _status_backends):
     """The field every existing reader expects: the real local file."""
     from wet.config import settings

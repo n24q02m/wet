@@ -131,8 +131,8 @@ async def test_run_search_chain_region_skips_unsupported_backend_named(
     exa = _mock_backend("exa", hit)
     brave = _mock_backend("brave", hit)
     with unittest.mock.patch(
-        "wet.sources.search_backends.search_backends_from_env",
-        return_value=[exa, brave],
+        "wet.sources.search_backends.search_backends_with_skips",
+        return_value=([exa, brave], {}),
     ):
         out = json.loads(await run_search_chain("q", region="US"))
 
@@ -153,8 +153,8 @@ async def test_run_search_chain_region_all_unsupported_is_structured_error(
 
     exa = _mock_backend("exa", hit)
     with unittest.mock.patch(
-        "wet.sources.search_backends.search_backends_from_env",
-        return_value=[exa],
+        "wet.sources.search_backends.search_backends_with_skips",
+        return_value=([exa], {}),
     ):
         out = json.loads(await run_search_chain("q", region="US"))
 
@@ -177,8 +177,8 @@ async def test_run_search_chain_region_reaches_capable_backend(monkeypatch):
 
     brave = _mock_backend("brave", hit)
     with unittest.mock.patch(
-        "wet.sources.search_backends.search_backends_from_env",
-        return_value=[brave],
+        "wet.sources.search_backends.search_backends_with_skips",
+        return_value=([brave], {}),
     ):
         out = json.loads(await run_search_chain("q", region="vn"))
 
