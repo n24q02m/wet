@@ -6,7 +6,7 @@
     "WET_URL": {
       "type": "string",
       "title": "wet server URL",
-      "description": "Streamable HTTP endpoint of a running wet instance. Start one first with `uvx --python 3.13 --from wet-mcp wet server start` (or docker compose); the default matches the server's default bind http://127.0.0.1:8000/mcp.",
+      "description": "Streamable HTTP endpoint of a running wet instance. Start one first with `uvx --python 3.13 --from n24q02m-wet wet server start` (or docker compose); the default matches the server's default bind http://127.0.0.1:8000/mcp.",
       "default": "http://127.0.0.1:8000/mcp",
       "required": false
     },
