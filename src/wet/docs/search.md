@@ -5,7 +5,7 @@ Search the web, academic papers, or library documentation.
 ## Actions
 
 ### search
-Web search via the `SEARCH_BACKENDS` provider chain with runtime fallback: `searxng` (self-host) | `tavily` | `brave` | `exa` | `kagi` (cloud, keyed) | `firecrawl` (key optional — keyless attempt) | `keenable` (key optional — keyless public endpoint) | `duckduckgo` | `startpage` (credential-free HTML scrape, uvx-safe; may be bot-challenged on datacenter IPs — the chain then advances to the next backend).
+Web search via the `SEARCH_BACKENDS` provider chain with runtime fallback. Unset, the chain is `tavily,duckduckgo` (Tavily only when `TAVILY_API_KEY` is set). Backends: `tavily` | `brave` | `exa` | `kagi` (cloud, keyed) | `firecrawl` (key optional — keyless attempt) | `keenable` (key optional — keyless public endpoint) | `duckduckgo` | `startpage` (credential-free HTML scrape, uvx-safe; may be bot-challenged on datacenter IPs — the chain then advances to the next backend) | `searxng` (opt-in; set `SEARXNG_URL` to your own instance).
 
 **Parameters:**
 - `query` (required): Search query string
@@ -36,7 +36,7 @@ backend names, the selected backend, and a `fallback` result (`none`, `used`,
 ---
 
 ### research
-Academic and scientific search using SearXNG science engines (Google Scholar, Semantic Scholar, arXiv, PubMed, CrossRef, BASE).
+Academic and scientific search through the configured `SEARCH_BACKENDS` chain with `categories=science`; a `searxng` backend maps that to its science engines (Google Scholar, Semantic Scholar, arXiv, PubMed, CrossRef, BASE).
 
 **Parameters:**
 - `query` (required): Research query string
@@ -66,7 +66,7 @@ Search library/framework documentation with auto-indexing. First call indexes do
 - `version`: Specific version (default: latest)
 - `limit`: Maximum results (default: 10)
 
-**Discovery order:** llms.txt > npm/PyPI/crates.io registry > SearXNG fallback > Crawl4AI fetch.
+**Discovery order:** llms.txt > npm/PyPI/crates.io registry > GitHub search > configured search chain fallback > Crawl4AI fetch.
 
 **When to specify `language`:**
 - Cross-language name collisions: "redis" (Python vs Node.js), "protobuf" (Python vs JS)
@@ -136,7 +136,7 @@ Detect project manifests at `project_path` (`pyproject.toml`, `package.json`, `g
 ---
 
 ### similar
-Find pages similar to a given URL. Extracts content from the source page, generates search keywords, and finds related pages via SearXNG.
+Find pages similar to a given URL. Extracts content from the source page, generates search keywords, and finds related pages through the configured search chain.
 
 **Parameters:**
 - `query` (required): URL of the source page (must start with http:// or https://)

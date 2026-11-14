@@ -6,7 +6,8 @@ fetch content, chunk it, and store in DocsDB.
 Discovery tiers (tried in order):
 1. llms.txt / llms-full.txt — AI-friendly docs standard
 2. Package registry metadata — npm, PyPI, crates.io, Go
-3. SearXNG web search — fallback discovery
+3. GitHub repository search — fallback discovery (the server then falls
+   back to the configured search chain)
 
 Content fetching:
 - Reuses Crawl4AI from crawler module
@@ -1087,7 +1088,7 @@ _LANGUAGE_ALIASES: dict[str, str] = {
 }
 
 # Map normalized language to supported registries.
-# Empty list = language known but no registry integration (use SearXNG).
+# Empty list = language known but no registry integration (use GitHub search).
 _LANGUAGE_REGISTRIES: dict[str, list[str]] = {
     "python": ["pypi"],
     "javascript": ["npm"],
@@ -3807,7 +3808,7 @@ async def fetch_docs_pages(
 
     # Early exit: if root page was blocked, all other pages on the same
     # domain will also be blocked — skip expensive crawling and return
-    # empty so that upstream fallback (GitHub raw, SearXNG) can take over.
+    # empty so that upstream fallback (GitHub raw, configured search) can take over.
     if blocked_count > 0 and not pages:
         logger.warning(
             f"Root page blocked by bot protection, skipping crawl: {docs_url}"

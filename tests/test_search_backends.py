@@ -7,11 +7,13 @@ from structured import text
 
 from wet.sources.search_backends import (
     BraveBackend,
+    DuckDuckGoBackend,
     ExaBackend,
     SearxngBackend,
     TavilyBackend,
     _search_result_is_empty,
     chain_backend_names,
+    has_uvx_runnable_backend,
     run_search_chain,
     search_backend_from_env,
     search_backends_from_env,
@@ -45,9 +47,71 @@ async def test_tavily_http_error_returns_error_json():
         assert "error" in out
 
 
-def test_factory_defaults_to_searxng(monkeypatch):
-    monkeypatch.delenv("SEARCH_BACKEND", raising=False)
-    assert isinstance(search_backend_from_env(), SearxngBackend)
+THIRD_PARTY_SEARXNG = "https://searxng.example.org"
+
+
+@pytest.fixture
+def unconfigured_search(monkeypatch):
+    """No search backend, key or SearXNG URL from the host env or settings."""
+    from wet.config import settings
+
+    for var in (
+        "SEARCH_BACKEND",
+        "SEARCH_BACKENDS",
+        "TAVILY_API_KEY",
+        "SEARXNG_URL",
+    ):
+        monkeypatch.delenv(var, raising=False)
+    monkeypatch.setattr(settings, "search_backend", "", raising=False)
+    monkeypatch.setattr(settings, "search_backends", "", raising=False)
+    monkeypatch.setattr(settings, "tavily_api_key", "", raising=False)
+    return monkeypatch
+
+
+def test_factory_default_is_credential_free_without_keys(unconfigured_search):
+    """Zero config never resolves to SearXNG: the project ships no instance."""
+    assert chain_backend_names() == ["tavily", "duckduckgo"]
+    assert isinstance(search_backend_from_env(), DuckDuckGoBackend)
+
+
+def test_factory_default_prefers_tavily_when_keyed(unconfigured_search):
+    unconfigured_search.setenv("TAVILY_API_KEY", "tvly-key")
+    assert isinstance(search_backend_from_env(), TavilyBackend)
+
+
+def test_explicit_searxng_with_third_party_url_is_unchanged(unconfigured_search):
+    """Back-compat: SEARCH_BACKEND=searxng + an external URL keeps working."""
+    unconfigured_search.setenv("SEARCH_BACKEND", "searxng")
+    unconfigured_search.setenv("SEARXNG_URL", THIRD_PARTY_SEARXNG)
+
+    assert chain_backend_names() == ["searxng"]
+    assert has_uvx_runnable_backend() is True
+    backend = search_backend_from_env()
+    assert isinstance(backend, SearxngBackend)
+    assert backend.url == THIRD_PARTY_SEARXNG
+    assert [b.url for b in search_backends_from_env()] == [THIRD_PARTY_SEARXNG]
+
+
+async def test_uvx_search_with_third_party_searxng_is_not_blocked(
+    unconfigured_search,
+):
+    """The uvx gate lets an explicit external SearXNG through to the chain."""
+    unconfigured_search.setenv("SEARCH_BACKEND", "searxng")
+    unconfigured_search.setenv("SEARXNG_URL", THIRD_PARTY_SEARXNG)
+    fake_chain = unittest.mock.AsyncMock(
+        return_value='{"results": [{"url": "https://e/1", "title": "R1", "snippet": "s"}], "total": 1, "query": "q"}'
+    )
+    with (
+        unittest.mock.patch("wet.server.is_uvx_tool_venv", return_value=True),
+        unittest.mock.patch("wet.sources.search_backends.run_search_chain", fake_chain),
+    ):
+        from wet.server import search
+
+        result = await search(action="search", query="python tutorial")
+
+    assert "results" in text(result)
+    assert "uvx" not in text(result).lower()
+    fake_chain.assert_awaited()
 
 
 def test_factory_tavily_requires_key(monkeypatch):

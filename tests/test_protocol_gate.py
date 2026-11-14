@@ -23,8 +23,6 @@ import asyncio
 import json
 import os
 import socket
-import subprocess
-import sys
 import time
 import warnings
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -33,8 +31,10 @@ from threading import Thread
 
 import httpx
 import pytest
+from live_http import spawn_wet_server
 from mcp.client.session import ClientSession
 from mcp.client.streamable_http import streamable_http_client
+from process_lifeline import stop_supervised
 from test_tool_names import EXPECTED_NAMES
 
 pytestmark = [pytest.mark.timeout(120)]
@@ -163,13 +163,7 @@ async def mcp_session(searxng_server: str, tmp_path):
     env, _state = _server_env(tmp_path, searxng_server)
     port = int(env["WET_PORT"])
     log_path = tmp_path / "server.log"
-    with open(log_path, "ab") as log_fh:
-        proc = subprocess.Popen(
-            [sys.executable, "-m", "wet.server"],
-            env=env,
-            stdout=log_fh,
-            stderr=log_fh,
-        )
+    proc = spawn_wet_server(env, log_path)
     try:
         _wait_until_up(port)
         url = f"http://127.0.0.1:{port}/mcp"
@@ -188,11 +182,7 @@ async def mcp_session(searxng_server: str, tmp_path):
         else:
             raise
     finally:
-        proc.terminate()
-        try:
-            proc.wait(timeout=10)
-        except subprocess.TimeoutExpired:
-            proc.kill()
+        stop_supervised(proc)
 
 
 # ---------------------------------------------------------------------------
