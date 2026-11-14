@@ -2,6 +2,15 @@
 
 <!-- version list -->
 
+## v3.22.0-beta.2 (2026-11-14)
+
+### Bug Fixes
+
+- Restore the external default search chain and green the live suites
+  ([#1949](https://github.com/n24q02m/wet/pull/1949),
+  [`af6d30a`](https://github.com/n24q02m/wet/commit/af6d30a3e1c3c690203f3f327e23ba7ffc1ee93e))
+
+
 ## v3.22.0-beta.1 (2026-11-14)
 
 ### Bug Fixes
