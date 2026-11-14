@@ -28,7 +28,7 @@ dependencies = [
     # (Browser rendering is native chromium or self-hosted browserless only.)
     # 0.5 adds the provider key pool + account registry
     # (`hull_core.credentials`) every provider call now rotates through.
-    "n24q02m-hull[web]>=0.6.1,<0.7",
+    "n24q02m-hull[web]>=0.7.0,<0.8",
     # MCP Server
     "mcp[cli]>=2.3.0,<3",
     # HTTP Client
@@ -87,8 +87,8 @@ dependencies = [
 # Seeded-identity + invisible browser tier (E1-e/E1-f): opt-in at install time,
 # enabled at runtime via BROWSER_BACKENDS=invisible / WET_IDENTITY_SEED. Without
 # these extras strategies keep legacy behavior (warn-once). See AGENTS.md.
-identity = ["n24q02m-hull[identity]>=0.6.1,<0.7"]
-invisible = ["n24q02m-hull[invisible]>=0.6.1,<0.7"]
+identity = ["n24q02m-hull[identity]>=0.7.0,<0.8"]
+invisible = ["n24q02m-hull[invisible]>=0.7.0,<0.8"]
 
 [dependency-groups]
 dev = [
