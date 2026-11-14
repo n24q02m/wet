@@ -2,6 +2,15 @@
 
 <!-- version list -->
 
+## v3.22.0-beta.3 (2026-11-14)
+
+### Bug Fixes
+
+- Default search to the credential-free chain and bind live servers to their test
+  ([#1950](https://github.com/n24q02m/wet/pull/1950),
+  [`00dc81d`](https://github.com/n24q02m/wet/commit/00dc81db4895033b985de7bead5de8fd8d80a8d2))
+
+
 ## v3.22.0-beta.2 (2026-11-14)
 
 ### Bug Fixes
