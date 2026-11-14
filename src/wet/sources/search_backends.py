@@ -1035,8 +1035,7 @@ class KeenableBackend:
     ``{title, url, description, snippet}``.
 
     ``time_range``, ``language``, ``include_domains``, ``exclude_domains``,
-    ``categories`` and ``region`` are ignored. Without a key the query is sent
-    to Keenable's keyless public endpoint.
+    ``categories`` and ``region`` are ignored.
     """
 
     name = "keenable"

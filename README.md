@@ -232,7 +232,7 @@ an unkeyed chat cell disables LLM features (e.g. `extract(action="agent")`).
 `FASTRETRIEVAL_CACHE_PATH` controls the local model cache.
 
 **Search backends** -- `SEARCH_BACKENDS` is an ordered runtime fallback chain:
-`tavily` / `brave` / `exa` / `kagi` / `openrouter` (keyed), `firecrawl` (optional key),
+`tavily` / `brave` / `exa` / `kagi` / `openrouter` (keyed), `firecrawl` / `keenable` (optional key),
 and credential-free `duckduckgo` / `startpage`. The default chain is
 `tavily,duckduckgo`; `searxng` is no longer shipped as a self-hosted instance and is
 reachable only by setting `SEARCH_BACKENDS=searxng` plus a third-party `SEARXNG_URL`. Keyed providers use `TAVILY_API_KEY`, `BRAVE_API_KEY`, `EXA_API_KEY`,
@@ -242,7 +242,7 @@ reachable only by setting `SEARCH_BACKENDS=searxng` plus a third-party `SEARXNG_
 annotations onto the shared result shape; `OPENROUTER_MODEL` (default a
 free-tier model), `OPENROUTER_BASE_URL`, and `OPENROUTER_SEARCH_ENGINE`
 override its behavior. Firecrawl attempts a keyless request when `FIRECRAWL_API_KEY`
-is absent; rejection or a DuckDuckGo/Startpage bot challenge advances the chain.
+is absent, and Keenable uses its keyless public endpoint when `KEENABLE_API_KEY` is absent; rejection or a DuckDuckGo/Startpage bot challenge advances the chain.
 
 Result reranking uses the configured rerank cell ([models.rerank] — cloud via
 OpenRouter by default, or local ONNX when unkeyed); the same chain serves web
