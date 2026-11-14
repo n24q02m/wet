@@ -2,6 +2,55 @@
 
 <!-- version list -->
 
+## v3.22.0-beta.1 (2026-11-14)
+
+### Bug Fixes
+
+- Drop the retired self-hosted search and render backends from the docs
+  ([#1944](https://github.com/n24q02m/wet/pull/1944),
+  [`4208ec6`](https://github.com/n24q02m/wet/commit/4208ec64f85b4d99a7f08cc572907172103c6366))
+
+- List the keenable search backend in README and AGENTS.md
+  ([#1947](https://github.com/n24q02m/wet/pull/1947),
+  [`34dbd10`](https://github.com/n24q02m/wet/commit/34dbd1067e5b26b982322f24fcaa0aa5d6d53c20))
+
+- Make the default search chain external and stop auto-starting searxng
+  ([#1945](https://github.com/n24q02m/wet/pull/1945),
+  [`d756e3a`](https://github.com/n24q02m/wet/commit/d756e3ac8c40f3674ae61287aa96bdf2d89a19d1))
+
+- Quote the wet skill description and point the plugin at n24q02m-wet
+  ([#1946](https://github.com/n24q02m/wet/pull/1946),
+  [`2bfa424`](https://github.com/n24q02m/wet/commit/2bfa424b3be0a37c148fb4b8b39655ce7d76ece3))
+
+- **deps**: Lock file maintenance ([#1943](https://github.com/n24q02m/wet/pull/1943),
+  [`bfec7fc`](https://github.com/n24q02m/wet/commit/bfec7fc458712468b07014612140a2aa61a58bf3))
+
+- **deps**: Lock file maintenance ([#1942](https://github.com/n24q02m/wet/pull/1942),
+  [`0b6df20`](https://github.com/n24q02m/wet/commit/0b6df205cfe6d2b9576776e2338d733ce6973a7e))
+
+- **deps**: Update amannn/action-semantic-pull-request action to v6.1.2
+  ([#1941](https://github.com/n24q02m/wet/pull/1941),
+  [`866b945`](https://github.com/n24q02m/wet/commit/866b945b578f3af5f35ea585faa21d7ed6090361))
+
+- **deps**: Update python:3.13-slim-bookworm Docker digest to 281d39f
+  ([#1923](https://github.com/n24q02m/wet/pull/1923),
+  [`a7d4f24`](https://github.com/n24q02m/wet/commit/a7d4f242a92a8f21015b20025bcfecc95be60233))
+
+- **deps**: Update python:3.13-slim-bookworm Docker digest to a5a7017
+  ([#1940](https://github.com/n24q02m/wet/pull/1940),
+  [`0bdbf22`](https://github.com/n24q02m/wet/commit/0bdbf227a1e183933c9ee4c84dfedce3c6ad8f31))
+
+### Features
+
+- Attach hash-pinned requirements.lock to releases, bump tap and bucket on stable, allow hull 0.7
+  ([#1948](https://github.com/n24q02m/wet/pull/1948),
+  [`d709edd`](https://github.com/n24q02m/wet/commit/d709edd5237a9ab7a041f2a3dbb45e8ef7c230c9))
+
+- **search**: Add keenable search backend (key optional)
+  ([#1922](https://github.com/n24q02m/wet/pull/1922),
+  [`4cd2519`](https://github.com/n24q02m/wet/commit/4cd2519c94cccffb9bf3a11dc71ac44ab4bb7035))
+
+
 ## v3.21.0 (2026-11-12)
 
 ### Bug Fixes
