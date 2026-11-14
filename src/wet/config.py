@@ -109,9 +109,11 @@ class Settings(BaseSettings):
     searxng_auth_user: str = ""  # env SEARXNG_AUTH_USER
     searxng_auth_pass: str = ""  # env SEARXNG_AUTH_PASS
 
-    # Pluggable web search backend selector. "searxng" (default, local) or
-    # a cloud adapter (tavily/brave/exa/kagi/openrouter/firecrawl/...).
-    search_backend: str = "searxng"  # env SEARCH_BACKEND
+    # Single web search backend selector (back-compat for SEARCH_BACKENDS):
+    # searxng or a cloud adapter (tavily/brave/exa/kagi/openrouter/...).
+    # Empty by default so an unset chain resolves to the external
+    # ``tavily,duckduckgo`` default in ``chain_backend_names``.
+    search_backend: str = ""  # env SEARCH_BACKEND
     tavily_api_key: str = ""  # env TAVILY_API_KEY
 
     # SEARCH_BACKENDS: CSV provider chain with runtime fallback (try each, on

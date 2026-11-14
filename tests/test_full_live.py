@@ -9,17 +9,11 @@ Usage:
 """
 
 import json
-import os
-import socket
-import subprocess
-import sys
-import warnings
 from pathlib import Path
 
-import httpx
 import pytest
+from live_http import live_mcp_session, wet_server_env
 from mcp.client.session import ClientSession
-from mcp.client.streamable_http import streamable_http_client
 
 pytestmark = [pytest.mark.full, pytest.mark.timeout(120)]
 
@@ -41,72 +35,13 @@ def parse_allow_error(r) -> str:
     return r.content[0].text
 
 
-def _free_port() -> int:
-    with socket.socket() as sock:
-        sock.bind(("127.0.0.1", 0))
-        return sock.getsockname()[1]
-
-
-def _spawn_server(tmp_path: Path, *, rerank_enabled: bool = True):
-    """Spawn the real blocking HTTP server on a tmp instance home."""
-    local_state = tmp_path / "local-state"
-    local_state.mkdir(parents=True, exist_ok=True)
-    port = _free_port()
-    env = {
-        **os.environ,
-        "LOG_LEVEL": "WARNING",
-        "HOME": str(local_state),
-        "USERPROFILE": str(local_state),
-        "XDG_CONFIG_HOME": str(local_state),
-        "LOCALAPPDATA": str(local_state),
-        "APPDATA": str(local_state),
-        "CACHE_DIR": str(tmp_path),
-        "DOCS_DB_PATH": str(tmp_path / "docs.db"),
+def _server_env(tmp_path: Path, *, rerank_enabled: bool = True) -> dict:
+    """Shared live env (tmp home, real browser cache) plus full-mode knobs."""
+    return {
+        **wet_server_env(tmp_path),
         "DOWNLOAD_DIR": str(tmp_path / "downloads"),
         "RERANK_ENABLED": "true" if rerank_enabled else "false",
-        "WET_HOST": "127.0.0.1",
-        "WET_PORT": str(port),
     }
-    log_path = tmp_path / "server.log"
-    log_fh = open(log_path, "ab")
-    proc = subprocess.Popen(
-        [sys.executable, "-m", "wet.server"],
-        env=env,
-        stdout=log_fh,
-        stderr=log_fh,
-        close_fds=True,
-    )
-    log_fh.close()  # the child owns its inherited handle
-    return proc, port
-
-
-async def _connect(port: int):
-    """Yield an initialized ClientSession once the listener is up."""
-    url = f"http://127.0.0.1:{port}/mcp"
-    deadline = 60.0
-    waited = 0.0
-    while True:
-        try:
-            httpx.get(url, timeout=2.0)
-            break  # any response = up
-        except httpx.HTTPError:
-            if waited >= deadline:
-                raise
-            await __import__("asyncio").sleep(0.25)
-            waited += 0.25
-    async with streamable_http_client(url) as (read_stream, write_stream):
-        async with ClientSession(read_stream, write_stream) as session:
-            await session.initialize()
-            yield session
-
-
-async def _finish(proc, gen) -> None:
-    await gen.aexit(None, None, None)
-    proc.terminate()
-    try:
-        proc.wait(timeout=10)
-    except subprocess.TimeoutExpired:
-        proc.kill()
 
 
 # ---------------------------------------------------------------------------
@@ -117,41 +52,17 @@ async def _finish(proc, gen) -> None:
 @pytest.fixture
 async def mcp_session(tmp_path):
     """Start a real wet HTTP server, yield ClientSession (tmp data dirs)."""
-    proc, port = _spawn_server(tmp_path)
-    gen = _connect(port)
-    try:
-        session = await gen.asend(None)
+    env = _server_env(tmp_path)
+    async with live_mcp_session(env, tmp_path / "server.log") as session:
         yield session
-    except (RuntimeError, ExceptionGroup) as exc:
-        msg = str(exc).lower()
-        if "cancel scope" in msg or "different task" in msg:
-            warnings.warn(
-                f"Suppressed teardown error: {exc}", RuntimeWarning, stacklevel=1
-            )
-        else:
-            raise
-    finally:
-        await _finish(proc, gen)
 
 
 @pytest.fixture
 async def mcp_session_rerank_off(tmp_path):
     """MCP session with reranking disabled."""
-    proc, port = _spawn_server(tmp_path, rerank_enabled=False)
-    gen = _connect(port)
-    try:
-        session = await gen.asend(None)
+    env = _server_env(tmp_path, rerank_enabled=False)
+    async with live_mcp_session(env, tmp_path / "server.log") as session:
         yield session
-    except (RuntimeError, ExceptionGroup) as exc:
-        msg = str(exc).lower()
-        if "cancel scope" in msg or "different task" in msg:
-            warnings.warn(
-                f"Suppressed teardown error: {exc}", RuntimeWarning, stacklevel=1
-            )
-        else:
-            raise
-    finally:
-        await _finish(proc, gen)
 
 
 # ---------------------------------------------------------------------------

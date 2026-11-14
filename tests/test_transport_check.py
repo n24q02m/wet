@@ -201,13 +201,12 @@ def _force_uvx(monkeypatch, value: bool):
 @pytest.mark.asyncio
 async def test_search_actions_rejected_in_uvx_mode(monkeypatch, action):
     """All four SearXNG-dependent actions return the spec error in uvx when no
-    backend can run there (no cloud key, no external SearXNG -- chain falls
-    back to the local-only ``searxng`` backend)."""
+    backend can run there (an explicit ``searxng``-only chain on the local
+    auto-spawn URL, no cloud key, no external SearXNG)."""
     srv = _force_uvx(monkeypatch, True)
-    # Clear ambient env so the chain resolves to the local-only default
+    # Clear ambient env so only the local-only chain below is configured,
     # regardless of what's set in the developer's shell.
     for var in (
-        "SEARCH_BACKENDS",
         "SEARCH_BACKEND",
         "TAVILY_API_KEY",
         "BRAVE_API_KEY",
@@ -215,6 +214,7 @@ async def test_search_actions_rejected_in_uvx_mode(monkeypatch, action):
         "SEARXNG_URL",
     ):
         monkeypatch.delenv(var, raising=False)
+    monkeypatch.setenv("SEARCH_BACKENDS", "searxng")
 
     # ``docs`` requires ``library``; ``similar`` requires a URL query. Pass
     # values that would normally make it past input validation so we know
@@ -251,6 +251,38 @@ async def test_search_action_proceeds_when_not_uvx(monkeypatch):
 
         assert "Search Results" in text(result)
         mock_search.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_search_proceeds_in_uvx_with_zero_config(monkeypatch):
+    """uvx=True + no search config at all -> the guard lets 'search' through.
+
+    The unset chain is the external ``tavily,duckduckgo`` default and
+    DuckDuckGo needs no key, so a pip-less venv must never be told to set
+    one up.
+    """
+    from wet.config import Settings
+
+    srv = _force_uvx(monkeypatch, True)
+    for var in ("SEARCH_BACKENDS", "SEARCH_BACKEND", "TAVILY_API_KEY"):
+        monkeypatch.delenv(var, raising=False)
+    monkeypatch.setattr(
+        srv.search_backends, "settings", Settings(_env_file=None), raising=True
+    )
+
+    with patch.object(
+        srv.search_backends,
+        "run_search_chain",
+        new_callable=AsyncMock,
+        return_value=(
+            '{"results": [{"url": "https://e", "title": "T", "snippet": "s"}], '
+            '"total": 1, "query": "hello"}'
+        ),
+    ) as mock_chain:
+        result = await srv.search(action="search", query="hello")
+
+    assert "needs a search backend" not in text(result)
+    mock_chain.assert_awaited_once()
 
 
 @pytest.mark.asyncio

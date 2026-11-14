@@ -1,8 +1,10 @@
 """Tests for list_media functionality."""
 
 import json
+from contextlib import asynccontextmanager
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import httpx
 import pytest
 
 from wet.sources.crawler import list_media
@@ -127,10 +129,17 @@ async def test_list_media_crawler_failure(mock_crawler_instance):
 
     mock_crawler_instance.arun = AsyncMock(return_value=mock_result)
 
-    with patch(
-        "wet.sources.crawler._get_crawler",
-        new_callable=AsyncMock,
-        return_value=mock_crawler_instance,
+    with (
+        patch(
+            "wet.sources.crawler._get_crawler",
+            new_callable=AsyncMock,
+            return_value=mock_crawler_instance,
+        ),
+        patch(
+            "wet.sources.crawler._probe_direct_media",
+            new_callable=AsyncMock,
+            return_value=None,
+        ),
     ):
         result_json = await list_media(url="https://example.com")
 
@@ -157,3 +166,146 @@ async def test_list_media_empty(mock_crawler_instance):
 
     results = json.loads(result_json)
     assert results == {"images": [], "videos": [], "audio": []}
+
+
+def _failed_crawl(mock_crawler_instance, message: str = "Blocked by anti-bot"):
+    mock_result = MagicMock()
+    mock_result.success = False
+    mock_result.error_message = message
+    mock_crawler_instance.arun = AsyncMock(return_value=mock_result)
+
+
+def _head_client(*, content_type: str | None = None, error: Exception | None = None):
+    """A ``safe_httpx_client`` stand-in whose HEAD answers once."""
+    response = MagicMock()
+    response.headers = {"content-type": content_type} if content_type else {}
+    response.url = "https://cdn.example.com/final.webp"
+    response.raise_for_status = MagicMock()
+    client = MagicMock()
+    client.head = AsyncMock(side_effect=error, return_value=response)
+
+    @asynccontextmanager
+    async def factory(**_kwargs):
+        yield client
+
+    return factory, client
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("content_type", "key", "kind"),
+    [
+        ("image/webp", "images", "image"),
+        ("video/mp4; codecs=avc1", "videos", "video"),
+        ("audio/mpeg", "audio", "audio"),
+    ],
+)
+async def test_list_media_direct_media_url(
+    mock_crawler_instance, monkeypatch, content_type, key, kind
+):
+    """A URL that serves a media file itself is listed as that one item.
+
+    The browser renders a bare image/video/audio response as a near-empty
+    viewer page, which the crawler rejects; the HEAD probe recovers it.
+    """
+    _failed_crawl(mock_crawler_instance)
+    monkeypatch.setattr("wet.sources.crawler.settings.respect_robots_txt", False)
+    factory, client = _head_client(content_type=content_type)
+
+    with (
+        patch(
+            "wet.sources.crawler._get_crawler",
+            new_callable=AsyncMock,
+            return_value=mock_crawler_instance,
+        ),
+        patch("wet.sources.crawler._safe_httpx_client", factory),
+    ):
+        result_json = await list_media(url="https://example.com/img")
+
+    results = json.loads(result_json)
+    assert results[key] == [
+        {
+            "src": "https://cdn.example.com/final.webp",
+            "type": kind,
+            "content_type": content_type.split(";")[0],
+        }
+    ]
+    assert sum(len(v) for v in results.values()) == 1
+    client.head.assert_awaited_once_with("https://example.com/img")
+
+
+@pytest.mark.asyncio
+async def test_list_media_direct_media_respects_type_filter(
+    mock_crawler_instance, monkeypatch
+):
+    """An image URL asked for videos lists no videos instead of an error."""
+    _failed_crawl(mock_crawler_instance)
+    monkeypatch.setattr("wet.sources.crawler.settings.respect_robots_txt", False)
+    factory, _client = _head_client(content_type="image/png")
+
+    with (
+        patch(
+            "wet.sources.crawler._get_crawler",
+            new_callable=AsyncMock,
+            return_value=mock_crawler_instance,
+        ),
+        patch("wet.sources.crawler._safe_httpx_client", factory),
+    ):
+        result_json = await list_media(
+            url="https://example.com/img", media_type="videos"
+        )
+
+    assert json.loads(result_json) == {"videos": []}
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("content_type", "error"),
+    [
+        ("text/html; charset=utf-8", None),
+        (None, None),
+        (None, httpx.ConnectError("boom")),
+    ],
+)
+async def test_list_media_failure_kept_when_url_is_not_media(
+    mock_crawler_instance, monkeypatch, content_type, error
+):
+    """Non-media, untyped or unreachable URLs keep the crawler's error."""
+    _failed_crawl(mock_crawler_instance, "Page load failed")
+    monkeypatch.setattr("wet.sources.crawler.settings.respect_robots_txt", False)
+    factory, _client = _head_client(content_type=content_type, error=error)
+
+    with (
+        patch(
+            "wet.sources.crawler._get_crawler",
+            new_callable=AsyncMock,
+            return_value=mock_crawler_instance,
+        ),
+        patch("wet.sources.crawler._safe_httpx_client", factory),
+    ):
+        result_json = await list_media(url="https://example.com")
+
+    assert json.loads(result_json) == {"error": "Page load failed"}
+
+
+@pytest.mark.asyncio
+async def test_list_media_no_probe_when_robots_respected(
+    mock_crawler_instance, monkeypatch
+):
+    """With robots.txt enforced the failed URL is never fetched again."""
+    _failed_crawl(mock_crawler_instance, "robots.txt disallows the URL")
+    monkeypatch.setattr("wet.sources.crawler.settings.respect_robots_txt", True)
+    factory, client = _head_client(content_type="image/png")
+
+    with (
+        patch(
+            "wet.sources.crawler._get_crawler",
+            new_callable=AsyncMock,
+            return_value=mock_crawler_instance,
+        ),
+        patch("wet.sources.crawler._safe_httpx_client", factory),
+    ):
+        result_json = await list_media(url="https://example.com/img")
+
+    assert json.loads(result_json) == {"error": "robots.txt disallows the URL"}
+    client.head.assert_not_awaited()

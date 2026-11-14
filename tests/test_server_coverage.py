@@ -1151,7 +1151,11 @@ async def test_search_cached_index_version_zero_chunks():
 
 
 async def test_discover_docs_url_searxng_timeout():
-    """Lines 1388-1389: SearXNG fallback times out."""
+    """The configured-search discovery fallback times out -> no docs URL.
+
+    The chain itself raises, so the test stays offline whatever the default
+    backend chain is.
+    """
     with (
         patch(
             "wet.sources.docs.discover_library",
@@ -1159,7 +1163,7 @@ async def test_discover_docs_url_searxng_timeout():
             return_value=None,
         ),
         patch(
-            "wet.server.ensure_searxng",
+            "wet.sources.search_backends.run_search_chain",
             new_callable=AsyncMock,
             side_effect=TimeoutError,
         ),

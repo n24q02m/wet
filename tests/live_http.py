@@ -15,6 +15,7 @@ import socket
 import subprocess
 import sys
 import time
+import warnings
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -171,3 +172,24 @@ async def wet_http_server(env: dict, log_path: Path) -> AsyncGenerator[int]:
             proc.wait(timeout=10)
         except subprocess.TimeoutExpired:
             proc.kill()
+
+
+@asynccontextmanager
+async def live_mcp_session(env: dict, log_path: Path) -> AsyncGenerator[ClientSession]:
+    """Spawn the server and yield an initialized session, for async fixtures.
+
+    pytest-asyncio finalizes an async-generator fixture in a different task
+    than the one that set it up, so the anyio cancel scopes inside the MCP
+    client raise "different task" on exit. The server process is still
+    stopped by ``wet_http_server``; only that teardown error is downgraded
+    to a warning, anything else propagates.
+    """
+    try:
+        async with wet_http_server(env, log_path) as port:
+            async with mcp_client_session(port) as session:
+                yield session
+    except (RuntimeError, ExceptionGroup) as exc:
+        msg = str(exc).lower()
+        if "cancel scope" not in msg and "different task" not in msg:
+            raise
+        warnings.warn(f"Suppressed teardown error: {exc}", RuntimeWarning, stacklevel=1)
