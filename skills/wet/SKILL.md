@@ -1,6 +1,6 @@
 ---
 name: wet
-description: Vận hành wet — MCP server HTTP-only (Streamable HTTP) qua CLI control plane `wet`: start/stop/status server, fetch docs web & library docs (web scraping, library-docs, crawl4ai, searxng), warmup cache. Không có stdio mode, không có auth/logout.
+description: "Vận hành wet — MCP server HTTP-only (Streamable HTTP) qua CLI control plane `wet`: start/stop/status server, fetch docs web & library docs (web scraping, library-docs, crawl4ai, searxng), warmup cache. Không có stdio mode, không có auth/logout."
 ---
 
 # wet — HTTP MCP server + control-plane CLI
