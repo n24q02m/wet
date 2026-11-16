@@ -13,8 +13,9 @@ to generate correct snippets. Generic web search returns blog posts
 that often lag the latest API; LLMs trained months ago hallucinate APIs
 that no longer exist. A self-hosted indexed docs cache solves both:
 
-* **Fresh**: Tier 1 libraries refresh weekly via the `refresh-tier1`
-  cron job; Tier 2 ingests on first query.
+* **Fresh**: Tier 1 libraries refresh via the `refresh-tier1` CI job
+  (dispatch `ci.yml` with `job=refresh-tier1`); Tier 2 ingests on first
+  query.
 * **Version-aware**: every chunk is tagged with its `version_id`;
   `docs_query(version="18.0.0")` filters strictly to React 18.
 * **Project-aware (Cabinets)**: `docs_lock_project` pins the version
@@ -88,7 +89,7 @@ search(action="docs_query",
 |---|---|---|
 | `docs_resolve` + `docs_query` p95 | < 500 ms | 500 popular library queries |
 | Recall@10 | >= 0.85 | 200 (library, question, expected_chunks) eval set |
-| Tier 1 freshness within 7 days | >= 90% | Weekly `refresh-tier1` cron |
+| Tier 1 freshness within 7 days | >= 90% | `refresh-tier1` CI job (dispatched) |
 | Tier 2 freshness within 7 days | >= 70% | First-query ingestion timestamps |
 
 ## Cross-references

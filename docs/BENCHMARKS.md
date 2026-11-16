@@ -54,7 +54,8 @@ uv run python tests/search_quality/run_contract.py validate-fixtures
 uv run python tests/search_quality/run_contract.py run --output /path/to/wet-benchmark-contract.json
 ```
 
-This is the harness the `benchmark.yml` workflow runs. Credentials come from
+This is the harness the `benchmark` job of `ci.yml` runs (dispatch `ci.yml`
+with `job=benchmark`). Credentials come from
 the environment and are never printed or persisted.
 
 ## v1.x baseline (2026-05-09)
@@ -121,7 +122,7 @@ get diff'd against the previous run for regression alerting.
 |---|---|---|---|
 | Docs | `docs_resolve` + `docs_query` p95 | < 500 ms | 500 popular library queries |
 | Docs | Recall@10 (correct lib + correct version chunks) | >= 0.85 | 200 (library, question, expected_chunks) eval set |
-| Docs | Index freshness (Tier 1 / Tier 2 within 7-day lag) | >= 90% Tier 1 / >= 70% Tier 2 | Weekly `refresh-tier1` cron job |
+| Docs | Index freshness (Tier 1 / Tier 2 within 7-day lag) | >= 90% Tier 1 / >= 70% Tier 2 | `refresh-tier1` CI job (dispatch `ci.yml` with `job=refresh-tier1`) |
 | Docs | Token cap per response | <= 5000 tokens | Greedy accumulator in `query_docs` |
 
 The docs-search pillar ships the schema + dispatchers; the 200-fixture

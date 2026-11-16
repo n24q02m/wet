@@ -222,9 +222,9 @@ First docs_query for library X
 
 Tier 1 freshness window: 7 days. `maybe_warm` measures that window
 against `metadata_seeded_at`; `last_indexed_at` is written only by
-`mark_library_indexed`. The `refresh-tier1` cron job in
-`.github/workflows/ci.yml` re-runs `scripts/build_tier1_index.py`
-weekly to keep curated chunks fresh; that script exits non-zero when
+`mark_library_indexed`. The `refresh-tier1` job in
+`.github/workflows/ci.yml` (dispatch with `job=refresh-tier1`) re-runs
+`scripts/build_tier1_index.py` to keep curated chunks fresh; that script exits non-zero when
 fewer than `--min-success-rate` of the libraries produce chunks.
 
 ### Cabinets project isolation

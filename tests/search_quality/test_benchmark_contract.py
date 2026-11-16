@@ -10,6 +10,17 @@ import pytest
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
+def _benchmark_job() -> str:
+    """The `benchmark` job of ci.yml, up to the next job (or the end of the file)."""
+    ci = (REPO_ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
+    lines = ci.splitlines()
+    start = lines.index("  benchmark:")
+    for offset, line in enumerate(lines[start + 1 :], start=start + 1):
+        if line.startswith("  ") and line.endswith(":") and not line.startswith("   "):
+            return "\n".join(lines[start:offset])
+    return "\n".join(lines[start:])
+
+
 def test_derivation_audits_conflicting_source_ids_and_keeps_exact_targets():
     derived = contract.derive_fixture_records(REPO_ROOT)
 
@@ -357,9 +368,7 @@ def test_provenance_distinguishes_revision_config_provider_and_command_without_s
 
 def test_ci_and_release_workflows_wire_contract_and_exact_sha_gate():
     ci = (REPO_ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
-    benchmark = (REPO_ROOT / ".github/workflows/benchmark.yml").read_text(
-        encoding="utf-8"
-    )
+    benchmark = _benchmark_job()
 
     assert "run_contract.py validate-fixtures" in ci
     assert "wet-benchmark-contract-${{ github.sha }}" in benchmark
@@ -369,9 +378,7 @@ def test_ci_and_release_workflows_wire_contract_and_exact_sha_gate():
 
 
 def test_benchmark_workflow_keeps_checkout_clean_before_spending():
-    benchmark = (REPO_ROOT / ".github/workflows/benchmark.yml").read_text(
-        encoding="utf-8"
-    )
+    benchmark = _benchmark_job()
 
     # Browser binaries inside the workspace leave an untracked dir that makes
     # the gate reject the artifact as `dirty` after the paid run completes.

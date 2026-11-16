@@ -1,0 +1,23 @@
+{
+  "schema_version": 1,
+  "tier": 1,
+  "description": "Open-source MCP server for AI agents: web search, content extraction, and library docs -- 5-strategy scraping, runs without API keys.",
+  "homepage": "https://docs.n24q02m.com/servers/wet/",
+  "topics": [
+    "ai-agents",
+    "ai-coding",
+    "claude",
+    "claude-code",
+    "crawl4ai",
+    "cursor",
+    "docker",
+    "mcp",
+    "mcp-server",
+    "model-context-protocol",
+    "open-source",
+    "python",
+    "searxng",
+    "web-scraping",
+    "web-search"
+  ]
+}
