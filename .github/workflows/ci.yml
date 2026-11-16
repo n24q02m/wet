@@ -18,7 +18,7 @@ on:
         type: string
         default: ""
       job:
-        description: "Extra job to run alongside the CI jobs: benchmark (live MCP benchmark, spends provider credit) or refresh-tier1 (Tier 1 docs canary)"
+        description: "Extra job to run alongside the CI jobs: benchmark (live MCP benchmark, spends provider credit), refresh-tier1 (Tier 1 docs canary) or canary-drill (refresh-tier1 fails on purpose so the canary alert job runs; on main it files or updates the canary issue)"
         required: false
         type: choice
         default: none
@@ -26,6 +26,7 @@ on:
           - none
           - benchmark
           - refresh-tier1
+          - canary-drill
 
 permissions:
   contents: read
@@ -207,7 +208,7 @@ jobs:
 
   refresh-tier1:
     name: Refresh Tier 1 docs index
-    if: github.event_name == 'workflow_dispatch' && inputs.job == 'refresh-tier1'
+    if: github.event_name == 'workflow_dispatch' && (inputs.job == 'refresh-tier1' || inputs.job == 'canary-drill')
     runs-on: ubuntu-latest
     # Sized from measurement, not from the 6-hour default. The twelve green
     # runs before #1590 finished in 2-7 minutes, but they were green because
@@ -226,6 +227,15 @@ jobs:
         uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
         with:
           egress-policy: audit
+
+      - name: Fail on purpose for a canary drill
+        # report-canary-failure runs only after this job fails on main, so a
+        # healthy canary never exercises it. A canary-drill dispatch fails
+        # here, before any real work, so the alert path runs end to end.
+        if: inputs.job == 'canary-drill'
+        run: |
+          echo "::error::canary-drill: refresh-tier1 failed on purpose to exercise the canary alert"
+          exit 1
 
       - name: Checkout code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -290,12 +300,14 @@ jobs:
   # the same run, after refresh-tier1, so no second workflow is needed.
   # Schedules only ever ran on the default branch, so the issue is filed
   # only for a main run: a refresh-tier1 dispatched on a branch to try a
-  # change reports in its own run, not in the tracking issue.
+  # change reports in its own run, not in the tracking issue. A canary-drill
+  # dispatch on main runs this job for real against a deliberate failure;
+  # close the drill issue once it has been read.
   # ============================================================================
   report-canary-failure:
     name: Open or update the canary failure issue
     needs: refresh-tier1
-    if: failure() && github.event_name == 'workflow_dispatch' && inputs.job == 'refresh-tier1' && github.ref == 'refs/heads/main'
+    if: failure() && github.event_name == 'workflow_dispatch' && (inputs.job == 'refresh-tier1' || inputs.job == 'canary-drill') && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
@@ -320,6 +332,7 @@ jobs:
           RUN_SHA: ${{ github.sha }}
           JOB_NAME: Refresh Tier 1 docs index
           LABEL: canary-failure
+          DRILL: ${{ inputs.job == 'canary-drill' }}
         run: |
           set -euo pipefail
 
@@ -373,8 +386,15 @@ jobs:
             EXCERPT="(no log could be read; open the run and read it there)"
           fi
 
+          TITLE="Tier 1 canary failed on $RUN_SHA"
           BODY_FILE=$(mktemp)
           {
+            if [ "$DRILL" = "true" ]; then
+              TITLE="Tier 1 canary drill on $RUN_SHA"
+              echo "This is a canary drill: \`refresh-tier1\` failed on purpose"
+              echo "(\`job=canary-drill\`) to exercise this alert. Close it once read."
+              echo
+            fi
             echo "The Tier 1 docs canary (\`refresh-tier1\` in CI) failed."
             echo
             echo "| field | value |"
@@ -409,7 +429,7 @@ jobs:
           else
             echo "No open canary issue; filing a new one"
             gh issue create --repo "$REPO" \
-              --title "Tier 1 canary failed on $RUN_SHA" \
+              --title "$TITLE" \
               --label "$LABEL" \
               --body-file "$BODY_FILE"
           fi
