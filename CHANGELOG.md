@@ -2,6 +2,25 @@
 
 <!-- version list -->
 
+## v3.22.0-beta.7 (2026-11-16)
+
+### Bug Fixes
+
+- Enter the server lifespan once per HTTP app ([#1973](https://github.com/n24q02m/wet/pull/1973),
+  [`bcbd540`](https://github.com/n24q02m/wet/commit/bcbd540229ae0ee5bed324a694b5a49e52202d98))
+
+- Load the local embedding model off the event loop
+  ([#1973](https://github.com/n24q02m/wet/pull/1973),
+  [`bcbd540`](https://github.com/n24q02m/wet/commit/bcbd540229ae0ee5bed324a694b5a49e52202d98))
+
+- Run the server lifespan once and load local models off the event loop
+  ([#1973](https://github.com/n24q02m/wet/pull/1973),
+  [`bcbd540`](https://github.com/n24q02m/wet/commit/bcbd540229ae0ee5bed324a694b5a49e52202d98))
+
+- **deps**: Lock file maintenance ([#1972](https://github.com/n24q02m/wet/pull/1972),
+  [`43c545e`](https://github.com/n24q02m/wet/commit/43c545e36b5706ca07cc7f45cc295e442eae2554))
+
+
 ## v3.22.0-beta.6 (2026-11-16)
 
 ### Bug Fixes
