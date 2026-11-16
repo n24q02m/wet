@@ -9,7 +9,8 @@ to:
 * ``ingest_tier2`` triggered lazily by the first ``docs_query`` call
   for that library, OR
 * ``scripts/build_tier1_index.py`` which eagerly walks the curated list
-  via the web-core ``library_docs_strategy`` (Task 10) on a weekly cron.
+  via the web-core ``library_docs_strategy`` (Task 10) when the
+  ``refresh-tier1`` CI job is dispatched.
 
 Freshness: a library is considered "warm" when its
 ``metadata_seeded_at`` is within 7 days (spec section 3 Tier 1 freshness

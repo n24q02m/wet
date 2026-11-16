@@ -6,13 +6,37 @@ on:
     types: [opened, synchronize, reopened, ready_for_review]
   push:
     branches: [main]
-  schedule:
-    # Phase 2: weekly Tier 1 docs refresh — Sunday 06:00 UTC.
-    - cron: '0 6 * * 0'
+  # Dispatch runs the same lint, test, CodeQL and docs-sync jobs as a push, so
+  # a dispatched run is a real test run. `job` adds one on-demand job on top:
+  # the jobs that used to start by themselves (a weekly cron and a
+  # workflow_run listener) run only when someone dispatches them.
+  workflow_dispatch:
+    inputs:
+      sha:
+        description: "Commit for the main-integrity job to verify (default: the tip of the dispatched ref)"
+        required: false
+        type: string
+        default: ""
+      job:
+        description: "Extra job to run alongside the CI jobs: benchmark (live MCP benchmark, spends provider credit) or refresh-tier1 (Tier 1 docs canary)"
+        required: false
+        type: choice
+        default: none
+        options:
+          - none
+          - benchmark
+          - refresh-tier1
 
 permissions:
   contents: read
   pull-requests: write
+
+# A newer run on the same ref supersedes the older one, except a benchmark
+# run: it spends provider credit, so a second benchmark dispatch queues
+# behind the first instead of cancelling it mid-run.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}-${{ inputs.job }}
+  cancel-in-progress: ${{ inputs.job != 'benchmark' }}
 
 jobs:
   # ============================================================================
@@ -30,6 +54,7 @@ jobs:
     name: Validate PR title (Conventional Commits subset)
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     permissions:
       pull-requests: read
     steps:
@@ -56,12 +81,13 @@ jobs:
 
   lint-and-test:
     name: Lint & Test (${{ matrix.os }})
-    if: github.event_name == 'pull_request' || github.event_name == 'push'
+    if: github.event_name == 'pull_request' || github.event_name == 'push' || github.event_name == 'workflow_dispatch'
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
 
     steps:
       - name: Harden Runner
@@ -108,7 +134,8 @@ jobs:
   codeql:
     name: CodeQL Analysis
     runs-on: ubuntu-latest
-    if: github.event_name == 'pull_request' || github.event_name == 'push'
+    timeout-minutes: 30
+    if: github.event_name == 'pull_request' || github.event_name == 'push' || github.event_name == 'workflow_dispatch'
     permissions:
       security-events: write
       contents: read
@@ -131,8 +158,9 @@ jobs:
 
   docs-sync-check:
     name: Docs Sync Check (CLAUDE.md <-> AGENTS.md)
-    if: github.event_name == 'pull_request' || github.event_name == 'push'
+    if: github.event_name == 'pull_request' || github.event_name == 'push' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
       - name: Harden Runner
         uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
@@ -149,6 +177,7 @@ jobs:
     name: Dependency Review
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
+    timeout-minutes: 5
 
     steps:
       - name: Harden Runner
@@ -166,8 +195,8 @@ jobs:
           comment-summary-in-pr: always
 
   refresh-tier1:
-    name: Refresh Tier 1 docs index (weekly)
-    if: github.event_name == 'schedule'
+    name: Refresh Tier 1 docs index
+    if: github.event_name == 'workflow_dispatch' && inputs.job == 'refresh-tier1'
     runs-on: ubuntu-latest
     # Sized from measurement, not from the 6-hour default. The twelve green
     # runs before #1590 finished in 2-7 minutes, but they were green because
@@ -241,3 +270,284 @@ jobs:
           name: tier1-index-metrics
           path: ~/.wet/tier1_index_metrics.json
           if-no-files-found: warn
+          retention-days: 5
+
+  # ============================================================================
+  # Canary alert: when a dispatched refresh-tier1 fails, open or update one
+  # tracking issue. Folded in from canary-alert.yml, whose workflow_run
+  # trigger listened for a failed scheduled CI run; the job now runs inside
+  # the same run, after refresh-tier1, so no second workflow is needed.
+  # Schedules only ever ran on the default branch, so the issue is filed
+  # only for a main run: a refresh-tier1 dispatched on a branch to try a
+  # change reports in its own run, not in the tracking issue.
+  # ============================================================================
+  report-canary-failure:
+    name: Open or update the canary failure issue
+    needs: refresh-tier1
+    if: failure() && github.event_name == 'workflow_dispatch' && inputs.job == 'refresh-tier1' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      # `issues: write` covers both the issue and the label it is filed under.
+      issues: write
+      # `actions: read` lets the job read the failed job's record and log;
+      # without it the issue would carry a link and no excerpt.
+      actions: read
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
+        with:
+          egress-policy: audit
+
+      - name: File or update the canary failure issue
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          RUN_ID: ${{ github.run_id }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          RUN_SHA: ${{ github.sha }}
+          JOB_NAME: Refresh Tier 1 docs index
+          LABEL: canary-failure
+        run: |
+          set -euo pipefail
+
+          # Create the marker label first so the dedupe query below cannot fail
+          # on a repository that has never had a canary failure. Idempotent.
+          gh label create "$LABEL" --repo "$REPO" \
+            --color B60205 \
+            --description "Tier 1 canary run failed" \
+            2>/dev/null || true
+
+          # This run is still in progress, so its log archive does not exist
+          # yet; the failed job's own record and log do, through the jobs API.
+          # A failed `gh api` still prints the error body on stdout, so each
+          # capture is reset on failure; otherwise that JSON would land in the
+          # issue as if it were the log.
+          JOB=$(gh api "repos/$REPO/actions/runs/$RUN_ID/attempts/$RUN_ATTEMPT/jobs" \
+            --jq ".jobs[] | select(.name == \"$JOB_NAME\") | [.id, .started_at, .completed_at] | @tsv" \
+            2>/dev/null) || JOB=""
+          JOB_ID=""
+          JOB_STARTED_AT=""
+          JOB_COMPLETED_AT=""
+          if [ -n "$JOB" ]; then
+            IFS=$'\t' read -r JOB_ID JOB_STARTED_AT JOB_COMPLETED_AT <<< "$JOB"
+          fi
+
+          # Prefer the lines that end at the failing step's error; a killed
+          # runner sometimes marks no step failed, in which case the tail of
+          # the whole log is the only thing that shows what it was doing.
+          # curl, not `gh api`: job logs carry ANSI colour codes and `gh api`
+          # refuses to print a body with terminal escape sequences. The
+          # endpoint redirects to a pre-signed URL; curl drops the token on
+          # that cross-host redirect.
+          LOG=""
+          if [ -n "$JOB_ID" ]; then
+            LOG=$(curl -fsSL \
+              -H "Authorization: Bearer $GH_TOKEN" \
+              -H "Accept: application/vnd.github+json" \
+              "$GITHUB_API_URL/repos/$REPO/actions/jobs/$JOB_ID/logs" 2>/dev/null) || LOG=""
+          fi
+          EXCERPT=$(printf '%s\n' "$LOG" | awk '
+            { line[NR] = $0 }
+            /##\[error\]/ { last = NR }
+            END {
+              if (!last) exit
+              for (i = (last > 24 ? last - 24 : 1); i <= last; i++) print line[i]
+            }')
+          if [ -z "$EXCERPT" ]; then
+            EXCERPT=$(printf '%s\n' "$LOG" | tail -n 25)
+          fi
+          if [ -z "$(printf '%s' "$EXCERPT" | tr -d '[:space:]')" ]; then
+            EXCERPT="(no log could be read; open the run and read it there)"
+          fi
+
+          BODY_FILE=$(mktemp)
+          {
+            echo "The Tier 1 docs canary (\`refresh-tier1\` in CI) failed."
+            echo
+            echo "| field | value |"
+            echo "| --- | --- |"
+            echo "| run | $RUN_URL |"
+            echo "| run id | \`$RUN_ID\` |"
+            echo "| commit | \`$RUN_SHA\` |"
+            echo "| started | ${JOB_STARTED_AT:-unknown} |"
+            echo "| ended | ${JOB_COMPLETED_AT:-unknown} |"
+            echo
+            echo "Last lines of the failing log:"
+            echo
+            echo '```'
+            echo "$EXCERPT"
+            echo '```'
+            echo
+            echo "Partial metrics, when the runner lived long enough for the"
+            echo "upload step to run, are in the \`tier1-index-metrics\` artifact"
+            echo "on that run. \`complete: false\` in that file means the script"
+            echo "was interrupted and the counts cover only the libraries listed."
+          } > "$BODY_FILE"
+
+          # Dedupe: one open issue holds the whole streak. Without this, every
+          # red run would file another issue and the canary would become its
+          # own source of backlog churn.
+          EXISTING=$(gh issue list --repo "$REPO" --state open --label "$LABEL" \
+            --limit 1 --json number --jq '.[0].number // empty' 2>/dev/null || true)
+
+          if [ -n "$EXISTING" ]; then
+            echo "Appending to open canary issue #$EXISTING"
+            gh issue comment "$EXISTING" --repo "$REPO" --body-file "$BODY_FILE"
+          else
+            echo "No open canary issue; filing a new one"
+            gh issue create --repo "$REPO" \
+              --title "Tier 1 canary failed on $RUN_SHA" \
+              --label "$LABEL" \
+              --body-file "$BODY_FILE"
+          fi
+
+  # ============================================================================
+  # Live MCP benchmark (dispatch with job=benchmark). Folded in from
+  # benchmark.yml, which was already dispatch-only.
+  # ============================================================================
+  benchmark:
+    name: Live MCP benchmark (200/500/200)
+    if: github.event_name == 'workflow_dispatch' && inputs.job == 'benchmark'
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    permissions:
+      contents: read
+    env:
+      OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
+        with:
+          egress-policy: audit
+
+      - name: Pin browser path outside the checkout
+        # The benchmark server runs under an isolated HOME, so patchright cannot
+        # see the default ~/.cache/ms-playwright browsers. Pin the browser path
+        # via env: it flows through wet_server_env's `**os.environ` into the
+        # spawned server regardless of the isolated home. It must live outside
+        # the checkout: the release gate requires `git status --porcelain` to be
+        # empty, and an untracked browser dir inside the workspace fails it.
+        # (`runner.temp` is not available in job-level env, hence GITHUB_ENV.)
+        shell: bash
+        run: echo "PLAYWRIGHT_BROWSERS_PATH=${RUNNER_TEMP}/ms-playwright" >> "${GITHUB_ENV}"
+
+      - name: Checkout exact dispatch SHA
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+
+      - name: Setup Python 3.13
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.13"
+
+      - name: Install dependencies
+        run: uv sync --group dev
+
+      - name: Install headless browser binaries
+        # The extract suite's `headless` fallback (patchright/chromium) is
+        # exercised by anti-bot fixture URLs; browser binaries are not part
+        # of `uv sync` and must be fetched once per job.
+        run: uv run python -m patchright install chromium
+
+      - name: Require a clean checkout before spending
+        # The gate rejects artifacts whose provenance records a dirty tree.
+        # Fail here, before any paid provider call, instead of after the run.
+        shell: bash
+        run: |
+          dirty="$(git status --porcelain)"
+          if [ -n "${dirty}" ]; then
+            echo "::error::Checkout is dirty after setup; the release gate would reject this run. Offending paths:"
+            printf '%s\n' "${dirty}"
+            exit 1
+          fi
+
+      - name: Require a real provider credential
+        shell: bash
+        run: |
+          if [ -z "${OPENROUTER_API_KEY}" ]; then
+            echo "::error::No real wet provider credential is projected into this run. Sync it from skret; the benchmark never mocks credentials."
+            exit 1
+          fi
+
+      - name: Resolve benchmark model
+        shell: bash
+        env:
+          VAR_MODEL: ${{ vars.OPENROUTER_MODEL }}
+        run: |
+          # Precedence: explicit repo variable first, then the model-sync pin
+          # file. Both unset stays fail-closed — the benchmark never picks a
+          # paid model silently.
+          model="${VAR_MODEL}"
+          src="vars.OPENROUTER_MODEL"
+          if [ -z "${model}" ] && [ -f bench/model.txt ]; then
+            pin="$(tr -d ' \t\r\n' < bench/model.txt)"
+            if [ -n "${pin}" ]; then
+              model="${pin}"
+              src="bench/model.txt"
+            fi
+          fi
+          if [ -z "${model}" ]; then
+            echo "::error::No benchmark model resolved: vars.OPENROUTER_MODEL is unset and bench/model.txt is empty. The benchmark never picks a paid model silently — set the repo variable or merge a [model-sync] pin PR before dispatching."
+            exit 1
+          fi
+          echo "OPENROUTER_MODEL=${model}" >> "${GITHUB_ENV}"
+          echo "Resolved benchmark model ${model} from ${src}"
+
+      - name: Pre-flight provider spend gate
+        shell: bash
+        env:
+          OPENROUTER_SPEND_CAP_USD: ${{ vars.OPENROUTER_SPEND_CAP_USD }}
+        run: |
+          cap="${OPENROUTER_SPEND_CAP_USD:-5}"
+          if [ -z "${OPENROUTER_SPEND_CAP_USD}" ]; then
+            echo "NOTE: no vars.OPENROUTER_SPEND_CAP_USD set — using DEFAULT cap ${cap} USD. Set the variable to make the bound an explicit user decision."
+          fi
+          resp="$(curl -sf -H "Authorization: Bearer ${OPENROUTER_API_KEY}" https://openrouter.ai/api/v1/credits)" || {
+            echo "::error::Cannot read OpenRouter credits endpoint — failing closed before spending."
+            exit 1
+          }
+          avail="$(printf '%s' "$resp" | python3 -c 'import json,sys;d=json.load(sys.stdin)["data"];print(round(d["total_credits"]-d["total_usage"],2))')"
+          echo "Pre-flight: available credit ${avail} USD; run cap ${cap} USD; model ${OPENROUTER_MODEL}"
+          awk -v a="$avail" -v c="$cap" 'BEGIN{exit (a>=c)?0:1}' || {
+            echo "::error::Available OpenRouter credit (${avail} USD) is below this run's cap (${cap} USD). Top up or raise vars.OPENROUTER_SPEND_CAP_USD consciously."
+            exit 1
+          }
+
+      - name: Validate immutable fixtures
+        run: uv run python tests/search_quality/run_contract.py validate-fixtures
+
+      - name: Execute live MCP benchmark
+        env:
+          BENCHMARK_ARTIFACT: ${{ runner.temp }}/wet-benchmark-contract.json
+          # The in-run spend guard enforces the same cap as the pre-flight
+          # (blank -> the same 5 USD default) against this run's own spend.
+          OPENROUTER_SPEND_CAP_USD: ${{ vars.OPENROUTER_SPEND_CAP_USD }}
+        run: uv run python tests/search_quality/run_contract.py run --output "${BENCHMARK_ARTIFACT}"
+
+      - name: Upload exact-SHA benchmark artifact
+        # Runs before the gate (and unconditionally) so a failed gate still
+        # leaves the measured artifact downloadable — diagnosing the next
+        # failure must not require scraping job logs.
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: wet-benchmark-contract-${{ github.sha }}
+          path: ${{ runner.temp }}/wet-benchmark-contract.json
+          # ignore, not error: with `if: always()` this step also runs on a
+          # pre-flight abort (no model / no credit) where no artifact exists —
+          # a second failure line there would mask the real error.
+          if-no-files-found: ignore
+          retention-days: 5
+
+      - name: Gate measured artifact against exact SHA
+        env:
+          BENCHMARK_ARTIFACT: ${{ runner.temp }}/wet-benchmark-contract.json
+          GIT_SHA: ${{ github.sha }}
+        run: uv run python tests/search_quality/run_contract.py gate --artifact "${BENCHMARK_ARTIFACT}" --expected-commit "${GIT_SHA}"

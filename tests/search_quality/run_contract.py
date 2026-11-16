@@ -385,8 +385,8 @@ def _server_environment(temp_root: Path, docs_db_path: Path) -> dict[str, str]:
             "SEARCH_BACKENDS": WEB_SEARCH_BACKEND,
             # Spend discipline (user directive 2026-10-05, after a benchmark
             # run silently burned $5.17 on a paid slug): there is NO default
-            # model. The model is the user's decision — benchmark.yml reads
-            # vars.OPENROUTER_MODEL and fails fast when unset; local runs
+            # model. The model is the user's decision — the CI benchmark job
+            # reads vars.OPENROUTER_MODEL and fails fast when unset; local runs
             # must set the env explicitly.
             "OPENROUTER_MODEL": _require_openrouter_model(),
             # Drive is no longer a wet storage backend. Blank stale local

@@ -1,10 +1,10 @@
 # WET - Web Extended Toolkit MCP Server
 
+**Open-source MCP server for AI agents: web search, content extraction, and library docs.**
+
 > **Distribution & CLI:** the repo, CLI and Python module are `wet`. The PyPI distribution is **`n24q02m-wet`** (install `pip install n24q02m-wet` / `uvx n24q02m-wet`). wet is an HTTP-only MCP server: start it with `wet server start` and point clients at `http://127.0.0.1:8000/mcp`. There is no stdio mode; a bare `wet` prints the control-plane usage. The `wet` and `wet-mcp` aliases remain available.
 
 mcp-name: io.github.n24q02m/wet
-
-**Open-source MCP server for AI agents: web search, content extraction, and library docs.**
 
 | Phase | Status | Scope |
 |---|---|---|

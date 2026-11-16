@@ -1,6 +1,6 @@
 """Eager Tier 1 docs ingestion for the curated library list.
 
-Invoked manually or via CI weekly cron (.github/workflows/ci.yml).
+Invoked manually or via the dispatched refresh-tier1 CI job (.github/workflows/ci.yml).
 Walks every entry in src/wet/data/tier1_libraries.json, calls
 ``ingest_tier2`` so doc chunks are pulled via the web-core
 ``library_docs_strategy`` chain (RTD / Docusaurus / Mintlify / GitHub

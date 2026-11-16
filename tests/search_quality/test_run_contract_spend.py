@@ -9,6 +9,17 @@ import run_contract
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
+def _benchmark_job() -> str:
+    """The `benchmark` job of ci.yml, up to the next job (or the end of the file)."""
+    ci = (REPO_ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
+    lines = ci.splitlines()
+    start = lines.index("  benchmark:")
+    for offset, line in enumerate(lines[start + 1 :], start=start + 1):
+        if line.startswith("  ") and line.endswith(":") and not line.startswith("   "):
+            return "\n".join(lines[start:offset])
+    return "\n".join(lines[start:])
+
+
 class _FakeKey:
     """Scripted ``/api/v1/key`` readings: each read pops the next value."""
 
@@ -212,9 +223,7 @@ def test_web_concurrency_applies_only_to_llm_mediated_backends():
 
 
 def test_benchmark_workflow_passes_the_cap_to_the_run_step():
-    benchmark = (REPO_ROOT / ".github/workflows/benchmark.yml").read_text(
-        encoding="utf-8"
-    )
+    benchmark = _benchmark_job()
     run_step = benchmark[benchmark.index("name: Execute live MCP benchmark") :]
     run_step = run_step[: run_step.index("- name:", 1)]
 
