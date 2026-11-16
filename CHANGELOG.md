@@ -2,6 +2,36 @@
 
 <!-- version list -->
 
+## v3.22.0-beta.6 (2026-11-16)
+
+### Bug Fixes
+
+- Close DocsDB write transactions whose statement fails
+  ([#1971](https://github.com/n24q02m/wet/pull/1971),
+  [`7b864ce`](https://github.com/n24q02m/wet/commit/7b864ce61d6aa5666159fab88beb00195900b1aa))
+
+- Lock hull 0.8.0-beta.2 so token checks no longer block the event loop
+  ([#1969](https://github.com/n24q02m/wet/pull/1969),
+  [`6215880`](https://github.com/n24q02m/wet/commit/62158805981b9388d85edee536097fdfaf7dddde))
+
+- Roll back DocsDB writes that fail midway ([#1971](https://github.com/n24q02m/wet/pull/1971),
+  [`7b864ce`](https://github.com/n24q02m/wet/commit/7b864ce61d6aa5666159fab88beb00195900b1aa))
+
+- Serialize DocsDB's shared SQLite connection across threads
+  ([#1971](https://github.com/n24q02m/wet/pull/1971),
+  [`7b864ce`](https://github.com/n24q02m/wet/commit/7b864ce61d6aa5666159fab88beb00195900b1aa))
+
+- Serialize the shared DocsDB connection and close every write transaction under its lock
+  ([#1971](https://github.com/n24q02m/wet/pull/1971),
+  [`7b864ce`](https://github.com/n24q02m/wet/commit/7b864ce61d6aa5666159fab88beb00195900b1aa))
+
+- **deps**: Lock file maintenance ([#1970](https://github.com/n24q02m/wet/pull/1970),
+  [`b6d7bef`](https://github.com/n24q02m/wet/commit/b6d7bef76f57845e3b72baecd0ef5040a0eb415f))
+
+- **deps**: Lock file maintenance ([#1968](https://github.com/n24q02m/wet/pull/1968),
+  [`45baa6e`](https://github.com/n24q02m/wet/commit/45baa6e6a7a052f1afda446c33f3d663c2efaf46))
+
+
 ## v3.22.0-beta.5 (2026-11-16)
 
 ### Bug Fixes
