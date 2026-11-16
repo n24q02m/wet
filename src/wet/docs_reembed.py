@@ -86,15 +86,16 @@ def _vec_ids(read_conn: sqlite3.Connection) -> set[str]:
 
 def _stamp_identity(db, dims: int, identity: str) -> None:
     """Write the embedding identity the guard expects on the next open."""
-    db._conn.execute(
-        "INSERT OR REPLACE INTO store_meta (key, value) VALUES (?, ?)",
-        ("embedding_dims", str(int(dims))),
-    )
-    db._conn.execute(
-        "INSERT OR REPLACE INTO store_meta (key, value) VALUES (?, ?)",
-        ("embedding_model", identity),
-    )
-    db._conn.commit()
+    with db.connection() as conn:
+        conn.execute(
+            "INSERT OR REPLACE INTO store_meta (key, value) VALUES (?, ?)",
+            ("embedding_dims", str(int(dims))),
+        )
+        conn.execute(
+            "INSERT OR REPLACE INTO store_meta (key, value) VALUES (?, ?)",
+            ("embedding_model", identity),
+        )
+        conn.commit()
 
 
 async def reembed(
@@ -159,13 +160,14 @@ async def reembed(
 
     db = _open_docs_db(target, dims)
     try:
-        has_vec_table = (
-            db._conn.execute(
-                "SELECT 1 FROM sqlite_master WHERE type='table' "
-                "AND name='doc_chunks_vec'"
-            ).fetchone()
-            is not None
-        )
+        with db.connection() as conn:
+            has_vec_table = (
+                conn.execute(
+                    "SELECT 1 FROM sqlite_master WHERE type='table' "
+                    "AND name='doc_chunks_vec'"
+                ).fetchone()
+                is not None
+            )
         if not has_vec_table:
             return {
                 "status": "error",
@@ -254,8 +256,10 @@ async def reembed(
                         )
                         failed_ids.append(chunk_id)
             # Same internals the indexer uses; rolls back + raises on failure.
-            db._add_chunk_vectors([cid for cid, _ in pairs], [v for _, v in pairs])
-            db._conn.commit()
+            # The insert and its commit are one lock hold, like add_chunks.
+            with db.connection() as conn:
+                db._add_chunk_vectors([cid for cid, _ in pairs], [v for _, v in pairs])
+                conn.commit()
             embedded += len(pairs)
             if (start // batch_size + 1) % _PROGRESS_EVERY == 0:
                 logger.info(
@@ -288,7 +292,7 @@ async def reembed(
             **base,
         }
     finally:
-        db._conn.close()
+        db.close()
 
 
 def main() -> int:  # pragma: no cover - manual repair entry

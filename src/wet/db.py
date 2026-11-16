@@ -14,8 +14,11 @@ import sqlite3
 import struct
 import time
 import uuid
+from collections.abc import Generator
+from contextlib import contextmanager
 from functools import lru_cache
 from pathlib import Path
+from threading import RLock
 
 from loguru import logger
 
@@ -261,59 +264,67 @@ class DocsDB:
         self._reindex_on_model_change = reindex_on_model_change
         self._vec_enabled = False
         self._seed_stamp_migration_pending = False
+        # One connection is shared by asyncio worker threads and the event
+        # loop thread. sqlite3 leaves serializing a shared connection to the
+        # caller (busy_timeout only arbitrates between separate connections),
+        # so every use of it, statements and transaction close together, runs
+        # under this lock. Re-entrant because methods here call each other.
+        self._lock = RLock()
 
         db_path.parent.mkdir(parents=True, exist_ok=True)
-        # check_same_thread=False allows the connection to be used from
-        # asyncio.to_thread workers (PRAGMA busy_timeout below serializes
-        # concurrent writes safely; SQLite WAL is multi-reader-safe).
-        self._conn = sqlite3.connect(str(db_path), check_same_thread=False)
-        self._conn.row_factory = sqlite3.Row
-        self._conn.execute("PRAGMA journal_mode = WAL")
-        self._conn.execute("PRAGMA synchronous = NORMAL")
-        self._conn.execute("PRAGMA busy_timeout = 5000")
-        self._conn.execute("PRAGMA mmap_size = 268435456")  # 256MB mmap
-        self._conn.execute("PRAGMA temp_store = MEMORY")
-        self._conn.execute("PRAGMA cache_size = -64000")  # 64MB cache (KB)
+        with self._lock:
+            # check_same_thread=False lets asyncio.to_thread workers use the
+            # connection; self._lock serializes them (WAL keeps readers on
+            # other connections unblocked).
+            self._conn = sqlite3.connect(str(db_path), check_same_thread=False)
+            self._conn.row_factory = sqlite3.Row
+            self._conn.execute("PRAGMA journal_mode = WAL")
+            self._conn.execute("PRAGMA synchronous = NORMAL")
+            self._conn.execute("PRAGMA busy_timeout = 5000")
+            self._conn.execute("PRAGMA mmap_size = 268435456")  # 256MB mmap
+            self._conn.execute("PRAGMA temp_store = MEMORY")
+            self._conn.execute("PRAGMA cache_size = -64000")  # 64MB cache (KB)
 
-        # Try loading sqlite-vec extension
-        if embedding_dims > 0:
-            try:
-                import sqlite_vec
+            # Try loading sqlite-vec extension
+            if embedding_dims > 0:
+                try:
+                    import sqlite_vec
 
-                self._conn.enable_load_extension(True)
-                sqlite_vec.load(self._conn)
-                self._conn.enable_load_extension(False)
-                self._vec_enabled = True
-                logger.debug("sqlite-vec extension loaded")
-            except Exception as e:
-                # sqlite-vec is a hard dependency, and the caller asked for
-                # embedding_dims > 0. Falling back to FTS-only is a whole
-                # capability going away for the life of the process, so it is
-                # not a debug-level event.
-                logger.warning(
-                    f"sqlite-vec unavailable for {db_path} "
-                    f"({type(e).__name__}: {e}); running FTS-only -- vector "
-                    "search is disabled and docs queries answer with keyword "
-                    "matching alone"
-                )
+                    self._conn.enable_load_extension(True)
+                    sqlite_vec.load(self._conn)
+                    self._conn.enable_load_extension(False)
+                    self._vec_enabled = True
+                    logger.debug("sqlite-vec extension loaded")
+                except Exception as e:
+                    # sqlite-vec is a hard dependency, and the caller asked for
+                    # embedding_dims > 0. Falling back to FTS-only is a whole
+                    # capability going away for the life of the process, so it
+                    # is not a debug-level event.
+                    logger.warning(
+                        f"sqlite-vec unavailable for {db_path} "
+                        f"({type(e).__name__}: {e}); running FTS-only -- vector "
+                        "search is disabled and docs queries answer with keyword "
+                        "matching alone"
+                    )
 
         self._create_tables()
         self._guard_embedding_identity()
         logger.debug(f"DocsDB initialized at {db_path} (vec={self._vec_enabled})")
 
     def _create_tables(self) -> None:
-        self._create_libraries_table()
-        self._create_versions_table()
-        self._create_doc_chunks_table()
-        self._create_fts_table()
-        self._create_vector_table()
-        self._create_project_context_table()
-        self._create_store_meta_table()
-        if self._seed_stamp_migration_pending:
-            # Deferred until the versions table exists — the relabel needs it.
-            self._migrate_seed_stamps_off_last_indexed_at()
-            self._seed_stamp_migration_pending = False
-        self._conn.commit()
+        with self._lock:
+            self._create_libraries_table()
+            self._create_versions_table()
+            self._create_doc_chunks_table()
+            self._create_fts_table()
+            self._create_vector_table()
+            self._create_project_context_table()
+            self._create_store_meta_table()
+            if self._seed_stamp_migration_pending:
+                # Deferred until the versions table exists — the relabel needs it.
+                self._migrate_seed_stamps_off_last_indexed_at()
+                self._seed_stamp_migration_pending = False
+            self._conn.commit()
 
     def _migrate_seed_stamps_off_last_indexed_at(self) -> None:
         """Move seed-only ``last_indexed_at`` stamps into ``metadata_seeded_at``.
@@ -326,17 +337,18 @@ class DocsDB:
         ``docs_005_metadata_seeded_at`` Alembic migration for DBs that reach
         ``DocsDB`` first.
         """
-        cur = self._conn.execute("""
-            UPDATE libraries
-               SET metadata_seeded_at = COALESCE(metadata_seeded_at, last_indexed_at),
-                   last_indexed_at = NULL
-             WHERE last_indexed_at IS NOT NULL
-               AND NOT EXISTS (
-                   SELECT 1 FROM versions v
-                    WHERE v.library_id = libraries.id AND v.status = 'indexed'
-               )
-        """)
-        self._conn.commit()
+        with self._lock:
+            cur = self._conn.execute("""
+                UPDATE libraries
+                   SET metadata_seeded_at = COALESCE(metadata_seeded_at, last_indexed_at),
+                       last_indexed_at = NULL
+                 WHERE last_indexed_at IS NOT NULL
+                   AND NOT EXISTS (
+                       SELECT 1 FROM versions v
+                        WHERE v.library_id = libraries.id AND v.status = 'indexed'
+                   )
+            """)
+            self._conn.commit()
         if cur.rowcount:
             logger.info(
                 f"Relabelled {cur.rowcount} metadata-only library seeds "
@@ -346,12 +358,13 @@ class DocsDB:
     def _create_store_meta_table(self) -> None:
         # Key/value metadata for store-level invariants (B2: embedding-model
         # identity guard). Stamped on first init; compared on every open.
-        self._conn.execute("""
-            CREATE TABLE IF NOT EXISTS store_meta (
-                key TEXT PRIMARY KEY,
-                value TEXT
-            )
-        """)
+        with self._lock:
+            self._conn.execute("""
+                CREATE TABLE IF NOT EXISTS store_meta (
+                    key TEXT PRIMARY KEY,
+                    value TEXT
+                )
+            """)
 
     def _guard_embedding_identity(self) -> None:
         """Guard the vector store against silent embedding-model swaps.
@@ -370,13 +383,14 @@ class DocsDB:
         most dangerous case — incompatible vector spaces); ``embedding_model``
         is also compared when an identity string is available.
         """
-        stored = {
-            r["key"]: r["value"]
-            for r in self._conn.execute(
-                "SELECT key, value FROM store_meta "
-                "WHERE key IN ('embedding_model', 'embedding_dims')"
-            ).fetchall()
-        }
+        with self._lock:
+            stored = {
+                r["key"]: r["value"]
+                for r in self._conn.execute(
+                    "SELECT key, value FROM store_meta "
+                    "WHERE key IN ('embedding_model', 'embedding_dims')"
+                ).fetchall()
+            }
 
         current_dims = str(int(self._embedding_dims))
         # Fresh store: stamp identity and proceed.
@@ -425,16 +439,17 @@ class DocsDB:
 
     def _stamp_embedding_identity(self) -> None:
         """Record the active embedding identity in store_meta."""
-        self._conn.execute(
-            "INSERT OR REPLACE INTO store_meta (key, value) VALUES (?, ?)",
-            ("embedding_dims", str(int(self._embedding_dims))),
-        )
-        if self._model_identity:
+        with self._lock:
             self._conn.execute(
                 "INSERT OR REPLACE INTO store_meta (key, value) VALUES (?, ?)",
-                ("embedding_model", self._model_identity),
+                ("embedding_dims", str(int(self._embedding_dims))),
             )
-        self._conn.commit()
+            if self._model_identity:
+                self._conn.execute(
+                    "INSERT OR REPLACE INTO store_meta (key, value) VALUES (?, ?)",
+                    ("embedding_model", self._model_identity),
+                )
+            self._conn.commit()
 
     def _reindex_vector_store(self) -> None:
         """Drop the vector table + clear stored vectors (opt-in reindex path).
@@ -442,15 +457,16 @@ class DocsDB:
         Does NOT re-run embeddings inline; the existing docs-embed pipeline
         rebuilds on the next pass.
         """
-        try:
-            self._conn.execute("DROP TABLE IF EXISTS doc_chunks_vec")
+        with self._lock:
+            try:
+                self._conn.execute("DROP TABLE IF EXISTS doc_chunks_vec")
+                self._conn.commit()
+            except Exception as e:  # pragma: no cover - defensive
+                logger.warning(f"Failed to drop vector table during reindex: {e}")
+            # Recreate the empty vector table at the current dims so the embed
+            # pipeline has a target to write into.
+            self._create_vector_table()
             self._conn.commit()
-        except Exception as e:  # pragma: no cover - defensive
-            logger.warning(f"Failed to drop vector table during reindex: {e}")
-        # Recreate the empty vector table at the current dims so the embed
-        # pipeline has a target to write into.
-        self._create_vector_table()
-        self._conn.commit()
 
     def _create_project_context_table(self) -> None:
         # Phase 2 (spec section 5.4) — Cabinets project isolation.
@@ -459,253 +475,262 @@ class DocsDB:
         # the same project. Legacy DBs keep the old project_path PRIMARY KEY
         # shape; the guarded ALTER appends ``sub`` (all legacy rows become
         # 'default') and the unique index below preserves the logical key.
-        self._conn.execute("""
-            CREATE TABLE IF NOT EXISTS project_context (
-                project_path TEXT NOT NULL,
-                sub TEXT NOT NULL DEFAULT 'default',
-                locked_libraries TEXT NOT NULL,
-                created_at REAL NOT NULL,
-                last_used_at REAL NOT NULL
-            )
-        """)
-        try:
-            self._conn.execute(
-                "ALTER TABLE project_context "
-                "ADD COLUMN sub TEXT NOT NULL DEFAULT 'default'"
-            )
+        with self._lock:
+            self._conn.execute("""
+                CREATE TABLE IF NOT EXISTS project_context (
+                    project_path TEXT NOT NULL,
+                    sub TEXT NOT NULL DEFAULT 'default',
+                    locked_libraries TEXT NOT NULL,
+                    created_at REAL NOT NULL,
+                    last_used_at REAL NOT NULL
+                )
+            """)
+            try:
+                self._conn.execute(
+                    "ALTER TABLE project_context "
+                    "ADD COLUMN sub TEXT NOT NULL DEFAULT 'default'"
+                )
+                self._conn.commit()
+                logger.debug("Migrated project_context table: added sub")
+            except sqlite3.OperationalError:
+                pass  # Column already exists
+            self._conn.execute("""
+                CREATE UNIQUE INDEX IF NOT EXISTS idx_project_context_sub_path
+                ON project_context(sub, project_path)
+            """)
+            self._conn.execute("""
+                CREATE INDEX IF NOT EXISTS idx_project_context_last_used
+                ON project_context(last_used_at)
+            """)
             self._conn.commit()
-            logger.debug("Migrated project_context table: added sub")
-        except sqlite3.OperationalError:
-            pass  # Column already exists
-        self._conn.execute("""
-            CREATE UNIQUE INDEX IF NOT EXISTS idx_project_context_sub_path
-            ON project_context(sub, project_path)
-        """)
-        self._conn.execute("""
-            CREATE INDEX IF NOT EXISTS idx_project_context_last_used
-            ON project_context(last_used_at)
-        """)
-        self._conn.commit()
 
     def _create_libraries_table(self) -> None:
         # Libraries metadata (Phase 2 schema; pre-Alembic legacy databases
         # are upgraded to this shape by alembic/versions/docs_002_libraries.py).
-        self._conn.execute("""
-            CREATE TABLE IF NOT EXISTS libraries (
-                id TEXT PRIMARY KEY,
-                name TEXT NOT NULL,
-                docs_url TEXT,
-                registry TEXT,
-                description TEXT,
-                canonical_name TEXT,
-                homepage TEXT,
-                github_url TEXT,
-                package_managers TEXT,
-                tier INTEGER NOT NULL DEFAULT 2,
-                last_indexed_at REAL,
-                metadata_seeded_at REAL,
-                total_versions INTEGER NOT NULL DEFAULT 0,
-                discovery_version INTEGER DEFAULT 0,
-                created_at REAL NOT NULL,
-                updated_at REAL NOT NULL
-            )
-        """)
-        self._conn.execute("""
-            CREATE INDEX IF NOT EXISTS idx_libraries_name
-            ON libraries(name)
-        """)
+        with self._lock:
+            self._conn.execute("""
+                CREATE TABLE IF NOT EXISTS libraries (
+                    id TEXT PRIMARY KEY,
+                    name TEXT NOT NULL,
+                    docs_url TEXT,
+                    registry TEXT,
+                    description TEXT,
+                    canonical_name TEXT,
+                    homepage TEXT,
+                    github_url TEXT,
+                    package_managers TEXT,
+                    tier INTEGER NOT NULL DEFAULT 2,
+                    last_indexed_at REAL,
+                    metadata_seeded_at REAL,
+                    total_versions INTEGER NOT NULL DEFAULT 0,
+                    discovery_version INTEGER DEFAULT 0,
+                    created_at REAL NOT NULL,
+                    updated_at REAL NOT NULL
+                )
+            """)
+            self._conn.execute("""
+                CREATE INDEX IF NOT EXISTS idx_libraries_name
+                ON libraries(name)
+            """)
 
-        # Idempotent column adds for legacy DBs that pre-date Alembic.
-        # Each ALTER is wrapped in a try/except so re-running on a fresh
-        # head-shape table does not raise.
-        for sql, col_name in (
-            (
-                "ALTER TABLE libraries ADD COLUMN discovery_version INTEGER DEFAULT 0",
-                "discovery_version",
-            ),
-            ("ALTER TABLE libraries ADD COLUMN canonical_name TEXT", "canonical_name"),
-            ("ALTER TABLE libraries ADD COLUMN homepage TEXT", "homepage"),
-            ("ALTER TABLE libraries ADD COLUMN github_url TEXT", "github_url"),
-            (
-                "ALTER TABLE libraries ADD COLUMN package_managers TEXT",
-                "package_managers",
-            ),
-            (
-                "ALTER TABLE libraries ADD COLUMN tier INTEGER NOT NULL DEFAULT 2",
-                "tier",
-            ),
-            (
-                "ALTER TABLE libraries ADD COLUMN last_indexed_at REAL",
-                "last_indexed_at",
-            ),
-            (
-                "ALTER TABLE libraries ADD COLUMN total_versions INTEGER NOT NULL DEFAULT 0",
-                "total_versions",
-            ),
-            (
-                "ALTER TABLE libraries ADD COLUMN metadata_seeded_at REAL",
-                "metadata_seeded_at",
-            ),
-        ):
-            try:
-                self._conn.execute(sql)
-                self._conn.commit()
-                logger.debug(f"Migrated libraries table: added {col_name}")
-                if col_name == "metadata_seeded_at":
-                    # The column is new here, so this DB was written by a
-                    # build where upsert_library stamped last_indexed_at for
-                    # metadata-only seeds. Relabel those stamps once.
-                    self._seed_stamp_migration_pending = True
-            except sqlite3.OperationalError:
-                pass  # Column already exists
+            # Idempotent column adds for legacy DBs that pre-date Alembic.
+            # Each ALTER is wrapped in a try/except so re-running on a fresh
+            # head-shape table does not raise.
+            for sql, col_name in (
+                (
+                    "ALTER TABLE libraries ADD COLUMN discovery_version INTEGER DEFAULT 0",
+                    "discovery_version",
+                ),
+                (
+                    "ALTER TABLE libraries ADD COLUMN canonical_name TEXT",
+                    "canonical_name",
+                ),
+                ("ALTER TABLE libraries ADD COLUMN homepage TEXT", "homepage"),
+                ("ALTER TABLE libraries ADD COLUMN github_url TEXT", "github_url"),
+                (
+                    "ALTER TABLE libraries ADD COLUMN package_managers TEXT",
+                    "package_managers",
+                ),
+                (
+                    "ALTER TABLE libraries ADD COLUMN tier INTEGER NOT NULL DEFAULT 2",
+                    "tier",
+                ),
+                (
+                    "ALTER TABLE libraries ADD COLUMN last_indexed_at REAL",
+                    "last_indexed_at",
+                ),
+                (
+                    "ALTER TABLE libraries ADD COLUMN total_versions INTEGER NOT NULL DEFAULT 0",
+                    "total_versions",
+                ),
+                (
+                    "ALTER TABLE libraries ADD COLUMN metadata_seeded_at REAL",
+                    "metadata_seeded_at",
+                ),
+            ):
+                try:
+                    self._conn.execute(sql)
+                    self._conn.commit()
+                    logger.debug(f"Migrated libraries table: added {col_name}")
+                    if col_name == "metadata_seeded_at":
+                        # The column is new here, so this DB was written by a
+                        # build where upsert_library stamped last_indexed_at for
+                        # metadata-only seeds. Relabel those stamps once.
+                        self._seed_stamp_migration_pending = True
+                except sqlite3.OperationalError:
+                    pass  # Column already exists
 
     def _create_versions_table(self) -> None:
         # Versions (Phase 2 schema with release_date + source_url).
-        self._conn.execute("""
-            CREATE TABLE IF NOT EXISTS versions (
-                id TEXT PRIMARY KEY,
-                library_id TEXT NOT NULL,
-                version TEXT NOT NULL DEFAULT 'latest',
-                docs_url TEXT,
-                indexed_at REAL,
-                page_count INTEGER DEFAULT 0,
-                chunk_count INTEGER DEFAULT 0,
-                status TEXT DEFAULT 'pending',
-                release_date REAL,
-                source_url TEXT,
-                index_state TEXT,
-                index_error TEXT,
-                index_state_at REAL,
-                FOREIGN KEY (library_id) REFERENCES libraries(id) ON DELETE CASCADE,
-                UNIQUE(library_id, version)
-            )
-        """)
-        # Idempotent column adds for legacy DBs.
-        for sql in (
-            "ALTER TABLE versions ADD COLUMN release_date REAL",
-            "ALTER TABLE versions ADD COLUMN source_url TEXT",
-            "ALTER TABLE versions ADD COLUMN index_state TEXT",
-            "ALTER TABLE versions ADD COLUMN index_error TEXT",
-            "ALTER TABLE versions ADD COLUMN index_state_at REAL",
-        ):
-            try:
-                self._conn.execute(sql)
-                self._conn.commit()
-            except sqlite3.OperationalError:
-                pass
+        with self._lock:
+            self._conn.execute("""
+                CREATE TABLE IF NOT EXISTS versions (
+                    id TEXT PRIMARY KEY,
+                    library_id TEXT NOT NULL,
+                    version TEXT NOT NULL DEFAULT 'latest',
+                    docs_url TEXT,
+                    indexed_at REAL,
+                    page_count INTEGER DEFAULT 0,
+                    chunk_count INTEGER DEFAULT 0,
+                    status TEXT DEFAULT 'pending',
+                    release_date REAL,
+                    source_url TEXT,
+                    index_state TEXT,
+                    index_error TEXT,
+                    index_state_at REAL,
+                    FOREIGN KEY (library_id) REFERENCES libraries(id) ON DELETE CASCADE,
+                    UNIQUE(library_id, version)
+                )
+            """)
+            # Idempotent column adds for legacy DBs.
+            for sql in (
+                "ALTER TABLE versions ADD COLUMN release_date REAL",
+                "ALTER TABLE versions ADD COLUMN source_url TEXT",
+                "ALTER TABLE versions ADD COLUMN index_state TEXT",
+                "ALTER TABLE versions ADD COLUMN index_error TEXT",
+                "ALTER TABLE versions ADD COLUMN index_state_at REAL",
+            ):
+                try:
+                    self._conn.execute(sql)
+                    self._conn.commit()
+                except sqlite3.OperationalError:
+                    pass
 
     def _create_doc_chunks_table(self) -> None:
         # Document chunks (Phase 2 schema with section/topic/content_hash/token_count).
-        self._conn.execute("""
-            CREATE TABLE IF NOT EXISTS doc_chunks (
-                id TEXT PRIMARY KEY,
-                version_id TEXT NOT NULL,
-                library_id TEXT NOT NULL,
-                url TEXT,
-                title TEXT,
-                chunk_index INTEGER NOT NULL DEFAULT 0,
-                content TEXT NOT NULL,
-                heading_path TEXT,
-                section TEXT,
-                topic TEXT,
-                content_hash TEXT,
-                token_count INTEGER,
-                created_at REAL NOT NULL,
-                FOREIGN KEY (version_id) REFERENCES versions(id) ON DELETE CASCADE,
-                FOREIGN KEY (library_id) REFERENCES libraries(id) ON DELETE CASCADE
-            )
-        """)
-        # Idempotent column adds for legacy DBs.
-        for sql in (
-            "ALTER TABLE doc_chunks ADD COLUMN section TEXT",
-            "ALTER TABLE doc_chunks ADD COLUMN topic TEXT",
-            "ALTER TABLE doc_chunks ADD COLUMN content_hash TEXT",
-            "ALTER TABLE doc_chunks ADD COLUMN token_count INTEGER",
-        ):
-            try:
-                self._conn.execute(sql)
-                self._conn.commit()
-            except sqlite3.OperationalError:
-                pass
-        self._conn.execute("""
-            CREATE INDEX IF NOT EXISTS idx_chunks_version
-            ON doc_chunks(version_id)
-        """)
-        # Covers the adjacent-chunk prefetch exactly, in its column order:
-        # WHERE version_id = ? AND url = ? AND chunk_index IN (...)
-        self._conn.execute("""
-            CREATE INDEX IF NOT EXISTS idx_chunks_ver_url_idx
-            ON doc_chunks(version_id, url, chunk_index)
-        """)
-        self._conn.execute("""
-            CREATE INDEX IF NOT EXISTS idx_chunks_library
-            ON doc_chunks(library_id)
-        """)
-        self._conn.execute("""
-            CREATE INDEX IF NOT EXISTS idx_chunks_url_order
-            ON doc_chunks(url, version_id, chunk_index)
-        """)
-        # Phase 2: composite index for topic-filtered queries.
-        self._conn.execute("""
-            CREATE INDEX IF NOT EXISTS idx_doc_chunks_lib_ver_topic
-            ON doc_chunks(library_id, version_id, topic)
-        """)
+        with self._lock:
+            self._conn.execute("""
+                CREATE TABLE IF NOT EXISTS doc_chunks (
+                    id TEXT PRIMARY KEY,
+                    version_id TEXT NOT NULL,
+                    library_id TEXT NOT NULL,
+                    url TEXT,
+                    title TEXT,
+                    chunk_index INTEGER NOT NULL DEFAULT 0,
+                    content TEXT NOT NULL,
+                    heading_path TEXT,
+                    section TEXT,
+                    topic TEXT,
+                    content_hash TEXT,
+                    token_count INTEGER,
+                    created_at REAL NOT NULL,
+                    FOREIGN KEY (version_id) REFERENCES versions(id) ON DELETE CASCADE,
+                    FOREIGN KEY (library_id) REFERENCES libraries(id) ON DELETE CASCADE
+                )
+            """)
+            # Idempotent column adds for legacy DBs.
+            for sql in (
+                "ALTER TABLE doc_chunks ADD COLUMN section TEXT",
+                "ALTER TABLE doc_chunks ADD COLUMN topic TEXT",
+                "ALTER TABLE doc_chunks ADD COLUMN content_hash TEXT",
+                "ALTER TABLE doc_chunks ADD COLUMN token_count INTEGER",
+            ):
+                try:
+                    self._conn.execute(sql)
+                    self._conn.commit()
+                except sqlite3.OperationalError:
+                    pass
+            self._conn.execute("""
+                CREATE INDEX IF NOT EXISTS idx_chunks_version
+                ON doc_chunks(version_id)
+            """)
+            # Covers the adjacent-chunk prefetch exactly, in its column order:
+            # WHERE version_id = ? AND url = ? AND chunk_index IN (...)
+            self._conn.execute("""
+                CREATE INDEX IF NOT EXISTS idx_chunks_ver_url_idx
+                ON doc_chunks(version_id, url, chunk_index)
+            """)
+            self._conn.execute("""
+                CREATE INDEX IF NOT EXISTS idx_chunks_library
+                ON doc_chunks(library_id)
+            """)
+            self._conn.execute("""
+                CREATE INDEX IF NOT EXISTS idx_chunks_url_order
+                ON doc_chunks(url, version_id, chunk_index)
+            """)
+            # Phase 2: composite index for topic-filtered queries.
+            self._conn.execute("""
+                CREATE INDEX IF NOT EXISTS idx_doc_chunks_lib_ver_topic
+                ON doc_chunks(library_id, version_id, topic)
+            """)
 
     def _create_fts_table(self) -> None:
-        # FTS5 (content-sync mode)
-        self._conn.execute("""
-            CREATE VIRTUAL TABLE IF NOT EXISTS doc_chunks_fts
-            USING fts5(
-                id UNINDEXED,
-                content,
-                title,
-                heading_path,
-                content=doc_chunks,
-                content_rowid=rowid,
-                tokenize='porter unicode61'
-            )
-        """)
+        with self._lock:
+            # FTS5 (content-sync mode)
+            self._conn.execute("""
+                CREATE VIRTUAL TABLE IF NOT EXISTS doc_chunks_fts
+                USING fts5(
+                    id UNINDEXED,
+                    content,
+                    title,
+                    heading_path,
+                    content=doc_chunks,
+                    content_rowid=rowid,
+                    tokenize='porter unicode61'
+                )
+            """)
 
-        # FTS5 sync triggers
-        self._conn.execute("""
-            CREATE TRIGGER IF NOT EXISTS chunks_ai AFTER INSERT ON doc_chunks BEGIN
-                INSERT INTO doc_chunks_fts(rowid, id, content, title, heading_path)
-                VALUES (new.rowid, new.id, new.content, new.title, new.heading_path);
-            END
-        """)
-        self._conn.execute("""
-            CREATE TRIGGER IF NOT EXISTS chunks_ad AFTER DELETE ON doc_chunks BEGIN
-                INSERT INTO doc_chunks_fts(doc_chunks_fts, rowid, id, content, title, heading_path)
-                VALUES ('delete', old.rowid, old.id, old.content, old.title, old.heading_path);
-            END
-        """)
-        self._conn.execute("""
-            CREATE TRIGGER IF NOT EXISTS chunks_au AFTER UPDATE ON doc_chunks BEGIN
-                INSERT INTO doc_chunks_fts(doc_chunks_fts, rowid, id, content, title, heading_path)
-                VALUES ('delete', old.rowid, old.id, old.content, old.title, old.heading_path);
-                INSERT INTO doc_chunks_fts(rowid, id, content, title, heading_path)
-                VALUES (new.rowid, new.id, new.content, new.title, new.heading_path);
-            END
-        """)
+            # FTS5 sync triggers
+            self._conn.execute("""
+                CREATE TRIGGER IF NOT EXISTS chunks_ai AFTER INSERT ON doc_chunks BEGIN
+                    INSERT INTO doc_chunks_fts(rowid, id, content, title, heading_path)
+                    VALUES (new.rowid, new.id, new.content, new.title, new.heading_path);
+                END
+            """)
+            self._conn.execute("""
+                CREATE TRIGGER IF NOT EXISTS chunks_ad AFTER DELETE ON doc_chunks BEGIN
+                    INSERT INTO doc_chunks_fts(doc_chunks_fts, rowid, id, content, title, heading_path)
+                    VALUES ('delete', old.rowid, old.id, old.content, old.title, old.heading_path);
+                END
+            """)
+            self._conn.execute("""
+                CREATE TRIGGER IF NOT EXISTS chunks_au AFTER UPDATE ON doc_chunks BEGIN
+                    INSERT INTO doc_chunks_fts(doc_chunks_fts, rowid, id, content, title, heading_path)
+                    VALUES ('delete', old.rowid, old.id, old.content, old.title, old.heading_path);
+                    INSERT INTO doc_chunks_fts(rowid, id, content, title, heading_path)
+                    VALUES (new.rowid, new.id, new.content, new.title, new.heading_path);
+                END
+            """)
 
     def _create_vector_table(self) -> None:
         # Vector table (optional)
         if self._vec_enabled and self._embedding_dims > 0:
-            row = self._conn.execute(
-                "SELECT name FROM sqlite_master WHERE type='table' AND name='doc_chunks_vec'"
-            ).fetchone()
-            if not row:
-                # Security: Dimensions are validated as 0-65536 integer in __init__.
-                # Schema construction (CREATE VIRTUAL TABLE) does not support parameters.
-                dims_str = str(int(self._embedding_dims))
-                sql = (
-                    "CREATE VIRTUAL TABLE doc_chunks_vec USING vec0("
-                    "id TEXT PRIMARY KEY, "
-                    "embedding float[" + dims_str + "]"
-                    ")"
-                )
-                # nosemgrep: python.lang.security.audit.formatted-sql-query.formatted-sql-query, python.sqlalchemy.security.sqlalchemy-execute-raw-query.sqlalchemy-execute-raw-query
-                self._conn.execute(sql)
+            with self._lock:
+                row = self._conn.execute(
+                    "SELECT name FROM sqlite_master WHERE type='table' AND name='doc_chunks_vec'"
+                ).fetchone()
+                if not row:
+                    # Security: Dimensions are validated as 0-65536 integer in __init__.
+                    # Schema construction (CREATE VIRTUAL TABLE) does not support parameters.
+                    dims_str = str(int(self._embedding_dims))
+                    sql = (
+                        "CREATE VIRTUAL TABLE doc_chunks_vec USING vec0("
+                        "id TEXT PRIMARY KEY, "
+                        "embedding float[" + dims_str + "]"
+                        ")"
+                    )
+                    # nosemgrep: python.lang.security.audit.formatted-sql-query.formatted-sql-query, python.sqlalchemy.security.sqlalchemy-execute-raw-query.sqlalchemy-execute-raw-query
+                    self._conn.execute(sql)
 
     # -----------------------------------------------------------------------
     # Stats
@@ -713,10 +738,13 @@ class DocsDB:
 
     def stats(self) -> dict:
         """Return database statistics."""
-        lib_count = self._conn.execute("SELECT COUNT(*) FROM libraries").fetchone()[0]
-        chunk_count = self._conn.execute("SELECT COUNT(*) FROM doc_chunks").fetchone()[
-            0
-        ]
+        with self._lock:
+            lib_count = self._conn.execute("SELECT COUNT(*) FROM libraries").fetchone()[
+                0
+            ]
+            chunk_count = self._conn.execute(
+                "SELECT COUNT(*) FROM doc_chunks"
+            ).fetchone()[0]
         return {
             "libraries": lib_count,
             "chunks": chunk_count,
@@ -725,12 +753,13 @@ class DocsDB:
 
     def _get_table_columns(self, table_name: str) -> set[str]:
         """Retrieve the set of column names for a given table."""
-        return {
-            r[0]
-            for r in self._conn.execute(
-                "SELECT name FROM pragma_table_info(?)", (table_name,)
-            ).fetchall()
-        }
+        with self._lock:
+            return {
+                r[0]
+                for r in self._conn.execute(
+                    "SELECT name FROM pragma_table_info(?)", (table_name,)
+                ).fetchall()
+            }
 
     def _update_library_inner(
         self,
@@ -786,12 +815,12 @@ class DocsDB:
                 if col not in _LIBRARIES_COLUMNS:
                     raise ValueError(f"Unauthorized column update: {col}")
 
-            # nosemgrep: python.sqlalchemy.security.sqlalchemy-execute-raw-query.sqlalchemy-execute-raw-query
-            self._conn.execute(
-                "UPDATE libraries SET " + ", ".join(updates) + " WHERE id = ?",
-                params,
-            )
-            self._conn.commit()
+            with self._lock, self._conn:
+                # nosemgrep: python.sqlalchemy.security.sqlalchemy-execute-raw-query.sqlalchemy-execute-raw-query
+                self._conn.execute(
+                    "UPDATE libraries SET " + ", ".join(updates) + " WHERE id = ?",
+                    params,
+                )
 
     def _insert_library_inner(
         self,
@@ -844,13 +873,13 @@ class DocsDB:
             if c not in _LIBRARIES_COLUMNS:
                 raise ValueError(f"Unauthorized library column: {c}")
 
-        # nosemgrep: python.sqlalchemy.security.sqlalchemy-execute-raw-query.sqlalchemy-execute-raw-query
-        self._conn.execute(
-            f"INSERT INTO libraries ({', '.join(cols)}) "
-            f"VALUES ({', '.join('?' * len(cols))})",
-            vals,
-        )
-        self._conn.commit()
+        with self._lock, self._conn:
+            # nosemgrep: python.sqlalchemy.security.sqlalchemy-execute-raw-query.sqlalchemy-execute-raw-query
+            self._conn.execute(
+                f"INSERT INTO libraries ({', '.join(cols)}) "
+                f"VALUES ({', '.join('?' * len(cols))})",
+                vals,
+            )
 
     def upsert_library(
         self,
@@ -881,21 +910,41 @@ class DocsDB:
         """
         now = _now_ts()
         norm_name = name.lower().strip()
-        existing_cols = self._get_table_columns("libraries")
         pkg_json = (
             json.dumps(package_managers, ensure_ascii=False)
             if package_managers is not None
             else None
         )
 
-        row = self._conn.execute(
-            "SELECT id FROM libraries WHERE name = ?", (norm_name,)
-        ).fetchone()
+        # The lookup and the write are one serialized step, so two concurrent
+        # upserts of one name cannot both miss the row and insert it twice.
+        with self._lock:
+            existing_cols = self._get_table_columns("libraries")
+            row = self._conn.execute(
+                "SELECT id FROM libraries WHERE name = ?", (norm_name,)
+            ).fetchone()
 
-        if row:
-            lib_id = row["id"]
-            self._update_library_inner(
+            if row:
+                lib_id = row["id"]
+                self._update_library_inner(
+                    lib_id=lib_id,
+                    now=now,
+                    existing_cols=existing_cols,
+                    docs_url=docs_url,
+                    registry=registry,
+                    description=description,
+                    canonical_name=canonical_name,
+                    homepage=homepage,
+                    github_url=github_url,
+                    pkg_json=pkg_json,
+                    tier=tier,
+                )
+                return lib_id
+
+            lib_id = uuid.uuid4().hex[:12]
+            self._insert_library_inner(
                 lib_id=lib_id,
+                norm_name=norm_name,
                 now=now,
                 existing_cols=existing_cols,
                 docs_url=docs_url,
@@ -907,23 +956,6 @@ class DocsDB:
                 pkg_json=pkg_json,
                 tier=tier,
             )
-            return lib_id
-
-        lib_id = uuid.uuid4().hex[:12]
-        self._insert_library_inner(
-            lib_id=lib_id,
-            norm_name=norm_name,
-            now=now,
-            existing_cols=existing_cols,
-            docs_url=docs_url,
-            registry=registry,
-            description=description,
-            canonical_name=canonical_name,
-            homepage=homepage,
-            github_url=github_url,
-            pkg_json=pkg_json,
-            tier=tier,
-        )
         return lib_id
 
     # -----------------------------------------------------------------------
@@ -937,12 +969,13 @@ class DocsDB:
         Silently no-ops on pre-Alembic legacy databases that lack the
         ``last_indexed_at`` / ``total_versions`` columns.
         """
-        existing_cols = {
-            r[0]
-            for r in self._conn.execute(
-                "SELECT name FROM pragma_table_info(?)", ("libraries",)
-            ).fetchall()
-        }
+        with self._lock:
+            existing_cols = {
+                r[0]
+                for r in self._conn.execute(
+                    "SELECT name FROM pragma_table_info(?)", ("libraries",)
+                ).fetchall()
+            }
         sets: list[str] = []
         params: list = []
         if "last_indexed_at" in existing_cols:
@@ -960,12 +993,12 @@ class DocsDB:
             if col not in _LIBRARIES_COLUMNS:
                 raise ValueError(f"Unauthorized library column: {col}")
 
-        # nosemgrep: python.sqlalchemy.security.sqlalchemy-execute-raw-query.sqlalchemy-execute-raw-query
-        self._conn.execute(
-            "UPDATE libraries SET " + ", ".join(sets) + " WHERE id = ?",
-            params,
-        )
-        self._conn.commit()
+        with self._lock, self._conn:
+            # nosemgrep: python.sqlalchemy.security.sqlalchemy-execute-raw-query.sqlalchemy-execute-raw-query
+            self._conn.execute(
+                "UPDATE libraries SET " + ", ".join(sets) + " WHERE id = ?",
+                params,
+            )
 
     def mark_metadata_seeded(self, library_id: str) -> None:
         """Record a metadata-only seed pass (Tier 1 warmup freshness anchor).
@@ -976,24 +1009,26 @@ class DocsDB:
         """
         if "metadata_seeded_at" not in self._get_table_columns("libraries"):
             return
-        self._conn.execute(
-            "UPDATE libraries SET metadata_seeded_at = ? WHERE id = ?",
-            (_now_ts(), library_id),
-        )
-        self._conn.commit()
+        with self._lock, self._conn:
+            self._conn.execute(
+                "UPDATE libraries SET metadata_seeded_at = ? WHERE id = ?",
+                (_now_ts(), library_id),
+            )
 
     def get_library(self, name: str) -> dict | None:
         """Get library by name."""
-        row = self._conn.execute(
-            "SELECT * FROM libraries WHERE name = ?", (name.lower().strip(),)
-        ).fetchone()
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT * FROM libraries WHERE name = ?", (name.lower().strip(),)
+            ).fetchone()
         return dict(row) if row else None
 
     def get_library_by_id(self, library_id: str) -> dict | None:
         """Get a library row by its stable identifier."""
-        row = self._conn.execute(
-            "SELECT * FROM libraries WHERE id = ?", (library_id,)
-        ).fetchone()
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT * FROM libraries WHERE id = ?", (library_id,)
+            ).fetchone()
         return dict(row) if row else None
 
     def list_libraries(self, limit: int | None = None) -> list[dict]:
@@ -1016,7 +1051,8 @@ class DocsDB:
         if limit is not None:
             sql += " LIMIT ?"
             params = (limit,)
-        rows = self._conn.execute(sql, params).fetchall()
+        with self._lock:
+            rows = self._conn.execute(sql, params).fetchall()
         return [dict(row) for row in rows]
 
     def find_libraries_by_prefix(self, name: str, limit: int = 20) -> list[dict]:
@@ -1024,12 +1060,13 @@ class DocsDB:
         norm_name = name.lower().strip()
         if not norm_name or limit <= 0:
             return []
-        rows = self._conn.execute(
-            "SELECT * FROM libraries "
-            "WHERE name LIKE ? AND name != ? "
-            "ORDER BY length(name) ASC, name ASC LIMIT ?",
-            (f"{norm_name}%", norm_name, limit),
-        ).fetchall()
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT * FROM libraries "
+                "WHERE name LIKE ? AND name != ? "
+                "ORDER BY length(name) ASC, name ASC LIMIT ?",
+                (f"{norm_name}%", norm_name, limit),
+            ).fetchall()
         return [dict(row) for row in rows]
 
     def find_libraries_by_substring(self, name: str, limit: int = 20) -> list[dict]:
@@ -1037,12 +1074,13 @@ class DocsDB:
         norm_name = name.lower().strip()
         if not norm_name or limit <= 0:
             return []
-        rows = self._conn.execute(
-            "SELECT * FROM libraries "
-            "WHERE name LIKE ? AND name NOT LIKE ? AND name != ? "
-            "ORDER BY length(name) ASC, name ASC LIMIT ?",
-            (f"%{norm_name}%", f"{norm_name}%", norm_name, limit),
-        ).fetchall()
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT * FROM libraries "
+                "WHERE name LIKE ? AND name NOT LIKE ? AND name != ? "
+                "ORDER BY length(name) ASC, name ASC LIMIT ?",
+                (f"%{norm_name}%", f"{norm_name}%", norm_name, limit),
+            ).fetchall()
         return [dict(row) for row in rows]
 
     # -----------------------------------------------------------------------
@@ -1056,41 +1094,40 @@ class DocsDB:
         docs_url: str | None = None,
     ) -> str:
         """Create or get version. Returns version ID."""
-        row = self._conn.execute(
-            "SELECT id FROM versions WHERE library_id = ? AND version = ?",
-            (library_id, version),
-        ).fetchone()
+        with self._lock, self._conn:
+            row = self._conn.execute(
+                "SELECT id FROM versions WHERE library_id = ? AND version = ?",
+                (library_id, version),
+            ).fetchone()
 
-        if row:
-            ver_id = row["id"]
-            if docs_url:
-                self._conn.execute(
-                    "UPDATE versions SET docs_url = ? WHERE id = ?",
-                    (docs_url, ver_id),
-                )
-                self._conn.commit()
-            return ver_id
+            if row:
+                ver_id = row["id"]
+                if docs_url:
+                    self._conn.execute(
+                        "UPDATE versions SET docs_url = ? WHERE id = ?",
+                        (docs_url, ver_id),
+                    )
+                return ver_id
 
-        ver_id = uuid.uuid4().hex[:12]
-        self._conn.execute(
-            """INSERT INTO versions (id, library_id, version, docs_url, status)
-               VALUES (?, ?, ?, ?, 'pending')""",
-            (ver_id, library_id, version, docs_url),
-        )
-        self._conn.commit()
+            ver_id = uuid.uuid4().hex[:12]
+            self._conn.execute(
+                """INSERT INTO versions (id, library_id, version, docs_url, status)
+                   VALUES (?, ?, ?, ?, 'pending')""",
+                (ver_id, library_id, version, docs_url),
+            )
         return ver_id
 
     def mark_version_indexed(
         self, version_id: str, page_count: int, chunk_count: int
     ) -> None:
         """Mark version as indexed with counts."""
-        self._conn.execute(
-            """UPDATE versions
-               SET status = 'indexed', indexed_at = ?, page_count = ?, chunk_count = ?
-               WHERE id = ?""",
-            (_now_ts(), page_count, chunk_count, version_id),
-        )
-        self._conn.commit()
+        with self._lock, self._conn:
+            self._conn.execute(
+                """UPDATE versions
+                   SET status = 'indexed', indexed_at = ?, page_count = ?, chunk_count = ?
+                   WHERE id = ?""",
+                (_now_ts(), page_count, chunk_count, version_id),
+            )
 
     def reset_version_index(self, version_id: str) -> None:
         """Mark a cleared version as NOT indexed so lazy re-ingest can fire.
@@ -1104,13 +1141,13 @@ class DocsDB:
         The index_state record is deliberately untouched: it is the log of
         the last ATTEMPT, and the next attempt overwrites it.
         """
-        self._conn.execute(
-            """UPDATE versions
-               SET status = 'pending', indexed_at = NULL, page_count = 0, chunk_count = 0
-               WHERE id = ?""",
-            (version_id,),
-        )
-        self._conn.commit()
+        with self._lock, self._conn:
+            self._conn.execute(
+                """UPDATE versions
+                   SET status = 'pending', indexed_at = NULL, page_count = 0, chunk_count = 0
+                   WHERE id = ?""",
+                (version_id,),
+            )
 
     def set_index_state(
         self, version_id: str, state: str, error: str | None = None
@@ -1129,13 +1166,13 @@ class DocsDB:
         them), and zeroing them on a failed attempt would erase the only
         record that usable chunks are still stored for this version.
         """
-        self._conn.execute(
-            """UPDATE versions
-               SET index_state = ?, index_error = ?, index_state_at = ?
-               WHERE id = ?""",
-            (state, error, _now_ts(), version_id),
-        )
-        self._conn.commit()
+        with self._lock, self._conn:
+            self._conn.execute(
+                """UPDATE versions
+                   SET index_state = ?, index_error = ?, index_state_at = ?
+                   WHERE id = ?""",
+                (state, error, _now_ts(), version_id),
+            )
 
     def get_index_state(self, version_id: str) -> dict | None:
         """Return the indexing-attempt record for a version.
@@ -1144,12 +1181,13 @@ class DocsDB:
         which is a different answer from a recorded failure -- telling those
         two apart is the whole reason this row exists.
         """
-        row = self._conn.execute(
-            """SELECT id, library_id, version, index_state, index_error,
-                      index_state_at, page_count, chunk_count
-               FROM versions WHERE id = ?""",
-            (version_id,),
-        ).fetchone()
+        with self._lock:
+            row = self._conn.execute(
+                """SELECT id, library_id, version, index_state, index_error,
+                          index_state_at, page_count, chunk_count
+                   FROM versions WHERE id = ?""",
+                (version_id,),
+            ).fetchone()
         if row is None or row["index_state"] is None:
             return None
         return {
@@ -1171,13 +1209,22 @@ class DocsDB:
         store that indexed nothing from one that failed eight times and say
         why.
         """
-        counts = {
-            r["state"]: r["n"]
-            for r in self._conn.execute(
-                "SELECT index_state AS state, COUNT(*) AS n FROM versions "
-                "WHERE index_state IS NOT NULL GROUP BY index_state"
+        with self._lock:
+            counts = {
+                r["state"]: r["n"]
+                for r in self._conn.execute(
+                    "SELECT index_state AS state, COUNT(*) AS n FROM versions "
+                    "WHERE index_state IS NOT NULL GROUP BY index_state"
+                ).fetchall()
+            }
+            recent_rows = self._conn.execute(
+                "SELECT v.version, v.index_state, v.index_error, v.index_state_at,"
+                " v.page_count, v.chunk_count, l.name AS library"
+                " FROM versions v LEFT JOIN libraries l ON v.library_id = l.id"
+                " WHERE v.index_state IS NOT NULL"
+                " ORDER BY v.index_state_at DESC LIMIT ?",
+                (limit,),
             ).fetchall()
-        }
         recent = [
             {
                 "library": r["library"],
@@ -1188,14 +1235,7 @@ class DocsDB:
                 "page_count": r["page_count"],
                 "chunk_count": r["chunk_count"],
             }
-            for r in self._conn.execute(
-                "SELECT v.version, v.index_state, v.index_error, v.index_state_at,"
-                " v.page_count, v.chunk_count, l.name AS library"
-                " FROM versions v LEFT JOIN libraries l ON v.library_id = l.id"
-                " WHERE v.index_state IS NOT NULL"
-                " ORDER BY v.index_state_at DESC LIMIT ?",
-                (limit,),
-            ).fetchall()
+            for r in recent_rows
         ]
         return {"counts": counts, "recent": recent}
 
@@ -1203,23 +1243,24 @@ class DocsDB:
         self, library_id: str, target: str | None = None
     ) -> dict | None:
         """Get best matching version for library."""
-        if target:
-            # Try exact match first
+        with self._lock:
+            if target:
+                # Try exact match first
+                row = self._conn.execute(
+                    """SELECT * FROM versions
+                       WHERE library_id = ? AND version = ? AND status = 'indexed'""",
+                    (library_id, target),
+                ).fetchone()
+                if row:
+                    return dict(row)
+
+            # Fallback to latest indexed
             row = self._conn.execute(
                 """SELECT * FROM versions
-                   WHERE library_id = ? AND version = ? AND status = 'indexed'""",
-                (library_id, target),
+                   WHERE library_id = ? AND status = 'indexed'
+                   ORDER BY indexed_at DESC LIMIT 1""",
+                (library_id,),
             ).fetchone()
-            if row:
-                return dict(row)
-
-        # Fallback to latest indexed
-        row = self._conn.execute(
-            """SELECT * FROM versions
-               WHERE library_id = ? AND status = 'indexed'
-               ORDER BY indexed_at DESC LIMIT 1""",
-            (library_id,),
-        ).fetchone()
         return dict(row) if row else None
 
     # -----------------------------------------------------------------------
@@ -1268,16 +1309,19 @@ class DocsDB:
             if c not in _DOC_CHUNKS_COLUMNS:
                 raise ValueError(f"Unauthorized doc_chunks column: {c}")
 
-        # nosemgrep: python.sqlalchemy.security.sqlalchemy-execute-raw-query.sqlalchemy-execute-raw-query
-        self._conn.executemany(
-            f"INSERT INTO doc_chunks ({', '.join(all_cols)}) "
-            f"VALUES ({', '.join('?' * len(all_cols))})",
-            chunk_rows,
-        )
+        # The chunk INSERT and the vector INSERT are one transaction under one
+        # lock hold: it commits when both land and rolls back whole when either
+        # fails, so no half-written batch is left open for the next commit on
+        # this shared connection to persist.
+        with self._lock, self._conn:
+            # nosemgrep: python.sqlalchemy.security.sqlalchemy-execute-raw-query.sqlalchemy-execute-raw-query
+            self._conn.executemany(
+                f"INSERT INTO doc_chunks ({', '.join(all_cols)}) "
+                f"VALUES ({', '.join('?' * len(all_cols))})",
+                chunk_rows,
+            )
 
-        self._add_chunk_vectors(chunk_ids, embeddings)
-
-        self._conn.commit()
+            self._add_chunk_vectors(chunk_ids, embeddings)
         return len(chunks)
 
     def _add_chunk_vectors(
@@ -1307,25 +1351,29 @@ class DocsDB:
                     )
 
         if vec_rows:
-            try:
-                self._conn.executemany(
-                    "INSERT INTO doc_chunks_vec (id, embedding) VALUES (?, ?)",
-                    vec_rows,
-                )
-            except Exception as e:
-                # Previously logged at debug and swallowed: add_chunks still
-                # returned the full chunk count, so the caller stamped the
-                # version 'indexed' over a database that could not answer a
-                # single semantic query. Roll the whole batch back (the
-                # doc_chunks INSERT above shares this open transaction) and let
-                # the caller see the failure.
-                logger.error(
-                    f"Vector insert failed for {len(vec_rows)} of "
-                    f"{len(chunk_ids)} chunks in {self._db_path} "
-                    f"({type(e).__name__}: {e}); rolling back the chunk batch"
-                )
-                self._conn.rollback()
-                raise
+            # Callers that commit (add_chunks, docs_reembed) already hold the
+            # lock around this call, so the rollback below can only undo their
+            # own open transaction.
+            with self._lock:
+                try:
+                    self._conn.executemany(
+                        "INSERT INTO doc_chunks_vec (id, embedding) VALUES (?, ?)",
+                        vec_rows,
+                    )
+                except Exception as e:
+                    # Previously logged at debug and swallowed: add_chunks still
+                    # returned the full chunk count, so the caller stamped the
+                    # version 'indexed' over a database that could not answer a
+                    # single semantic query. Roll the whole batch back (the
+                    # doc_chunks INSERT above shares this open transaction) and
+                    # let the caller see the failure.
+                    logger.error(
+                        f"Vector insert failed for {len(vec_rows)} of "
+                        f"{len(chunk_ids)} chunks in {self._db_path} "
+                        f"({type(e).__name__}: {e}); rolling back the chunk batch"
+                    )
+                    self._conn.rollback()
+                    raise
 
     def _prepare_chunk_rows(
         self,
@@ -1357,12 +1405,13 @@ class DocsDB:
 
     def _get_optional_doc_chunks_columns(self) -> list[str]:
         """Detect optional columns in doc_chunks table."""
-        existing_cols = {
-            r[0]
-            for r in self._conn.execute(
-                "SELECT name FROM pragma_table_info(?)", ("doc_chunks",)
-            ).fetchall()
-        }
+        with self._lock:
+            existing_cols = {
+                r[0]
+                for r in self._conn.execute(
+                    "SELECT name FROM pragma_table_info(?)", ("doc_chunks",)
+                ).fetchall()
+            }
         return [
             c
             for c in (
@@ -1378,25 +1427,27 @@ class DocsDB:
 
     def clear_version_chunks(self, version_id: str) -> int:
         """Remove all chunks for a version (before re-indexing)."""
-        if self._vec_enabled:
-            # Bulk delete vector entries in a single query instead of N
-            # individual DELETEs (eliminates N+1 pattern).
-            try:
-                self._conn.execute(
-                    "DELETE FROM doc_chunks_vec WHERE id IN "
-                    "(SELECT id FROM doc_chunks WHERE version_id = ?)",
-                    (version_id,),
-                )
-            except Exception as e:
-                logger.warning(
-                    f"Failed to delete vector chunks: {e}",
-                )
+        # Both DELETEs are one transaction: if the chunk DELETE fails after the
+        # vector DELETE ran, the rollback keeps the vectors as well.
+        with self._lock, self._conn:
+            if self._vec_enabled:
+                # Bulk delete vector entries in a single query instead of N
+                # individual DELETEs (eliminates N+1 pattern).
+                try:
+                    self._conn.execute(
+                        "DELETE FROM doc_chunks_vec WHERE id IN "
+                        "(SELECT id FROM doc_chunks WHERE version_id = ?)",
+                        (version_id,),
+                    )
+                except Exception as e:
+                    logger.warning(
+                        f"Failed to delete vector chunks: {e}",
+                    )
 
-        cursor = self._conn.execute(
-            "DELETE FROM doc_chunks WHERE version_id = ?", (version_id,)
-        )
-        self._conn.commit()
-        return cursor.rowcount
+            cursor = self._conn.execute(
+                "DELETE FROM doc_chunks WHERE version_id = ?", (version_id,)
+            )
+            return cursor.rowcount
 
     # -----------------------------------------------------------------------
     # Search
@@ -1486,7 +1537,8 @@ class DocsDB:
 
             # nosemgrep: python.sqlalchemy.security.sqlalchemy-execute-raw-query.sqlalchemy-execute-raw-query
             full_fts_sql = " UNION ALL ".join(subqueries)
-            rows = self._conn.execute(full_fts_sql, fts_params).fetchall()
+            with self._lock:
+                rows = self._conn.execute(full_fts_sql, fts_params).fetchall()
             for row in rows:
                 chunk = dict(row)
                 cid = chunk["id"]
@@ -1549,7 +1601,8 @@ class DocsDB:
 
                 vec_sql += " ORDER BY v.distance"
 
-                vec_rows = self._conn.execute(vec_sql, vec_params).fetchall()
+                with self._lock:
+                    vec_rows = self._conn.execute(vec_sql, vec_params).fetchall()
                 for vr in vec_rows:
                     chunk_id = vr["id"]
                     vec_scores[chunk_id] = max(0.0, 1.0 - vr["distance"])
@@ -1608,8 +1661,9 @@ class DocsDB:
                 "FROM doc_chunks "
                 "WHERE (url, version_id, chunk_index) IN (" + _placeholders + ")"
             )
-            # nosemgrep: python.sqlalchemy.security.sqlalchemy-execute-raw-query.sqlalchemy-execute-raw-query
-            rows = self._conn.execute(sql, _params).fetchall()
+            with self._lock:
+                # nosemgrep: python.sqlalchemy.security.sqlalchemy-execute-raw-query.sqlalchemy-execute-raw-query
+                rows = self._conn.execute(sql, _params).fetchall()
             for r in rows:
                 _adj_map[(r["url"], r["version_id"], r["chunk_index"])] = r["content"]
         return _adj_map
@@ -1728,62 +1782,64 @@ class DocsDB:
         """Export all docs data as JSONL for sync."""
         lines = []
 
-        # Export libraries (using SQLite native JSON serialization for performance)
-        for row in self._conn.execute(
-            """
-            SELECT json_insert(json_object(
-                'id', id, 'name', name, 'docs_url', docs_url,
-                'registry', registry, 'description', description,
-                'created_at', created_at, 'updated_at', updated_at
-            ), '$._type', 'library')
-            FROM libraries ORDER BY name
-            """
-        ).fetchall():
-            lines.append(row[0])
+        with self._lock:
+            # Export libraries (using SQLite native JSON serialization for performance)
+            for row in self._conn.execute(
+                """
+                SELECT json_insert(json_object(
+                    'id', id, 'name', name, 'docs_url', docs_url,
+                    'registry', registry, 'description', description,
+                    'created_at', created_at, 'updated_at', updated_at
+                ), '$._type', 'library')
+                FROM libraries ORDER BY name
+                """
+            ).fetchall():
+                lines.append(row[0])
 
-        # Export versions
-        for row in self._conn.execute(
-            """
-            SELECT json_insert(json_object(
-                'id', id, 'library_id', library_id, 'version', version,
-                'docs_url', docs_url, 'indexed_at', indexed_at,
-                'page_count', page_count, 'chunk_count', chunk_count,
-                'status', status
-            ), '$._type', 'version')
-            FROM versions ORDER BY library_id
-            """
-        ).fetchall():
-            lines.append(row[0])
+            # Export versions
+            for row in self._conn.execute(
+                """
+                SELECT json_insert(json_object(
+                    'id', id, 'library_id', library_id, 'version', version,
+                    'docs_url', docs_url, 'indexed_at', indexed_at,
+                    'page_count', page_count, 'chunk_count', chunk_count,
+                    'status', status
+                ), '$._type', 'version')
+                FROM versions ORDER BY library_id
+                """
+            ).fetchall():
+                lines.append(row[0])
 
-        # Export chunks (without embeddings — re-generate on target)
-        for row in self._conn.execute(
-            """
-            SELECT json_insert(json_object(
-                'id', id, 'version_id', version_id, 'library_id', library_id,
-                'url', url, 'title', title, 'chunk_index', chunk_index,
-                'content', content, 'heading_path', heading_path,
-                'created_at', created_at
-            ), '$._type', 'chunk')
-            FROM doc_chunks ORDER BY library_id, chunk_index
-            """
-        ).fetchall():
-            lines.append(row[0])
+            # Export chunks (without embeddings — re-generate on target)
+            for row in self._conn.execute(
+                """
+                SELECT json_insert(json_object(
+                    'id', id, 'version_id', version_id, 'library_id', library_id,
+                    'url', url, 'title', title, 'chunk_index', chunk_index,
+                    'content', content, 'heading_path', heading_path,
+                    'created_at', created_at
+                ), '$._type', 'chunk')
+                FROM doc_chunks ORDER BY library_id, chunk_index
+                """
+            ).fetchall():
+                lines.append(row[0])
 
         return "\n".join(lines)
 
     def _clear_for_import(self) -> None:
         """Clear all tables before a "replace" import."""
-        if self._vec_enabled:
-            try:
-                self._conn.execute("DELETE FROM doc_chunks_vec")
-            except Exception:
-                logger.warning(
-                    "Failed to clear vector table during import replace",
-                    exc_info=True,
-                )
-        self._conn.execute("DELETE FROM doc_chunks")
-        self._conn.execute("DELETE FROM versions")
-        self._conn.execute("DELETE FROM libraries")
+        with self._lock:
+            if self._vec_enabled:
+                try:
+                    self._conn.execute("DELETE FROM doc_chunks_vec")
+                except Exception:
+                    logger.warning(
+                        "Failed to clear vector table during import replace",
+                        exc_info=True,
+                    )
+            self._conn.execute("DELETE FROM doc_chunks")
+            self._conn.execute("DELETE FROM versions")
+            self._conn.execute("DELETE FROM libraries")
 
     def _get_existing_ids_for_import(self, table: str, items: list[dict]) -> set[str]:
         """Fetch existing IDs for a set of items in batches."""
@@ -1805,8 +1861,9 @@ class DocsDB:
             # Safe because table is strictly validated against allowlist
             # and placeholders string contains only static "?" and ",".
             query = allowed_queries[table].replace("{}", placeholders)
-            # nosemgrep: python.sqlalchemy.security.sqlalchemy-execute-raw-query.sqlalchemy-execute-raw-query
-            res = self._conn.execute(query, batch).fetchall()
+            with self._lock:
+                # nosemgrep: python.sqlalchemy.security.sqlalchemy-execute-raw-query.sqlalchemy-execute-raw-query
+                res = self._conn.execute(query, batch).fetchall()
             existing.update(r[0] for r in res)
         return existing
 
@@ -1838,12 +1895,13 @@ class DocsDB:
                 )
             )
         if to_insert:
-            self._conn.executemany(
-                """INSERT OR REPLACE INTO libraries
-                   (id, name, docs_url, registry, description, created_at, updated_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
-                to_insert,
-            )
+            with self._lock:
+                self._conn.executemany(
+                    """INSERT OR REPLACE INTO libraries
+                       (id, name, docs_url, registry, description, created_at, updated_at)
+                       VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                    to_insert,
+                )
             stats["libraries"] += len(to_insert)
 
     def _import_versions(self, versions: list[dict], mode: str, stats: dict) -> None:
@@ -1875,12 +1933,13 @@ class DocsDB:
                 )
             )
         if to_insert:
-            self._conn.executemany(
-                """INSERT OR REPLACE INTO versions
-                   (id, library_id, version, docs_url, indexed_at, page_count, chunk_count, status)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
-                to_insert,
-            )
+            with self._lock:
+                self._conn.executemany(
+                    """INSERT OR REPLACE INTO versions
+                       (id, library_id, version, docs_url, indexed_at, page_count, chunk_count, status)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                    to_insert,
+                )
             stats["versions"] += len(to_insert)
 
     def _import_chunks(self, chunks: list[dict], mode: str, stats: dict) -> None:
@@ -1913,42 +1972,46 @@ class DocsDB:
                 )
             )
         if to_insert:
-            self._conn.executemany(
-                """INSERT OR REPLACE INTO doc_chunks
-                   (id, version_id, library_id, url, title, chunk_index, content, heading_path, created_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                to_insert,
-            )
+            with self._lock:
+                self._conn.executemany(
+                    """INSERT OR REPLACE INTO doc_chunks
+                       (id, version_id, library_id, url, title, chunk_index, content, heading_path, created_at)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    to_insert,
+                )
             stats["chunks"] += len(to_insert)
 
     def import_jsonl(self, data: str, mode: str = "merge") -> dict:
         """Import JSONL data. mode: merge (skip existing) or replace (clear first)."""
         stats = {"libraries": 0, "versions": 0, "chunks": 0, "skipped": 0}
 
-        if mode == "replace":
-            self._clear_for_import()
+        # The replace-mode clear and the inserts are one transaction under one
+        # lock hold: a malformed line or a failed insert rolls the whole import
+        # back, the clear included, instead of leaving it open for the next
+        # commit on this shared connection to persist.
+        with self._lock, self._conn:
+            if mode == "replace":
+                self._clear_for_import()
 
-        lines = data.split("\n")
-        libraries, versions, chunks = [], [], []
+            lines = data.split("\n")
+            libraries, versions, chunks = [], [], []
 
-        for line in lines:
-            if not line or line.isspace():
-                continue
-            obj = json.loads(line)
-            obj_type = obj.pop("_type", None)
+            for line in lines:
+                if not line or line.isspace():
+                    continue
+                obj = json.loads(line)
+                obj_type = obj.pop("_type", None)
 
-            if obj_type == "library":
-                libraries.append(obj)
-            elif obj_type == "version":
-                versions.append(obj)
-            elif obj_type == "chunk":
-                chunks.append(obj)
+                if obj_type == "library":
+                    libraries.append(obj)
+                elif obj_type == "version":
+                    versions.append(obj)
+                elif obj_type == "chunk":
+                    chunks.append(obj)
 
-        self._import_libraries(libraries, mode, stats)
-        self._import_versions(versions, mode, stats)
-        self._import_chunks(chunks, mode, stats)
-
-        self._conn.commit()
+            self._import_libraries(libraries, mode, stats)
+            self._import_versions(versions, mode, stats)
+            self._import_chunks(chunks, mode, stats)
         return stats
 
     # -----------------------------------------------------------------------
@@ -1957,10 +2020,11 @@ class DocsDB:
 
     def _ensure_project_context(self) -> bool:
         """Return True iff the project_context table exists."""
-        row = self._conn.execute(
-            "SELECT name FROM sqlite_master "
-            "WHERE type='table' AND name='project_context'"
-        ).fetchone()
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT name FROM sqlite_master "
+                "WHERE type='table' AND name='project_context'"
+            ).fetchone()
         return row is not None
 
     def upsert_project_context(
@@ -1988,25 +2052,25 @@ class DocsDB:
             return
         now = _now_ts()
         payload = json.dumps(locked_libraries, ensure_ascii=False)
-        existing = self._conn.execute(
-            "SELECT created_at FROM project_context WHERE sub = ? AND project_path = ?",
-            (sub, project_path),
-        ).fetchone()
-        if existing:
-            self._conn.execute(
-                "UPDATE project_context "
-                "SET locked_libraries = ?, last_used_at = ? "
-                "WHERE sub = ? AND project_path = ?",
-                (payload, now, sub, project_path),
-            )
-        else:
-            self._conn.execute(
-                "INSERT INTO project_context "
-                "(project_path, sub, locked_libraries, created_at, last_used_at) "
-                "VALUES (?, ?, ?, ?, ?)",
-                (project_path, sub, payload, now, now),
-            )
-        self._conn.commit()
+        with self._lock, self._conn:
+            existing = self._conn.execute(
+                "SELECT created_at FROM project_context WHERE sub = ? AND project_path = ?",
+                (sub, project_path),
+            ).fetchone()
+            if existing:
+                self._conn.execute(
+                    "UPDATE project_context "
+                    "SET locked_libraries = ?, last_used_at = ? "
+                    "WHERE sub = ? AND project_path = ?",
+                    (payload, now, sub, project_path),
+                )
+            else:
+                self._conn.execute(
+                    "INSERT INTO project_context "
+                    "(project_path, sub, locked_libraries, created_at, last_used_at) "
+                    "VALUES (?, ?, ?, ?, ?)",
+                    (project_path, sub, payload, now, now),
+                )
 
     def get_project_context(
         self, project_path: str, *, sub: str = "default"
@@ -2014,11 +2078,12 @@ class DocsDB:
         """Return the lock entry for a project, or None if not locked."""
         if not self._ensure_project_context():
             return None
-        row = self._conn.execute(
-            "SELECT project_path, locked_libraries, created_at, last_used_at "
-            "FROM project_context WHERE sub = ? AND project_path = ?",
-            (sub, project_path),
-        ).fetchone()
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT project_path, locked_libraries, created_at, last_used_at "
+                "FROM project_context WHERE sub = ? AND project_path = ?",
+                (sub, project_path),
+            ).fetchone()
         if row is None:
             return None
         result = dict(row)
@@ -2043,16 +2108,37 @@ class DocsDB:
         """Update last_used_at — call before each docs_query that honors a lock."""
         if not self._ensure_project_context():
             return
-        self._conn.execute(
-            "UPDATE project_context SET last_used_at = ? "
-            "WHERE sub = ? AND project_path = ?",
-            (_now_ts(), sub, project_path),
-        )
-        self._conn.commit()
+        with self._lock, self._conn:
+            self._conn.execute(
+                "UPDATE project_context SET last_used_at = ? "
+                "WHERE sub = ? AND project_path = ?",
+                (_now_ts(), sub, project_path),
+            )
+
+    @contextmanager
+    def connection(self) -> Generator[sqlite3.Connection]:
+        """Hold the connection lock and yield the shared connection.
+
+        The one entry point for code outside this class that needs a
+        statement DocsDB has no method for (the offline ``docs_reembed``
+        pass). Every statement and the commit that closes them run inside
+        the ``with`` block; neither the connection nor a cursor may be kept
+        past it. A block that raises has its open transaction rolled back
+        before the lock is released.
+        """
+        with self._lock:
+            try:
+                yield self._conn
+            except BaseException:
+                # Left open, the block's half-done writes would be persisted by
+                # the next commit any method makes on this shared connection.
+                self._conn.rollback()
+                raise
 
     def close(self) -> None:
         """Close database connection."""
         try:
-            self._conn.close()
+            with self._lock:
+                self._conn.close()
         except Exception:
             pass
