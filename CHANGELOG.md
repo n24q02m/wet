@@ -2,6 +2,65 @@
 
 <!-- version list -->
 
+## v3.22.0-beta.5 (2026-11-16)
+
+### Bug Fixes
+
+- Declare skret sync sources for github secrets ([#1961](https://github.com/n24q02m/wet/pull/1961),
+  [`012a9f2`](https://github.com/n24q02m/wet/commit/012a9f2fecd877963d6b12c62bb28c1ecf4e4b73))
+
+- Dispatch the tap and bucket cd.yml that replaced bump.yml
+  ([#1958](https://github.com/n24q02m/wet/pull/1958),
+  [`c69f3e5`](https://github.com/n24q02m/wet/commit/c69f3e5cb4ed816b1222eea903a653088a4d79bb))
+
+- File the canary failure issue only for a main run
+  ([#1959](https://github.com/n24q02m/wet/pull/1959),
+  [`c4ef1be`](https://github.com/n24q02m/wet/commit/c4ef1bea0b4e9d70f2f5b355ee67f5cac861ffcc))
+
+- Pin hull 0.8.0-beta.1 so the beta ships the SQLite read-lock and lease-count fixes
+  ([#1967](https://github.com/n24q02m/wet/pull/1967),
+  [`c1f6cb6`](https://github.com/n24q02m/wet/commit/c1f6cb6ad2ef0dae795bab244c37d1134e7b5367))
+
+- Read the failed canary job log with curl and drop error bodies
+  ([#1959](https://github.com/n24q02m/wet/pull/1959),
+  [`c4ef1be`](https://github.com/n24q02m/wet/commit/c4ef1bea0b4e9d70f2f5b355ee67f5cac861ffcc))
+
+- Run ci on dispatch and fold benchmark and canary workflows into ci
+  ([#1959](https://github.com/n24q02m/wet/pull/1959),
+  [`c4ef1be`](https://github.com/n24q02m/wet/commit/c4ef1bea0b4e9d70f2f5b355ee67f5cac861ffcc))
+
+- Start the marketplace plugin sync with workflow_dispatch
+  ([#1957](https://github.com/n24q02m/wet/pull/1957),
+  [`d290f1a`](https://github.com/n24q02m/wet/commit/d290f1a8013b525a05f433a4de07e0f410a8ff70))
+
+- Sync the main ruleset file with its live required status checks
+  ([#1956](https://github.com/n24q02m/wet/pull/1956),
+  [`c8e146a`](https://github.com/n24q02m/wet/commit/c8e146a385d49decb8c6207167c22267bce50f87))
+
+- Upload coverage to codecov over oidc and fail the job when it is refused
+  ([#1960](https://github.com/n24q02m/wet/pull/1960),
+  [`af240fe`](https://github.com/n24q02m/wet/commit/af240fe82101ac466fc44e9d18fa0c1fb4eab7f5))
+
+- **deps**: Lock file maintenance ([#1965](https://github.com/n24q02m/wet/pull/1965),
+  [`04fd640`](https://github.com/n24q02m/wet/commit/04fd640b285eb042ddfb9721783d6e4b41756042))
+
+- **deps**: Lock file maintenance ([#1952](https://github.com/n24q02m/wet/pull/1952),
+  [`21aaaf0`](https://github.com/n24q02m/wet/commit/21aaaf0a72c82ef91694da8c5c1eee8e5c305499))
+
+- **deps**: Update step-security/harden-runner action to v2.22.4
+  ([#1951](https://github.com/n24q02m/wet/pull/1951),
+  [`80fd115`](https://github.com/n24q02m/wet/commit/80fd115ce2644d1071d208a2bd09f4c40ad23690))
+
+### Features
+
+- Add canary-drill dispatch to exercise the canary alert job
+  ([#1964](https://github.com/n24q02m/wet/pull/1964),
+  [`5503282`](https://github.com/n24q02m/wet/commit/5503282e4ad20c5bdbb46ef5f9fe5d2cf368a1ff))
+
+- Sync cross-promo section ([#1963](https://github.com/n24q02m/wet/pull/1963),
+  [`fda56b3`](https://github.com/n24q02m/wet/commit/fda56b3dcf3996ac11263d51ecb6a7fe2dd9e5f8))
+
+
 ## v3.22.0-beta.4 (2026-11-14)
 
 ### Bug Fixes
