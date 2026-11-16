@@ -12,6 +12,7 @@ Embeddings are truncated to the configured dims in server._embed().
 from __future__ import annotations
 
 import asyncio
+import threading
 from typing import Protocol
 
 from loguru import logger
@@ -351,6 +352,9 @@ class LocalEmbeddingBackend:
     Uses last-token pooling with instruction-aware queries.
     Model is downloaded on first use (~0.57GB).
     Batch size is forced to 1 (static ONNX graph).
+
+    Loading and inference both block, so every public method runs them on a
+    worker thread; the lock makes concurrent first calls share one load.
     """
 
     # Default model supplied by fastretrieval
@@ -359,23 +363,26 @@ class LocalEmbeddingBackend:
     def __init__(self, model_name: str | None = None):
         self._model_name = model_name or self.DEFAULT_MODEL
         self._model = None
+        self._model_lock = threading.Lock()
 
     def _get_model(self):
-        """Lazy-load the embedding model.
+        """Lazy-load the embedding model (blocking; call from a worker thread).
 
         On first call, downloads the ONNX model (~570 MB) from HuggingFace
         if not already cached. Logs a warning so users know why startup is slow.
         """
         if self._model is None:
-            from fastretrieval import TextEmbedding
+            with self._model_lock:
+                if self._model is None:
+                    from fastretrieval import TextEmbedding
 
-            logger.warning(
-                f"Loading local embedding model: {self._model_name} "
-                "(~570 MB download on first run). "
-                "Set the [models.embed] cell in ~/.wet/config.toml to use cloud embedding instead."
-            )
-            self._model = TextEmbedding(model_name=self._model_name)
-            logger.info("Local embedding model loaded")
+                    logger.warning(
+                        f"Loading local embedding model: {self._model_name} "
+                        "(~570 MB download on first run). "
+                        "Set the [models.embed] cell in ~/.wet/config.toml to use cloud embedding instead."
+                    )
+                    self._model = TextEmbedding(model_name=self._model_name)
+                    logger.info("Local embedding model loaded")
         return self._model
 
     async def embed_texts(
@@ -387,10 +394,9 @@ class LocalEmbeddingBackend:
         if not texts:
             return []
 
-        model = self._get_model()
-
-        # Local inference is CPU-bound, use to_thread to keep loop responsive
+        # Model load and inference are blocking, use to_thread to keep loop responsive
         def _embed():
+            model = self._get_model()
             # Pass dim to model.embed() so MRL truncation happens BEFORE L2-normalization
             kwargs = {}
             if dimensions and dimensions > 0:
@@ -415,9 +421,9 @@ class LocalEmbeddingBackend:
         dimensions: int | None = None,
     ) -> list[float]:
         """Embed a query with instruction prefix (asymmetric retrieval)."""
-        model = self._get_model()
 
         def _embed_query():
+            model = self._get_model()
             kwargs = {}
             if dimensions and dimensions > 0:
                 kwargs["dim"] = dimensions
@@ -427,14 +433,17 @@ class LocalEmbeddingBackend:
         return result[0].tolist()
 
     async def check_available(self) -> int:
-        """Check if fastretrieval is available."""
+        """Check if fastretrieval is available.
+
+        The probe is a blocking model load plus an embed, so it runs on a
+        worker thread to keep the event loop responsive during startup.
+        """
+        return await asyncio.to_thread(self._check_available_sync)
+
+    def _check_available_sync(self) -> int:
         try:
             model = self._get_model()
-
-            def _check():
-                return list(model.embed(["test"]))
-
-            result = await asyncio.to_thread(_check)
+            result = list(model.embed(["test"]))
             if result:
                 dim = len(result[0])
                 logger.info(
