@@ -1318,9 +1318,11 @@ class DocsDB:
             if c not in _DOC_CHUNKS_COLUMNS:
                 raise ValueError(f"Unauthorized doc_chunks column: {c}")
 
-        # The chunk INSERT, the vector INSERT (or its rollback) and the commit
-        # are one transaction, so they stay inside one lock hold.
-        with self._lock:
+        # The chunk INSERT and the vector INSERT are one transaction under one
+        # lock hold: it commits when both land and rolls back whole when either
+        # fails, so no half-written batch is left open for the next commit on
+        # this shared connection to persist.
+        with self._lock, self._conn:
             # nosemgrep: python.sqlalchemy.security.sqlalchemy-execute-raw-query.sqlalchemy-execute-raw-query
             self._conn.executemany(
                 f"INSERT INTO doc_chunks ({', '.join(all_cols)}) "
@@ -1329,8 +1331,6 @@ class DocsDB:
             )
 
             self._add_chunk_vectors(chunk_ids, embeddings)
-
-            self._conn.commit()
         return len(chunks)
 
     def _add_chunk_vectors(
@@ -1436,7 +1436,9 @@ class DocsDB:
 
     def clear_version_chunks(self, version_id: str) -> int:
         """Remove all chunks for a version (before re-indexing)."""
-        with self._lock:
+        # Both DELETEs are one transaction: if the chunk DELETE fails after the
+        # vector DELETE ran, the rollback keeps the vectors as well.
+        with self._lock, self._conn:
             if self._vec_enabled:
                 # Bulk delete vector entries in a single query instead of N
                 # individual DELETEs (eliminates N+1 pattern).
@@ -1454,7 +1456,6 @@ class DocsDB:
             cursor = self._conn.execute(
                 "DELETE FROM doc_chunks WHERE version_id = ?", (version_id,)
             )
-            self._conn.commit()
             return cursor.rowcount
 
     # -----------------------------------------------------------------------
@@ -1993,9 +1994,11 @@ class DocsDB:
         """Import JSONL data. mode: merge (skip existing) or replace (clear first)."""
         stats = {"libraries": 0, "versions": 0, "chunks": 0, "skipped": 0}
 
-        # The replace-mode clear, the inserts and the commit are one
-        # transaction, so the whole import is one lock hold.
-        with self._lock:
+        # The replace-mode clear and the inserts are one transaction under one
+        # lock hold: a malformed line or a failed insert rolls the whole import
+        # back, the clear included, instead of leaving it open for the next
+        # commit on this shared connection to persist.
+        with self._lock, self._conn:
             if mode == "replace":
                 self._clear_for_import()
 
@@ -2018,8 +2021,6 @@ class DocsDB:
             self._import_libraries(libraries, mode, stats)
             self._import_versions(versions, mode, stats)
             self._import_chunks(chunks, mode, stats)
-
-            self._conn.commit()
         return stats
 
     # -----------------------------------------------------------------------
@@ -2133,10 +2134,17 @@ class DocsDB:
         statement DocsDB has no method for (the offline ``docs_reembed``
         pass). Every statement and the commit that closes them run inside
         the ``with`` block; neither the connection nor a cursor may be kept
-        past it.
+        past it. A block that raises has its open transaction rolled back
+        before the lock is released.
         """
         with self._lock:
-            yield self._conn
+            try:
+                yield self._conn
+            except BaseException:
+                # Left open, the block's half-done writes would be persisted by
+                # the next commit any method makes on this shared connection.
+                self._conn.rollback()
+                raise
 
     def close(self) -> None:
         """Close database connection."""

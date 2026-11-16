@@ -385,6 +385,14 @@ class TestAddChunksWithEmbeddings:
             def __getattr__(self, name):
                 return getattr(real_conn, name)
 
+            # Dunder lookups bypass __getattr__, so the transaction protocol
+            # add_chunks runs the batch in is forwarded explicitly.
+            def __enter__(self):
+                return real_conn.__enter__()
+
+            def __exit__(self, *exc):
+                return real_conn.__exit__(*exc)
+
         d._conn = cast(Any, _VecSpyConn())
         try:
             count = d.add_chunks(ver_id, lib_id, chunks, embeddings=embeddings)
