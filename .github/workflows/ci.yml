@@ -18,7 +18,7 @@ on:
         type: string
         default: ""
       job:
-        description: "Extra job to run after the CI jobs: benchmark (live MCP benchmark, spends provider credit) or refresh-tier1 (Tier 1 docs canary)"
+        description: "Extra job to run alongside the CI jobs: benchmark (live MCP benchmark, spends provider credit) or refresh-tier1 (Tier 1 docs canary)"
         required: false
         type: choice
         default: none
@@ -318,9 +318,12 @@ jobs:
 
           # This run is still in progress, so its log archive does not exist
           # yet; the failed job's own record and log do, through the jobs API.
+          # A failed `gh api` still prints the error body on stdout, so each
+          # capture is reset on failure; otherwise that JSON would land in the
+          # issue as if it were the log.
           JOB=$(gh api "repos/$REPO/actions/runs/$RUN_ID/attempts/$RUN_ATTEMPT/jobs" \
             --jq ".jobs[] | select(.name == \"$JOB_NAME\") | [.id, .started_at, .completed_at] | @tsv" \
-            2>/dev/null || true)
+            2>/dev/null) || JOB=""
           JOB_ID=""
           JOB_STARTED_AT=""
           JOB_COMPLETED_AT=""
@@ -331,9 +334,16 @@ jobs:
           # Prefer the lines that end at the failing step's error; a killed
           # runner sometimes marks no step failed, in which case the tail of
           # the whole log is the only thing that shows what it was doing.
+          # curl, not `gh api`: job logs carry ANSI colour codes and `gh api`
+          # refuses to print a body with terminal escape sequences. The
+          # endpoint redirects to a pre-signed URL; curl drops the token on
+          # that cross-host redirect.
           LOG=""
           if [ -n "$JOB_ID" ]; then
-            LOG=$(gh api "repos/$REPO/actions/jobs/$JOB_ID/logs" 2>/dev/null || true)
+            LOG=$(curl -fsSL \
+              -H "Authorization: Bearer $GH_TOKEN" \
+              -H "Accept: application/vnd.github+json" \
+              "$GITHUB_API_URL/repos/$REPO/actions/jobs/$JOB_ID/logs" 2>/dev/null) || LOG=""
           fi
           EXCERPT=$(printf '%s\n' "$LOG" | awk '
             { line[NR] = $0 }
