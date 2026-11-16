@@ -8,7 +8,7 @@ the ``PUBLIC_URL`` remote-mode guard are deleted surface and are not exercised.
 """
 
 from types import SimpleNamespace
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from hull_core.config.settings import HullSettings, ServerSettings
@@ -68,6 +68,26 @@ class TestBuildHttpApp:
         for settings in (_hull_settings(tmp_path, auth="token"), multi):
             app = srv.build_http_app(settings)
             assert hasattr(app, "routes")
+
+    async def test_app_lifespan_runs_server_startup_once(self, tmp_path):
+        """Regression: one HTTP app lifetime runs wet's startup exactly once.
+
+        The MCP SDK session manager already enters the server lifespan in
+        ``run()``. Entering ``_lifespan`` again from the outer Starlette
+        lifespan ran startup twice per process: two backend init tasks, so
+        every local ONNX model loaded twice, and two docs-DB/cache inits.
+        """
+        startup = AsyncMock(return_value=None)
+        shutdown = AsyncMock(return_value=None)
+        with (
+            patch("wet.server._lifespan_startup", startup),
+            patch("wet.server._lifespan_shutdown", shutdown),
+        ):
+            app = srv.build_http_app(_hull_settings(tmp_path))
+            async with app.router.lifespan_context(app):
+                assert startup.await_count == 1
+            assert shutdown.await_count == 1
+        assert startup.await_count == 1
 
 
 # ---------------------------------------------------------------------------

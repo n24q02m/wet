@@ -5,6 +5,8 @@ batch splitting, retry logic, LocalEmbeddingBackend (local ONNX), the
 per-request resolver, and the init_backend factory.
 """
 
+import asyncio
+import time
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, call, patch
 
@@ -430,6 +432,64 @@ class TestLocalEmbeddingBackend:
             model2 = backend._get_model()
             assert model2 is mock_model
             assert mock_cls.call_count == 1
+
+    @staticmethod
+    def _slow_model_class(load_seconds: float, loads: list[str]):
+        """A TextEmbedding stand-in whose constructor blocks like an ONNX load."""
+        import numpy as np
+
+        class SlowModel:
+            def __init__(self, model_name):
+                loads.append(model_name)
+                time.sleep(load_seconds)
+
+            def embed(self, texts, **kwargs):
+                return iter([np.array([0.1, 0.2]) for _ in texts])
+
+            def query_embed(self, text, **kwargs):
+                return iter([np.array([0.1, 0.2])])
+
+        return SlowModel
+
+    @pytest.mark.parametrize(
+        "first_call",
+        [
+            lambda backend: backend.check_available(),
+            lambda backend: backend.embed_texts(["doc"]),
+            lambda backend: backend.embed_single_query("query"),
+        ],
+        ids=["check_available", "embed_texts", "embed_single_query"],
+    )
+    async def test_model_load_runs_off_the_event_loop(self, first_call):
+        """Regression: the blocking model load must not freeze the event loop.
+
+        _get_model() ran on the loop thread, so the first call -- the startup
+        availability probe included -- stalled every other coroutine (health
+        checks, other requests) for the whole ONNX load.
+        """
+        load_seconds = 0.5
+        backend = LocalEmbeddingBackend("slow-model")
+        with patch(
+            "fastretrieval.TextEmbedding", self._slow_model_class(load_seconds, [])
+        ):
+            task = asyncio.create_task(first_call(backend))
+            started = time.monotonic()
+            await asyncio.sleep(0.05)
+            stalled = time.monotonic() - started
+            await task
+        assert stalled < load_seconds / 2
+
+    async def test_concurrent_first_calls_load_the_model_once(self):
+        """Concurrent first calls on worker threads share one model load."""
+        loads: list[str] = []
+        backend = LocalEmbeddingBackend("slow-model")
+        with patch("fastretrieval.TextEmbedding", self._slow_model_class(0.2, loads)):
+            await asyncio.gather(
+                backend.check_available(),
+                backend.embed_texts(["doc"]),
+                backend.embed_single_query("query"),
+            )
+        assert loads == ["slow-model"]
 
 
 # -----------------------------------------------------------------------
