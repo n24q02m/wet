@@ -7,6 +7,11 @@ next unrelated method that called ``commit()``: part of a chunk batch, or the
 replace-mode wipe of an import whose data never arrived. Each test fails a unit
 midway, lets another method commit, then reads the file through an independent
 connection, which only sees committed rows.
+
+A write of a single statement that fails leaves no half-done data, but the
+transaction ``sqlite3`` opened for it stays open and keeps the database write
+lock, so every other connection to the file gets "database is locked" until
+some later call commits. Those tests check that nothing stays open.
 """
 
 from __future__ import annotations
@@ -17,7 +22,7 @@ from pathlib import Path
 
 import pytest
 
-from wet.db import DocsDB
+from wet.db import INDEX_STATE_FAILED, DocsDB
 
 
 def _count(db_path: Path, sql: str, *, vec: bool = False) -> int:
@@ -143,3 +148,114 @@ def test_connection_block_that_raises_leaves_no_write_behind(tmp_path: Path):
 
     assert _later_commit_landed(db_path)
     assert _count(db_path, "SELECT COUNT(*) FROM store_meta WHERE key = 'probe'") == 0
+
+
+def _refuse(db: DocsDB, event: str) -> None:
+    """Make every statement on ``db``'s connection that fires ``event`` abort."""
+    with db.connection() as conn:
+        conn.execute(
+            f"CREATE TEMP TRIGGER injected_failure {event} "
+            "BEGIN SELECT RAISE(ABORT, 'injected'); END"
+        )
+
+
+def _other_connection_can_write(db_path: Path) -> bool:
+    conn = sqlite3.connect(str(db_path), timeout=0.2)
+    try:
+        conn.execute(
+            "INSERT OR REPLACE INTO store_meta (key, value) VALUES ('probe', 'other')"
+        )
+        conn.commit()
+        return True
+    except sqlite3.OperationalError:
+        return False
+    finally:
+        conn.close()
+
+
+@pytest.mark.parametrize(
+    ("event", "write"),
+    [
+        pytest.param(
+            "BEFORE INSERT ON libraries",
+            lambda db, lib_id, ver_id: db.upsert_library("new"),
+            id="upsert_library-insert",
+        ),
+        pytest.param(
+            "BEFORE UPDATE ON libraries",
+            lambda db, lib_id, ver_id: db.upsert_library("seeded", description="d"),
+            id="upsert_library-update",
+        ),
+        pytest.param(
+            "BEFORE UPDATE ON libraries",
+            lambda db, lib_id, ver_id: db.mark_library_indexed(lib_id),
+            id="mark_library_indexed",
+        ),
+        pytest.param(
+            "BEFORE UPDATE ON libraries",
+            lambda db, lib_id, ver_id: db.mark_metadata_seeded(lib_id),
+            id="mark_metadata_seeded",
+        ),
+        pytest.param(
+            "BEFORE INSERT ON versions",
+            lambda db, lib_id, ver_id: db.upsert_version(lib_id, "2.0"),
+            id="upsert_version-insert",
+        ),
+        pytest.param(
+            "BEFORE UPDATE ON versions",
+            lambda db, lib_id, ver_id: db.upsert_version(
+                lib_id, "latest", docs_url="https://seeded.dev/docs"
+            ),
+            id="upsert_version-update",
+        ),
+        pytest.param(
+            "BEFORE UPDATE ON versions",
+            lambda db, lib_id, ver_id: db.mark_version_indexed(ver_id, 1, 1),
+            id="mark_version_indexed",
+        ),
+        pytest.param(
+            "BEFORE UPDATE ON versions",
+            lambda db, lib_id, ver_id: db.reset_version_index(ver_id),
+            id="reset_version_index",
+        ),
+        pytest.param(
+            "BEFORE UPDATE ON versions",
+            lambda db, lib_id, ver_id: db.set_index_state(
+                ver_id, INDEX_STATE_FAILED, "boom"
+            ),
+            id="set_index_state",
+        ),
+        pytest.param(
+            "BEFORE INSERT ON project_context",
+            lambda db, lib_id, ver_id: db.upsert_project_context("/other", []),
+            id="upsert_project_context-insert",
+        ),
+        pytest.param(
+            "BEFORE UPDATE ON project_context",
+            lambda db, lib_id, ver_id: db.upsert_project_context("/project", []),
+            id="upsert_project_context-update",
+        ),
+        pytest.param(
+            "BEFORE UPDATE ON project_context",
+            lambda db, lib_id, ver_id: db.touch_project_context("/project"),
+            id="touch_project_context",
+        ),
+    ],
+)
+def test_failed_single_statement_write_releases_the_database(
+    tmp_path: Path, event, write
+):
+    db_path = tmp_path / "docs.db"
+    db = DocsDB(db_path, embedding_dims=0)
+    try:
+        lib_id = db.upsert_library("seeded")
+        ver_id = db.upsert_version(lib_id)
+        db.upsert_project_context("/project", [])
+        _refuse(db, event)
+        with pytest.raises(sqlite3.IntegrityError, match="injected"):
+            write(db, lib_id, ver_id)
+        with db._lock:
+            assert db._conn.in_transaction is False
+        assert _other_connection_can_write(db_path)
+    finally:
+        db.close()

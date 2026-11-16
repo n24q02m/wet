@@ -815,13 +815,12 @@ class DocsDB:
                 if col not in _LIBRARIES_COLUMNS:
                     raise ValueError(f"Unauthorized column update: {col}")
 
-            with self._lock:
+            with self._lock, self._conn:
                 # nosemgrep: python.sqlalchemy.security.sqlalchemy-execute-raw-query.sqlalchemy-execute-raw-query
                 self._conn.execute(
                     "UPDATE libraries SET " + ", ".join(updates) + " WHERE id = ?",
                     params,
                 )
-                self._conn.commit()
 
     def _insert_library_inner(
         self,
@@ -874,14 +873,13 @@ class DocsDB:
             if c not in _LIBRARIES_COLUMNS:
                 raise ValueError(f"Unauthorized library column: {c}")
 
-        with self._lock:
+        with self._lock, self._conn:
             # nosemgrep: python.sqlalchemy.security.sqlalchemy-execute-raw-query.sqlalchemy-execute-raw-query
             self._conn.execute(
                 f"INSERT INTO libraries ({', '.join(cols)}) "
                 f"VALUES ({', '.join('?' * len(cols))})",
                 vals,
             )
-            self._conn.commit()
 
     def upsert_library(
         self,
@@ -995,13 +993,12 @@ class DocsDB:
             if col not in _LIBRARIES_COLUMNS:
                 raise ValueError(f"Unauthorized library column: {col}")
 
-        with self._lock:
+        with self._lock, self._conn:
             # nosemgrep: python.sqlalchemy.security.sqlalchemy-execute-raw-query.sqlalchemy-execute-raw-query
             self._conn.execute(
                 "UPDATE libraries SET " + ", ".join(sets) + " WHERE id = ?",
                 params,
             )
-            self._conn.commit()
 
     def mark_metadata_seeded(self, library_id: str) -> None:
         """Record a metadata-only seed pass (Tier 1 warmup freshness anchor).
@@ -1012,12 +1009,11 @@ class DocsDB:
         """
         if "metadata_seeded_at" not in self._get_table_columns("libraries"):
             return
-        with self._lock:
+        with self._lock, self._conn:
             self._conn.execute(
                 "UPDATE libraries SET metadata_seeded_at = ? WHERE id = ?",
                 (_now_ts(), library_id),
             )
-            self._conn.commit()
 
     def get_library(self, name: str) -> dict | None:
         """Get library by name."""
@@ -1098,7 +1094,7 @@ class DocsDB:
         docs_url: str | None = None,
     ) -> str:
         """Create or get version. Returns version ID."""
-        with self._lock:
+        with self._lock, self._conn:
             row = self._conn.execute(
                 "SELECT id FROM versions WHERE library_id = ? AND version = ?",
                 (library_id, version),
@@ -1111,7 +1107,6 @@ class DocsDB:
                         "UPDATE versions SET docs_url = ? WHERE id = ?",
                         (docs_url, ver_id),
                     )
-                    self._conn.commit()
                 return ver_id
 
             ver_id = uuid.uuid4().hex[:12]
@@ -1120,21 +1115,19 @@ class DocsDB:
                    VALUES (?, ?, ?, ?, 'pending')""",
                 (ver_id, library_id, version, docs_url),
             )
-            self._conn.commit()
         return ver_id
 
     def mark_version_indexed(
         self, version_id: str, page_count: int, chunk_count: int
     ) -> None:
         """Mark version as indexed with counts."""
-        with self._lock:
+        with self._lock, self._conn:
             self._conn.execute(
                 """UPDATE versions
                    SET status = 'indexed', indexed_at = ?, page_count = ?, chunk_count = ?
                    WHERE id = ?""",
                 (_now_ts(), page_count, chunk_count, version_id),
             )
-            self._conn.commit()
 
     def reset_version_index(self, version_id: str) -> None:
         """Mark a cleared version as NOT indexed so lazy re-ingest can fire.
@@ -1148,14 +1141,13 @@ class DocsDB:
         The index_state record is deliberately untouched: it is the log of
         the last ATTEMPT, and the next attempt overwrites it.
         """
-        with self._lock:
+        with self._lock, self._conn:
             self._conn.execute(
                 """UPDATE versions
                    SET status = 'pending', indexed_at = NULL, page_count = 0, chunk_count = 0
                    WHERE id = ?""",
                 (version_id,),
             )
-            self._conn.commit()
 
     def set_index_state(
         self, version_id: str, state: str, error: str | None = None
@@ -1174,14 +1166,13 @@ class DocsDB:
         them), and zeroing them on a failed attempt would erase the only
         record that usable chunks are still stored for this version.
         """
-        with self._lock:
+        with self._lock, self._conn:
             self._conn.execute(
                 """UPDATE versions
                    SET index_state = ?, index_error = ?, index_state_at = ?
                    WHERE id = ?""",
                 (state, error, _now_ts(), version_id),
             )
-            self._conn.commit()
 
     def get_index_state(self, version_id: str) -> dict | None:
         """Return the indexing-attempt record for a version.
@@ -2061,7 +2052,7 @@ class DocsDB:
             return
         now = _now_ts()
         payload = json.dumps(locked_libraries, ensure_ascii=False)
-        with self._lock:
+        with self._lock, self._conn:
             existing = self._conn.execute(
                 "SELECT created_at FROM project_context WHERE sub = ? AND project_path = ?",
                 (sub, project_path),
@@ -2080,7 +2071,6 @@ class DocsDB:
                     "VALUES (?, ?, ?, ?, ?)",
                     (project_path, sub, payload, now, now),
                 )
-            self._conn.commit()
 
     def get_project_context(
         self, project_path: str, *, sub: str = "default"
@@ -2118,13 +2108,12 @@ class DocsDB:
         """Update last_used_at — call before each docs_query that honors a lock."""
         if not self._ensure_project_context():
             return
-        with self._lock:
+        with self._lock, self._conn:
             self._conn.execute(
                 "UPDATE project_context SET last_used_at = ? "
                 "WHERE sub = ? AND project_path = ?",
                 (_now_ts(), sub, project_path),
             )
-            self._conn.commit()
 
     @contextmanager
     def connection(self) -> Generator[sqlite3.Connection]:
