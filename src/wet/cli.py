@@ -553,7 +553,7 @@ def _cmd_docs_reindex(args: argparse.Namespace) -> int:
         )
         return 0
     finally:
-        db._conn.close()
+        db.close()
 
 
 def _cmd_docs_import(args: argparse.Namespace) -> int:

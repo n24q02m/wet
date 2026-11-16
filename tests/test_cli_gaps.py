@@ -779,9 +779,12 @@ def test_search_custom_url_rstrip_and_env_token(monkeypatch, capsys):
 
 class _FakeDocsDB:
     def __init__(self, *a, **k):
-        self._conn = SimpleNamespace(close=lambda: None)
         self.cleared: list = []
         self.reset: list = []
+        self.closed = False
+
+    def close(self):
+        self.closed = True
 
     def get_library(self, name):
         return {"id": "lib-1", "name": name}
@@ -803,6 +806,7 @@ def test_reindex_library_without_version_skips_clearing(monkeypatch, capsys):
 
     assert rc == 0
     assert fake.cleared == [] and fake.reset == []
+    assert fake.closed
     assert '"status": "cleared"' in capsys.readouterr().out
 
 
