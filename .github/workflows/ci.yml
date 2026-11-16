@@ -277,11 +277,14 @@ jobs:
   # tracking issue. Folded in from canary-alert.yml, whose workflow_run
   # trigger listened for a failed scheduled CI run; the job now runs inside
   # the same run, after refresh-tier1, so no second workflow is needed.
+  # Schedules only ever ran on the default branch, so the issue is filed
+  # only for a main run: a refresh-tier1 dispatched on a branch to try a
+  # change reports in its own run, not in the tracking issue.
   # ============================================================================
   report-canary-failure:
     name: Open or update the canary failure issue
     needs: refresh-tier1
-    if: failure() && github.event_name == 'workflow_dispatch' && inputs.job == 'refresh-tier1'
+    if: failure() && github.event_name == 'workflow_dispatch' && inputs.job == 'refresh-tier1' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
