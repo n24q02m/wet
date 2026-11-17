@@ -74,9 +74,11 @@ _serialize_f32 = _db_mod._serialize_f32
 # macOS Python from ``actions/setup-python`` is built against a system
 # SQLite compiled WITHOUT ``--enable-loadable-sqlite-extensions``, so
 # ``sqlite3.Connection.enable_load_extension`` does not exist. Tests that
-# exercise the vector table require the extension to load; on macOS CI we
-# skip them rather than fail. Production code already degrades gracefully
-# (FTS-only mode), so runtime behaviour is unchanged.
+# exercise the vector table require the extension to load; on such an
+# interpreter we skip them rather than fail. CI's macOS leg syncs onto uv's
+# managed CPython instead (ci.yml, UV_PYTHON_PREFERENCE), so they run there.
+# Production code already degrades gracefully (FTS-only mode), so runtime
+# behaviour is unchanged.
 # ---------------------------------------------------------------------------
 def _sqlite_vec_loadable() -> bool:
     import sqlite3 as _sqlite3

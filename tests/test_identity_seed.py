@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import sys
 import types
 from unittest.mock import AsyncMock, MagicMock
@@ -47,6 +48,44 @@ class TestIdentitySeed:
 
     def test_profile_dir_default_under_sub(self, isolated_sub_root):
         assert identity_profile_dir() == str(isolated_sub_root / "profiles")
+
+    def test_configured_profile_dir_wins(self, monkeypatch, isolated_sub_root):
+        """An explicit IDENTITY_PROFILE_DIR is used as-is."""
+        monkeypatch.setattr("wet.config.settings.identity_profile_dir", "/p/prof")
+        assert identity_profile_dir() == "/p/prof"
+
+    def test_corrupted_file_derives_and_rewrites_a_seed(self, isolated_sub_root):
+        """An unreadable identity file must not wedge startup: a fresh seed is
+        derived and persisted over the corrupted one."""
+        path = isolated_sub_root / "identity.json"
+        path.write_text("{not json", encoding="utf-8")
+
+        seed = get_or_create_identity_seed()
+
+        assert seed > 0
+        assert json.loads(path.read_text(encoding="utf-8")) == {"identity_seed": seed}
+
+    @pytest.mark.parametrize("stored", ['{"identity_seed": 0}', '["x"]'])
+    def test_unusable_persisted_seed_is_replaced(self, isolated_sub_root, stored):
+        """A non-positive seed, or a file that is not an object, is ignored."""
+        path = isolated_sub_root / "identity.json"
+        path.write_text(stored, encoding="utf-8")
+
+        seed = get_or_create_identity_seed()
+
+        assert seed > 0
+        assert json.loads(path.read_text(encoding="utf-8")) == {"identity_seed": seed}
+
+    def test_unwritable_namespace_keeps_an_in_memory_seed(self, monkeypatch, tmp_path):
+        """When the seed cannot be persisted the server still gets one."""
+        blocker = tmp_path / "not-a-dir"
+        blocker.write_text("", encoding="utf-8")
+        monkeypatch.setattr("wet.runtime.sub_root", lambda namespace=None: blocker)
+        monkeypatch.delenv("WET_IDENTITY_SEED", raising=False)
+        monkeypatch.setattr("wet.config.settings.identity_seed", 0)
+
+        assert get_or_create_identity_seed() > 0
+        assert blocker.read_text(encoding="utf-8") == ""
 
 
 class _FakeEntryOps:

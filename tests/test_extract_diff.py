@@ -174,3 +174,32 @@ async def test_diff_multiple_urls_wraps_in_results(real_cache):
         "https://b.com",
     ]
     assert all(item["change_status"] == "new" for item in data["results"])
+
+
+@pytest.mark.asyncio
+async def test_diff_refetch_failures_are_reported_per_url_and_not_recorded(
+    real_cache,
+):
+    """A refetch that errors, returns unparseable text, or returns a per-URL
+    error becomes that URL's error entry; no snapshot is stored for it."""
+    answers = {
+        "https://down.com": "Error: all strategies failed",
+        "https://garbled.com": "<html>not json</html>",
+        "https://blocked.com": json.dumps(
+            [{"url": "https://blocked.com", "error": "403 Forbidden"}]
+        ),
+    }
+
+    async def fake_extract(urls, format, stealth):
+        return answers[urls[0]]
+
+    with patch("wet.server._extract", new_callable=AsyncMock, side_effect=fake_extract):
+        result = await extract(action="diff", urls=list(answers))
+
+    items = {item["url"]: item["error"] for item in payload(result)["results"]}
+    assert items["https://down.com"] == "Error: all strategies failed"
+    assert items["https://garbled.com"] == (
+        "Error: failed to parse extract result for diff: <html>not json</html>"
+    )
+    assert items["https://blocked.com"] == "403 Forbidden"
+    assert all(real_cache.latest_snapshots(url, 2) == [] for url in answers)

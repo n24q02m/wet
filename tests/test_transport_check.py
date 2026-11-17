@@ -421,3 +421,65 @@ def test_has_uvx_runnable_backend(monkeypatch, chain, env, expected):
     monkeypatch.setattr(sb, "chain_backend_names", lambda: chain)
 
     assert sb.has_uvx_runnable_backend() is expected
+
+
+# ---------------------------------------------------------------------------
+# The memoized public entry point and its raw signals
+# ---------------------------------------------------------------------------
+
+# Captured at import, before the autouse conftest stub replaces the attribute,
+# so the real memoizing wrapper can be exercised.
+_REAL_IS_UVX_TOOL_VENV = tc.is_uvx_tool_venv
+
+
+def test_real_entry_point_memoizes_until_reset(monkeypatch, tmp_path):
+    """The first answer is cached for the process; only ``reset_cache``
+    makes the next call look at the signals again."""
+    monkeypatch.setattr(tc, "_is_in_docker", lambda: False)
+    monkeypatch.setattr(tc, "_is_http_transport", lambda: False)
+    monkeypatch.setattr(
+        sys, "executable", str(tmp_path / "uv" / "tools" / "wet" / "python")
+    )
+    monkeypatch.setattr(tc.importlib.util, "find_spec", lambda name: object())
+    tc.reset_cache()
+    try:
+        assert _REAL_IS_UVX_TOOL_VENV() is True
+
+        monkeypatch.setattr(sys, "executable", str(tmp_path / "venv" / "python"))
+        assert _REAL_IS_UVX_TOOL_VENV() is True
+
+        tc.reset_cache()
+        assert _REAL_IS_UVX_TOOL_VENV() is False
+    finally:
+        tc.reset_cache()
+
+
+def test_docker_marker_is_the_dockerenv_file(monkeypatch):
+    """Docker detection asks for exactly ``/.dockerenv``."""
+    asked = []
+    monkeypatch.setattr(tc.os.path, "exists", lambda p: asked.append(p) or True)
+
+    assert tc._is_in_docker() is True
+    assert asked == ["/.dockerenv"]
+
+
+def test_unresolvable_executable_falls_back_to_the_pip_signal(monkeypatch):
+    """An interpreter path that cannot be resolved is not an error: detection
+    falls through to the pip check."""
+
+    class _Unresolvable:
+        def __init__(self, raw):
+            pass
+
+        def resolve(self):
+            raise OSError("broken symlink loop")
+
+    monkeypatch.setattr(tc, "_is_in_docker", lambda: False)
+    monkeypatch.setattr(tc, "_is_http_transport", lambda: False)
+    monkeypatch.setattr(tc, "Path", _Unresolvable)
+
+    monkeypatch.setattr(tc.importlib.util, "find_spec", lambda name: object())
+    assert tc._detect_uvx_tool_venv() is False
+
+    monkeypatch.setattr(tc.importlib.util, "find_spec", lambda name: None)
+    assert tc._detect_uvx_tool_venv() is True

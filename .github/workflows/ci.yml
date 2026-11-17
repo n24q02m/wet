@@ -89,6 +89,14 @@ jobs:
         os: [ubuntu-latest, windows-latest, macos-latest]
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
+    env:
+      # The macOS interpreter from setup-python is the python.org framework
+      # build, whose sqlite3 has no enable_load_extension. sqlite-vec never
+      # loads there, so every vector-search test skipped on macOS and the
+      # vector paths of db.py went untested on that OS. uv's own CPython can
+      # load extensions, like the one `uvx --python 3.13` installs for users,
+      # so macOS syncs onto it. Elsewhere this is uv's default preference.
+      UV_PYTHON_PREFERENCE: ${{ matrix.os == 'macos-latest' && 'only-managed' || 'managed' }}
 
     permissions:
       contents: read

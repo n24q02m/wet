@@ -257,6 +257,23 @@ class TestServerStatus:
         assert "port 8011" in out
         assert "9103" not in out
 
+    def test_status_with_non_numeric_wet_port_warns_and_uses_config_port(
+        self, monkeypatch, capsys, locks_dir
+    ):
+        """A garbage ``WET_PORT`` is named on stderr (the server would refuse
+        it) and the CLI falls back to the configured port."""
+        monkeypatch.setenv("WET_PORT", "eighty")
+        with (
+            patch("wet.runtime.hull_settings", return_value=_hs(port=9103)),
+            patch("wet.cli._http_probe", return_value=False),
+        ):
+            rc = cli.main(["server", "status"])
+
+        assert rc == 1
+        captured = capsys.readouterr()
+        assert "ignoring non-numeric WET_PORT='eighty'" in captured.err
+        assert "port 9103" in captured.out
+
     def test_status_without_lock_probes_config_port(
         self, monkeypatch, capsys, locks_dir
     ):
@@ -351,6 +368,19 @@ class TestConfigCommand:
 
         assert rc == 0
         assert capsys.readouterr().out.strip() == "8000"
+
+    def test_get_never_echoes_a_secret_shaped_key(self, capsys, config_dir):
+        """``config get`` of a credential key prints a mask, not the value."""
+        (config_dir / "config.toml").write_text(
+            '[models.chat]\napi_key = "sk-do-not-print"\n', encoding="utf-8"
+        )
+
+        rc = cli.main(["config", "get", "models.chat.api_key"])
+
+        out = capsys.readouterr().out
+        assert rc == 0
+        assert out.strip() == "*** (value not echoed)"
+        assert "sk-do-not-print" not in out
 
     def test_get_missing_file_hints_init(self, capsys, config_dir):
         rc = cli.main(["config", "get", "server.port"])
@@ -568,6 +598,20 @@ class TestDocsReembedSubcommand:
         assert "missing:        3" in out
         assert "dims:           768" in out
 
+    def test_reembed_dry_run_says_nothing_was_written(self, monkeypatch, capsys):
+        """A dry-run result is headed as such, so nobody mistakes it for a
+        completed backfill."""
+        result = {"status": "dry-run", "missing": 5, "embedded": 0, "remaining": 5}
+        with patch(
+            "wet.docs_reembed.reembed", new_callable=AsyncMock, return_value=result
+        ):
+            rc = cli.main(["docs", "reembed", "--dry-run"])
+
+        out = capsys.readouterr().out
+        assert rc == 0
+        assert out.startswith("docs reembed dry-run (no writes):")
+        assert "complete" not in out
+
     def test_reembed_error_returns_nonzero(self, monkeypatch, capsys):
         result = {"status": "error", "reason": "embedding model mismatch"}
         with patch(
@@ -609,6 +653,23 @@ class TestSearchSubcommand:
         err = capsys.readouterr().err
         assert "not running" in err
         assert "wet server start" in err
+
+
+@pytest.mark.parametrize(
+    "block,is_error",
+    [
+        ('{"error": "backends down"}', True),
+        ('  {"results": []}', False),
+        ('{"error": ""}', False),
+        ("{truncated by a proxy", False),
+        ('["not", "an", "object"]', False),
+        ("plain text answer", False),
+    ],
+)
+def test_text_block_error_detection(block, is_error):
+    """Only a JSON object with a non-empty ``error`` turns the exit code red;
+    a brace-led block that is not JSON is ordinary output."""
+    assert cli._text_block_is_error(block) is is_error
 
 
 class TestWarmupSubcommand:
