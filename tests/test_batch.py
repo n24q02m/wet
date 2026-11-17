@@ -98,3 +98,35 @@ async def test_batch_extract_empty():
     assert parsed["summary"]["failed"] == 0
     assert parsed["results"] == []
     assert parsed["errors"] == []
+
+
+@pytest.mark.asyncio
+async def test_extract_tool_batch_splits_results_and_errors():
+    """Through the MCP tool: an empty extraction and a raising one are
+    reported as errors next to the page that worked."""
+    from structured import payload
+
+    from wet.server import extract
+
+    async def fake_extract(urls, format, stealth):
+        url = urls[0]
+        if url == "https://empty.com":
+            return "[]"
+        if url == "https://boom.com":
+            raise RuntimeError("tls handshake failed")
+        return json.dumps([{"url": url, "markdown": "fine"}])
+
+    with patch("wet.sources.crawler.extract", side_effect=fake_extract):
+        result = await extract(
+            action="batch",
+            urls=["https://ok.com", "https://empty.com", "https://boom.com"],
+        )
+
+    data = payload(result)
+    assert data["summary"] == {"total": 3, "success": 1, "failed": 2}
+    assert data["results"] == [{"url": "https://ok.com", "markdown": "fine"}]
+    errors = {item["url"]: item["error"] for item in data["errors"]}
+    assert errors == {
+        "https://empty.com": "Empty result",
+        "https://boom.com": "tls handshake failed",
+    }

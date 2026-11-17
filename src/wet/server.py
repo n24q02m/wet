@@ -198,10 +198,14 @@ class _PerSubCache:
     def stats(self, sub: str | None = None) -> dict:
         if sub:
             return self._for(sub).stats(sub)
-        merged: dict[str, int] = {}
+        # WebCache.stats() maps each action to {"total", "active", "hits"};
+        # sum those counters per action across the namespace files.
+        merged: dict[str, dict[str, int]] = {}
         for cache in self._caches.values():
-            for key, value in cache.stats().items():
-                merged[key] = merged.get(key, 0) + value
+            for action, counts in cache.stats().items():
+                bucket = merged.setdefault(action, {"total": 0, "active": 0, "hits": 0})
+                for field, value in counts.items():
+                    bucket[field] += value
         return merged
 
     def close(self) -> None:

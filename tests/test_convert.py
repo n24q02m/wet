@@ -107,3 +107,25 @@ async def test_convert_explicit_allowlist_overrides_default(tmp_path, monkeypatc
     data = json.loads(await convert_local_files([str(target)]))
 
     assert "content" in data[0]
+
+
+async def test_extract_tool_convert_reports_unconvertible_files_per_path(tmp_path):
+    """Through the MCP tool: a file markitdown cannot read becomes that path's
+    error entry, and the other files in the call are still converted."""
+    from structured import payload
+
+    from wet.server import extract
+
+    good = tmp_path / "notes.txt"
+    good.write_text("Meeting notes")
+    binary = tmp_path / "blob.bin"
+    binary.write_bytes(b"\x00\x01\x02\xff\xfe")
+
+    result = await extract(action="convert", paths=[str(good), str(binary)])
+
+    items = payload(result)["results"]
+    assert items[0]["title"] == "notes.txt"
+    assert "Meeting notes" in items[0]["content"]
+    assert items[1]["path"] == str(binary)
+    assert "content" not in items[1]
+    assert items[1]["error"]

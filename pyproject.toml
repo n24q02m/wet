@@ -208,7 +208,9 @@ branch = true
 # 2026-11-15: ratchet to the lowest leg of the 3-OS matrix (CI run
 # 43626085602: ubuntu 93.36%, windows 93.40%, macos 92.26%). The gate only
 # ever moves up; the target stays at >=95%.
-fail_under = 92
+# 2026-11-17: target reached and enforced on every leg of the 3-OS matrix
+# (macOS now runs the sqlite-vec tests on the uv-managed CPython, see ci.yml).
+fail_under = 95
 show_missing = true
 exclude_lines = ["pragma: no cover", "if TYPE_CHECKING:"]
 

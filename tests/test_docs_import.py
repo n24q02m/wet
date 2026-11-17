@@ -222,3 +222,29 @@ def test_cli_docs_import_end_to_end(tmp_path, capsys):
     assert "docs import complete:" in out
     assert "chunks:     3" in out
     assert f"libraries:  {EXPECTED_LIBRARIES}" in out
+
+
+def test_import_force_in_process_replaces_a_foreign_store(tmp_path):
+    """`force=True` deletes a non-empty target this process never opened,
+    and its stale WAL sidecar, before materializing the export. The store
+    left behind holds only the export's rows (the foreign table is gone)."""
+    export = _write_export(tmp_path, n_chunks=3)
+    target = tmp_path / "docs.db"
+    conn = sqlite3.connect(str(target))
+    conn.execute("CREATE TABLE foreign_rows (x)")
+    conn.commit()
+    conn.close()
+    Path(str(target) + "-wal").write_bytes(b"stale")
+
+    result = import_docs(export, db_path=target, expected_chunks=3, force=True)
+
+    assert result["chunks"] == 3
+    conn = sqlite3.connect(str(target))
+    try:
+        tables = {
+            row[0]
+            for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")
+        }
+    finally:
+        conn.close()
+    assert "foreign_rows" not in tables

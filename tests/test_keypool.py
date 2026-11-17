@@ -446,3 +446,116 @@ async def test_runtime_provider_client_reads_a_keyless_cells_seeded_pool():
         assert runtime.cell_configured("chat") is True
     finally:
         runtime.reset_settings_cache()
+
+
+# ---------------------------------------------------------------------------
+# Rerank, close, the single-key failure path and provider seeding
+# ---------------------------------------------------------------------------
+
+
+async def test_rerank_goes_through_the_pool_and_aclose_closes_its_transport():
+    """``rerank`` is served with the pool's key, and ``aclose`` closes every
+    per-credential client down to the transport. A second close is a no-op."""
+    keypool.credential_store().add_credential(
+        PROVIDER, "sk-rerank-0001", base_url=BASE_URL
+    )
+    seen: list[str] = []
+    closed: list[bool] = []
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request.headers["authorization"].removeprefix("Bearer "))
+        assert json.loads(request.content)["top_n"] == 1
+        return httpx.Response(
+            200, json={"results": [{"index": 1, "relevance_score": 0.9}]}
+        )
+
+    class _TrackedTransport(httpx.MockTransport):
+        async def aclose(self) -> None:
+            closed.append(True)
+
+    client = PooledProviderClient(
+        _cell(task="rerank"), timeout=5.0, transport=_TrackedTransport(handler)
+    )
+
+    ranked = await client.rerank("q", ["a", "b"], top_n=1)
+    await client.aclose()
+    await client.aclose()
+
+    assert ranked == [{"index": 1, "relevance_score": 0.9}]
+    assert seen == ["sk-rerank-0001"]
+    assert closed == [True]
+
+
+async def test_single_key_429_cools_the_key_by_both_hints_and_reraises():
+    """With one key there is nothing to rotate to: the 429 is raised to the
+    caller, and the key still cools down by the provider's own hint."""
+    store = keypool.credential_store()
+    solo = store.add_credential(PROVIDER, "sk-solo-0001", base_url=BASE_URL)
+    reset_at = str(int(time.time()) + 30)
+    client = _client(
+        [], {"sk-solo-0001": (429, {"retry-after": "7", "x-ratelimit-reset": reset_at})}
+    )
+
+    with pytest.raises(keypool.ProviderHttpError) as caught:
+        await _chat(client)
+
+    assert caught.value.status == 429
+    assert caught.value.retry_after == 7.0
+    assert caught.value.rate_limit_reset is not None
+    health = {row.id: row for row in store.pool_health(PROVIDER)}
+    assert health[solo.id].last_status == 429
+    assert health[solo.id].cooldown_remaining > 1.0
+
+
+def test_hint_headers_in_a_plain_dict_match_case_insensitively():
+    """A plain dict (not ``httpx.Headers``) still yields the cooldown hint
+    when the provider capitalised the header name."""
+    error = keypool.ProviderHttpError(429, "slow down", headers={"Retry-After": "5"})
+
+    assert error.retry_after == 5.0
+    assert error.rate_limit_reset is None
+
+
+def test_seeding_provider_keys_skips_blanks_and_counts_duplicates():
+    """Blank keys are ignored; a key already in the pool counts as skipped."""
+    store = keypool.credential_store()
+
+    result = keypool.seed_provider_keys(
+        store, "tavily", ["tvly-a", "  ", "tvly-a", "tvly-b"], base_url=BASE_URL
+    )
+
+    assert (result.provider, result.added, result.skipped) == ("tavily", 2, 1)
+    assert [row.api_key for row in store.pool("tavily").credentials()] == [
+        "tvly-a",
+        "tvly-b",
+    ]
+
+
+def test_provider_pool_seeds_each_key_set_once(monkeypatch):
+    """The same configured key set is seeded once per process; a pool asked
+    for without keys is returned as-is."""
+    calls: list[tuple] = []
+    real_seed = keypool.seed_provider_keys
+
+    def _counting_seed(store, provider, keys, **kw):
+        calls.append(tuple(keys))
+        return real_seed(store, provider, keys, **kw)
+
+    monkeypatch.setattr(keypool, "seed_provider_keys", _counting_seed)
+
+    first = keypool.pool_for_provider("tavily", keys=["tvly-a"], base_url=BASE_URL)
+    second = keypool.pool_for_provider("tavily", keys=["tvly-a"], base_url=BASE_URL)
+    bare = keypool.pool_for_provider("tavily")
+
+    assert calls == [("tvly-a",)]
+    assert first is second is bare
+    assert [row.api_key for row in bare.credentials()] == ["tvly-a"]
+
+
+def test_migrating_legacy_cells_reports_only_keyed_cells():
+    """Startup migration returns one result per cell that carried a key."""
+    results = keypool.migrate_legacy_cells(
+        [_cell("sk-legacy-0001"), _cell("", task="embed")]
+    )
+
+    assert [(r.provider, r.added, r.skipped) for r in results] == [(PROVIDER, 1, 0)]
