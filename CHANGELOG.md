@@ -2,6 +2,26 @@
 
 <!-- version list -->
 
+## v3.22.1-beta.1 (2026-11-17)
+
+### Bug Fixes
+
+- Pass the publish_existing_tag input to the recovery step through env
+  ([#1977](https://github.com/n24q02m/wet/pull/1977),
+  [`713a6ed`](https://github.com/n24q02m/wet/commit/713a6ed76deba208eeb897176f4bea5b12fb03b2))
+
+- Relock uv.lock in the release commit ([#1978](https://github.com/n24q02m/wet/pull/1978),
+  [`bb35ec3`](https://github.com/n24q02m/wet/commit/bb35ec392eca96f818f1bd37559e9009b90f3bb1))
+
+- Stop repeating the version number in the handover
+  ([#1975](https://github.com/n24q02m/wet/pull/1975),
+  [`b7c4b6c`](https://github.com/n24q02m/wet/commit/b7c4b6cb1becf8b9502c261176e509678cc821bf))
+
+- Wait for the package registry to serve the release before publishing to the MCP Registry
+  ([#1976](https://github.com/n24q02m/wet/pull/1976),
+  [`ed83d73`](https://github.com/n24q02m/wet/commit/ed83d7357c332ccb9a91d15dd0126c214b8835cc))
+
+
 ## v3.22.0 (2026-11-17)
 
 ### Bug Fixes
