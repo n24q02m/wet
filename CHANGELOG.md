@@ -2,6 +2,14 @@
 
 <!-- version list -->
 
+## v3.22.0 (2026-11-17)
+
+### Bug Fixes
+
+- Pin hull to 0.8.0 stable ([#1974](https://github.com/n24q02m/wet/pull/1974),
+  [`4898b57`](https://github.com/n24q02m/wet/commit/4898b570de9bfc40ac3e4b41bb8eec5cf82ece20))
+
+
 ## v3.22.0-beta.7 (2026-11-16)
 
 ### Bug Fixes
