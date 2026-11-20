@@ -336,11 +336,36 @@ def test_setup_crawl4ai_exception(mock_run):
 # Test run_auto_setup
 
 
+@patch("wet.config.settings.wet_auto_searxng", False)
 @patch("wet.setup.needs_setup", return_value=False)
-def test_run_auto_setup_not_needed(mock_needs_setup):
+@patch("wet.setup._install_searxng", return_value=True)
+@patch("wet.setup._setup_crawl4ai", return_value=True)
+def test_run_auto_setup_not_needed(
+    mock_setup_crawl4ai, mock_install_searxng, mock_needs_setup
+):
     assert run_auto_setup() is True
+    mock_install_searxng.assert_not_called()
+    mock_setup_crawl4ai.assert_not_called()
 
 
+@patch("wet.config.settings.disable_local_search", False)
+@patch("wet.config.settings.wet_auto_searxng", True)
+@patch("wet.setup.needs_setup", return_value=False)
+@patch("wet.setup._install_searxng", return_value=True)
+@patch("wet.setup._setup_crawl4ai", return_value=True)
+def test_run_auto_setup_installs_searxng_enabled_after_first_run(
+    mock_setup_crawl4ai, mock_install_searxng, mock_needs_setup
+):
+    # WET_AUTO_SEARXNG turned on after the first-run marker exists: the
+    # SearXNG install must still run (hull does not pip-install it unless
+    # HULL_SEARXNG_AUTO_INSTALL is set), while browser setup stays one-shot.
+    assert run_auto_setup() is True
+    mock_install_searxng.assert_called_once()
+    mock_setup_crawl4ai.assert_not_called()
+
+
+@patch("wet.config.settings.disable_local_search", False)
+@patch("wet.config.settings.wet_auto_searxng", True)
 @patch("wet.setup.needs_setup", return_value=True)
 @patch("wet.setup._install_searxng", return_value=True)
 @patch("wet.setup._setup_crawl4ai", return_value=True)
@@ -356,6 +381,40 @@ def test_run_auto_setup_success(
     mock_marker.touch.assert_called_once()
 
 
+@patch("wet.config.settings.disable_local_search", False)
+@patch("wet.config.settings.wet_auto_searxng", False)
+@patch("wet.setup.needs_setup", return_value=True)
+@patch("wet.setup._install_searxng", return_value=True)
+@patch("wet.setup._setup_crawl4ai", return_value=True)
+@patch("wet.setup.SETUP_MARKER")
+@patch("pathlib.Path.mkdir")
+def test_run_auto_setup_skips_searxng_when_auto_searxng_off(
+    mock_mkdir, mock_marker, mock_setup_crawl4ai, mock_install_searxng, mock_needs_setup
+):
+    # WET_AUTO_SEARXNG defaults off: warmup must not pip-install SearXNG.
+    assert run_auto_setup() is True
+    mock_install_searxng.assert_not_called()
+    mock_setup_crawl4ai.assert_called_once()
+    mock_marker.touch.assert_called_once()
+
+
+@patch("wet.config.settings.disable_local_search", True)
+@patch("wet.config.settings.wet_auto_searxng", True)
+@patch("wet.setup.needs_setup", return_value=True)
+@patch("wet.setup._install_searxng", return_value=True)
+@patch("wet.setup._setup_crawl4ai", return_value=True)
+@patch("wet.setup.SETUP_MARKER")
+@patch("pathlib.Path.mkdir")
+def test_run_auto_setup_skips_searxng_when_local_search_disabled(
+    mock_mkdir, mock_marker, mock_setup_crawl4ai, mock_install_searxng, mock_needs_setup
+):
+    # DISABLE_LOCAL_SEARCH wins over WET_AUTO_SEARXNG, as for auto-start.
+    assert run_auto_setup() is True
+    mock_install_searxng.assert_not_called()
+
+
+@patch("wet.config.settings.disable_local_search", False)
+@patch("wet.config.settings.wet_auto_searxng", True)
 @patch("wet.setup.needs_setup", return_value=True)
 @patch("wet.setup._install_searxng", return_value=False)
 @patch("wet.setup._setup_crawl4ai", return_value=True)

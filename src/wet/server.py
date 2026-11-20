@@ -1174,7 +1174,7 @@ async def search(  # noqa: PLR0913
 
     Actions:
     - search: Web search via the SEARCH_BACKENDS chain (default: Tavily when keyed, then DuckDuckGo). Example: search(action="search", query="python async patterns")
-    - research: Academic/scientific search (Google Scholar, arXiv, PubMed). Example: search(action="research", query="transformer attention mechanism")
+    - research: Academic/scientific search via the SEARCH_BACKENDS chain (science category; results tagged arxiv/google_scholar/pubmed/doi). Example: search(action="research", query="transformer attention mechanism")
     - docs: Search library documentation with auto-indexing. Example: search(action="docs", query="how to create routes", library="fastapi")
     - docs_resolve: Free-form library name to ranked library_id list. Example: search(action="docs_resolve", query="react")
     - docs_query: Version-aware library docs query honoring project lock + token cap. Example: search(action="docs_query", library="react", version="latest", topic="useState", query="how to set initial state")

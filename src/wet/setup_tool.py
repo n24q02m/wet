@@ -222,7 +222,7 @@ async def run_warmup() -> dict:
     """
     steps = []
 
-    # 1. Run auto-setup (SearXNG + Playwright)
+    # 1. Run auto-setup (Playwright; SearXNG only when WET_AUTO_SEARXNG is on)
     try:
         from wet.setup import run_auto_setup
 

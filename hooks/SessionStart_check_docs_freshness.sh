@@ -35,7 +35,7 @@ STALE=$(
 
 if [ "$STALE" -gt 0 ]; then
     >&2 echo "wet: $STALE Tier 1 libraries are >7 days stale."
-    >&2 echo "Refresh suggestion:  config(action='docs_reindex', scope='tier1')"
+    >&2 echo "Refresh suggestion:  config(action='docs_reindex', key='<library>') per stale library"
     >&2 echo "  or run:  uv run python scripts/build_tier1_index.py"
 fi
 

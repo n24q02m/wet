@@ -82,9 +82,9 @@ mcp-name: io.github.n24q02m/wet
 ## Features
 
 - **Web Search** -- Multi-backend metasearch with query expansion, TTL cache (1 h general / 5 min time-sensitive), standardized citation format, and 200-token snippet cap. Backends run as a fallback chain via `SEARCH_BACKENDS`; the zero-config default is `tavily,duckduckgo` (Tavily when keyed, DuckDuckGo always) and the rest are Tavily, Brave, Exa, Kagi, OpenRouter, Firecrawl, Startpage
-- **Academic Research** -- Search Google Scholar, Semantic Scholar, arXiv, PubMed, CrossRef, BASE
+- **Academic Research** -- `search(action="research")` runs the `SEARCH_BACKENDS` chain with the `science` category (only a `searxng` backend applies it), reranks the hits, and tags each result by source domain (arXiv, Google Scholar, Semantic Scholar, PubMed, DOI)
 - **Library Docs** -- Auto-discover and index documentation with FTS5 hybrid search, HyDE-enhanced retrieval, and version-specific docs
-- **Content Extract** -- 5-strategy escalation chain via `n24q02m-web-core` `ScrapingAgent` (`basic_http` -> `tls_spoof` -> render backends from `BROWSER_BACKENDS` (`native` / `browserless` / `cf-browser-rendering`) -> optional key-gated `captcha`), markitdown bridge for low-tier HTML/MD fallback, smart chunks structured output (clean text + markdown + JSON-LD + code blocks + metadata), batch processing (up to 50 URLs), deep crawling, site mapping
+- **Content Extract** -- 5-strategy escalation chain via the `hull_web` `ScrapingAgent` from `n24q02m-hull` (`basic_http` -> `tls_spoof` -> render backends from `BROWSER_BACKENDS` (`native` / `browserless` / `invisible`) -> optional key-gated `captcha`), markitdown bridge for low-tier HTML/MD fallback, smart chunks structured output (clean text + markdown + JSON-LD + code blocks + metadata), batch processing (up to 50 URLs), deep crawling, site mapping
 - **Local File Conversion** -- Convert PDF, DOCX, XLSX, CSV, HTML, EPUB, PPTX to Markdown
 - **Media** -- List + download images / videos / audio files. `analyze` was removed in v2.0.0 -- use `imagine-mcp.understand` for vision/audio inference
 - **Anti-bot** -- Stealth strategies bypass Cloudflare, Medium, LinkedIn, Twitter
@@ -232,14 +232,17 @@ an unkeyed chat cell disables LLM features (e.g. `extract(action="agent")`).
 **Search backends** -- `SEARCH_BACKENDS` is an ordered runtime fallback chain:
 `tavily` / `brave` / `exa` / `kagi` / `openrouter` (keyed), `firecrawl` / `keenable` (optional key),
 and credential-free `duckduckgo` / `startpage`. The default chain is
-`tavily,duckduckgo`; `searxng` is no longer shipped as a self-hosted instance and is
-reachable only by setting `SEARCH_BACKENDS=searxng` plus a third-party `SEARXNG_URL`. Keyed providers use `TAVILY_API_KEY`, `BRAVE_API_KEY`, `EXA_API_KEY`,
+`tavily,duckduckgo`. `searxng` runs only when it is named in `SEARCH_BACKENDS`:
+against a third-party instance at `SEARXNG_URL`, or, with the opt-in
+`WET_AUTO_SEARXNG=true`, a local SearXNG that wet installs (server startup or
+`wet warmup`) and starts when a search needs it
+(`DISABLE_LOCAL_SEARCH` blocks the local one). Keyed providers use `TAVILY_API_KEY`, `BRAVE_API_KEY`, `EXA_API_KEY`,
 `KAGI_API_KEY`, or `OPENROUTER_API_KEY` (comma-separate for rotation). The
 `openrouter` backend runs the query through a chat completion with the
 `openrouter:web_search` server tool and maps the returned `url_citation`
-annotations onto the shared result shape; `OPENROUTER_MODEL` (default a
-free-tier model), `OPENROUTER_BASE_URL`, and `OPENROUTER_SEARCH_ENGINE`
-override its behavior. Firecrawl attempts a keyless request when `FIRECRAWL_API_KEY`
+annotations onto the shared result shape. `OPENROUTER_MODEL` has no default and
+is required: the backend refuses to run until it is set. `OPENROUTER_BASE_URL`
+and `OPENROUTER_SEARCH_ENGINE` override the endpoint and search engine. Firecrawl attempts a keyless request when `FIRECRAWL_API_KEY`
 is absent, and Keenable uses its keyless public endpoint when `KEENABLE_API_KEY` is absent; rejection or a DuckDuckGo/Startpage bot challenge advances the chain.
 
 Result reranking uses the configured rerank cell ([models.rerank] — cloud via
@@ -250,10 +253,9 @@ category filters that only SearXNG exposed are no longer applied by default.
 
 **Browser render backends** -- `BROWSER_BACKENDS` (CSV, escalation chain) picks
 the headless render leg of `extract`: `native` (in-process chromium, the
-zero-config default), `cf-browser-rendering` (Cloudflare Browser Rendering -- set
-`CF_ACCOUNT_ID` + `CF_BROWSER_RENDERING_TOKEN`), and `browserless` (only against a
-third-party managed instance -- set `BROWSERLESS_URL` + `BROWSERLESS_TOKEN`; the
-project's own self-hosted render service was retired). Empty
+zero-config default), `browserless` (only against a third-party managed
+instance -- set `BROWSERLESS_URL` + `BROWSERLESS_TOKEN`; the project's own
+self-hosted render service was retired), and `invisible` (see below). Empty
 chain falls back to `native`. Set `CAPSOLVER_API_KEY` to append an optional,
 key-gated CAPTCHA tier as the last escalation step.
 
@@ -312,12 +314,12 @@ Full docs at **[mcp.n24q02m.com/servers/wet/setup/](https://mcp.n24q02m.com/serv
 
 - [Setup](https://mcp.n24q02m.com/servers/wet/setup/) -- install methods for Claude Code, Codex, Gemini CLI, Cursor, Windsurf, mcp.json
 - [Modes overview](https://mcp.n24q02m.com/get-started/modes-overview/) -- transports and HTTP auth modes
-- [Multi-user setup](https://mcp.n24q02m.com/get-started/multi-user/) -- per-JWT-sub credential model
+- [Multi-user setup](https://mcp.n24q02m.com/get-started/multi-user/) -- `multi` mode: per-user tokens from `users.toml`, one namespace per user
 
 In-repo references (Spec F single source of truth: setup docs live in
 [claude-plugins/plugins/wet/](https://github.com/n24q02m/claude-plugins/tree/main/plugins/wet)):
 
-- [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) -- web-core ScrapingAgent integration, strategy chain, storage layout, LLM provider dispatch
+- [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) -- `hull_web` ScrapingAgent integration, strategy chain, storage layout, LLM provider dispatch
 - [`docs/BENCHMARKS.md`](docs/BENCHMARKS.md) -- v1.x baseline coverage / latency placeholders + tier-1 fixture metrics
 
 **Install with AI agent** -- paste this to your AI coding agent:
@@ -332,8 +334,8 @@ In-repo references (Spec F single source of truth: setup docs live in
 
 | Tool | Description |
 |:-----|:------------|
-| `search` | Web (multi-backend metasearch), news, images, academic research (Scholar / arXiv / PubMed / CrossRef / Semantic Scholar / BASE), library docs (HyDE + FTS5), find similar pages. Includes `docs_resolve` (library name -> ranked id), `docs_query` (version-aware + topic + 5000-token cap), `docs_lock_project` (Cabinets project pin via pyproject / package.json / go.mod / Cargo.toml manifest detection). |
-| `extract` | URL -> smart chunks dict (`clean_text` + `markdown` + `structured_data` + `code_blocks` + `metadata`) via web-core 5-strategy chain. Batch processing (up to 50 URLs), deep crawling, site mapping, local file conversion (PDF/DOCX/XLSX/PPTX/EPUB), structured extraction (JSON Schema) |
+| `search` | Web (multi-backend metasearch), news, images, academic research (search chain with the `science` category; `searxng` maps it to Scholar / arXiv / PubMed / CrossRef / Semantic Scholar / BASE), library docs (HyDE + FTS5), find similar pages. Includes `docs_resolve` (library name -> ranked id), `docs_query` (version-aware + topic + 5000-token cap), `docs_lock_project` (Cabinets project pin via pyproject / package.json / go.mod / Cargo.toml manifest detection). |
+| `extract` | URL -> smart chunks dict (`clean_text` + `markdown` + `structured_data` + `code_blocks` + `metadata`) via the `hull_web` 5-strategy chain. Batch processing (up to 50 URLs), deep crawling, site mapping, local file conversion (PDF/DOCX/XLSX/PPTX/EPUB), structured extraction (JSON Schema) |
 | `media` | `list` (discover URLs from gallery pages), `download` (SSRF-safe). `analyze` was removed in v2.0.0 -- use `imagine-mcp.understand` instead |
 | `config` | `status`, `set`, `cache_clear`, `docs_reindex`, `warmup` |
 | `help` | Per-tool documentation: `search`, `extract`, `media`, `config` |
@@ -362,7 +364,7 @@ wet docs list                   # indexed library names (the input for `docs rei
 wet docs reindex <library>      # drop the cached docs index for <library>; the next docs search re-indexes it
 
 wet search "<query>"            # call the running server; exits 2 when it is down
-wet warmup                      # pre-download local models + browser deps to avoid first-run delays
+wet warmup                      # first-run setup (browser deps; SearXNG with WET_AUTO_SEARXNG), then check cloud model cells or pre-download local models
 ```
 
 Every subcommand prints its result and exits; there is no interactive auth or
@@ -375,7 +377,7 @@ credential flow in the CLI. Google Drive sync lives in
 | Extract URL | Yes (5-strategy chain) | No | Yes (basic) | Yes | No |
 | Media list / download | Yes | No | No | No | No |
 | Library docs search | Yes (Tier 1 curated + Tier 2 on-demand, version-aware, Cabinets) | No | No | No | Yes |
-| Academic research | Yes (6 providers) | No | No | No | No |
+| Academic research | Yes (search chain, science category) | No | No | No | No |
 | Self-hostable | Yes | No | No | No | Yes |
 | Free tier | Yes (open source) | Limited | Limited | Limited | Yes |
 
@@ -397,12 +399,17 @@ uv run wet
 
 ## Trust Model
 
-This plugin implements **TC-Local** (machine-bound, single trust principal). See [mcp-core trust model](https://mcp.n24q02m.com/servers/mcp-core/trust-model/) for full classification.
+wet keeps its state on the host that runs `wet server start`. `config.toml`
+and `docs.db` are plain files under `~/.wet/`; protect them with file
+permissions. Provider keys seeded into hull's credential pool are sealed with
+AES-256-GCM under a host key file; see hull's
+[provider key pools](https://github.com/n24q02m/hull/blob/main/packages/core-py/README.md#provider-key-pools-and-named-accounts)
+for the store.
 
 | Mode | Storage | Encryption | Who can read your data? |
 |---|---|---|---|
-| HTTP, `no-auth` (loopback) | `~/.wet/` | Machine-bound key | Only your OS user (file perm 0600) |
-| HTTP, `token` / `multi` | `~/.wet/` (`subs/<sub>/` for `multi`) | Same | Holders of a token; `multi` separates each user |
+| HTTP, `no-auth` (loopback) | `~/.wet/` | None for `config.toml` / `docs.db`; pooled keys AES-256-GCM in `~/.hull/hull.db` | Your OS user and anything that reaches the loopback port |
+| HTTP, `token` / `multi` | `~/.wet/` (cache, identity and profiles under `subs/<sub>/`) | Same | Holders of a token; `multi` gives each user its own `subs/<sub>/`, while `docs.db` stays shared |
 
 ## License
 

@@ -1,7 +1,7 @@
 """Auto-setup utilities for WET MCP Server.
 
 This module handles automatic first-run setup:
-- Install SearXNG from GitHub (metasearch engine)
+- Install SearXNG from GitHub (metasearch engine; opt-in via WET_AUTO_SEARXNG)
 - Install the Playwright AND Patchright Chromium builds + system deps
 - Create configuration directories
 
@@ -14,6 +14,8 @@ import sys
 from pathlib import Path
 
 from loguru import logger
+
+from wet.config import settings
 
 # Marker file to track if setup has been run (legacy dir name was ~/.wet)
 SETUP_MARKER = Path.home() / ".wet" / ".setup-complete"
@@ -291,12 +293,24 @@ def run_auto_setup() -> bool:
     """Run automatic setup on first start.
 
     Installs all required components:
-    1. SearXNG (metasearch engine, from GitHub)
-    2. Playwright + Patchright chromium + system deps (crawl4ai, interact)
+    1. SearXNG (metasearch engine, from GitHub), only when the local
+       SearXNG auto-start is enabled (``WET_AUTO_SEARXNG`` on and
+       ``DISABLE_LOCAL_SEARCH`` off). Checked on every call, not only on the
+       first run, so turning it on after setup still installs it.
+    2. Playwright + Patchright chromium + system deps (crawl4ai, interact),
+       once per setup marker
 
     Returns:
         True if setup succeeded or was already done, False on failure.
     """
+    # SearXNG is opt-in (same gate as the auto-start in server.py). hull only
+    # pip-installs it at runtime when HULL_SEARXNG_AUTO_INSTALL is set, so it
+    # is installed here whenever the gate is on, independent of the setup
+    # marker; _install_searxng is a no-op once the package is importable.
+    if settings.auto_searxng_enabled() and not _install_searxng():
+        logger.warning("SearXNG not installed, search will use external URL")
+        # Don't fail setup entirely - extract/crawl still works
+
     if not needs_setup():
         logger.debug("Setup already complete, skipping")
         return True
@@ -310,12 +324,7 @@ def run_auto_setup() -> bool:
     config_dir.mkdir(parents=True, exist_ok=True)
     logger.debug(f"Created config directory: {config_dir}")
 
-    # Step 2: Install SearXNG from GitHub
-    if not _install_searxng():
-        logger.warning("SearXNG not installed, search will use external URL")
-        # Don't fail setup entirely - extract/crawl still works
-
-    # Step 3: Run crawl4ai setup (Playwright + system deps + patchright)
+    # Step 2: Run crawl4ai setup (Playwright + system deps + patchright)
     if not _setup_crawl4ai():
         success = False
 

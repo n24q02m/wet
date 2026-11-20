@@ -59,7 +59,7 @@ streamable HTTP; with no server running they exit 2 and print a hint to run
 - `asyncio_mode = "auto"` -- KHONG can `@pytest.mark.asyncio`
 - Default timeout: 30 seconds per test
 - Integration/live/full tests excluded by default
-- `addopts = "-m 'not integration and not live and not full'"` trong pyproject.toml
+- `addopts = "-m 'not integration and not live and not full and not e2e'"` trong pyproject.toml
 
 ## Server, bind & auth
 
@@ -82,8 +82,8 @@ streamable HTTP; with no server running they exit 2 and print a hint to run
   - Multi-account: `[models.<task>] account = "<account id>"` (default: the provider's unaccounted pool), `provider = "<identity>"` overrides the identity derived from `base_url`. Managed through hull's `CredentialStore` / `AccountRegistry`.
   - Empty embed/rerank cell -> local ONNX (fastretrieval); unkeyed chat cell -> LLM features off. A cell with no key still counts as configured when its pool holds credentials.
  - Local model cache: `FASTRETRIEVAL_CACHE_PATH`.
-- Search backends (`SEARCH_BACKENDS` CSV, runtime fallback — thử từng backend, rơi xuống backend kế khi error/empty): `tavily` | `brave` | `exa` | `kagi` (keyed, `KAGI_API_KEY`) | `openrouter` (`OPENROUTER_API_KEY`, `openrouter:web_search` server tool) | `firecrawl` (key optional — không key vẫn thử keyless, `FIRECRAWL_API_KEY`) | `keenable` (key optional — không key thì gọi endpoint public keyless, `KEENABLE_API_KEY`) | `duckduckgo` | `startpage` (credential-free HTML scrape, uvx-safe; datacenter IP có thể bị bot-challenge → chain tự advance). Backend `searxng` (self-host) đã ngưng: không cấu hình `SEARXNG_URL` nữa; search phải đi qua backend external.
-- Browser render backends (headless leg of `extract`): `BROWSER_BACKENDS` (CSV escalation chain: `native` | `cf-browser-rendering` | `invisible`; empty = `native`), `CF_BROWSER_RENDERING_TOKEN`. `browserless` chỉ dùng với instance managed bên thứ ba (`BROWSERLESS_URL`/`BROWSERLESS_TOKEN`); service self-host của project đã bị gỡ cùng DNS. `STEALTHFOX_BINARY` (path to a patched Firefox build for the `invisible` tier — skips the engine download, seal still verified), `CAPSOLVER_API_KEY` (optional key-gated captcha tier)
+- Search backends (`SEARCH_BACKENDS` CSV, runtime fallback — thử từng backend, rơi xuống backend kế khi error/empty): `tavily` | `brave` | `exa` | `kagi` (keyed, `KAGI_API_KEY`) | `openrouter` (`OPENROUTER_API_KEY`, `openrouter:web_search` server tool) | `firecrawl` (key optional — không key vẫn thử keyless, `FIRECRAWL_API_KEY`) | `keenable` (key optional — không key thì gọi endpoint public keyless, `KEENABLE_API_KEY`) | `duckduckgo` | `startpage` (credential-free HTML scrape, uvx-safe; datacenter IP có thể bị bot-challenge → chain tự advance). Backend `searxng` không nằm trong chain mặc định (`tavily,duckduckgo`); chỉ chạy khi có tên trong `SEARCH_BACKENDS`: trỏ tới instance bên thứ ba qua `SEARXNG_URL`, hoặc opt-in `WET_AUTO_SEARXNG=true` để wet tự cài và chạy SearXNG local (`DISABLE_LOCAL_SEARCH` chặn).
+- Browser render backends (headless leg of `extract`): `BROWSER_BACKENDS` (CSV escalation chain: `native` | `browserless` | `invisible`; empty = `native`). `browserless` chỉ dùng với instance managed bên thứ ba (`BROWSERLESS_URL`/`BROWSERLESS_TOKEN`); service self-host của project đã bị gỡ cùng DNS. `STEALTHFOX_BINARY` (path to a patched Firefox build for the `invisible` tier — skips the engine download, seal still verified), `CAPSOLVER_API_KEY` (optional key-gated captcha tier)
 - Identity layer (one coherent person across the chain): `WET_IDENTITY_SEED` (int pin; default 0 = derive once and persist per namespace under `~/.wet/subs/<sub>/identity.json`), `IDENTITY_PROFILE_DIR` (persistent browser profile dir; default `~/.wet/subs/<sub>/profiles`). Requires the optional `n24q02m-hull[identity]` extra (`invisible-core`); without it strategies keep legacy behavior (warn once). First identity build may download a GeoIP mmdb (egress) and resolve locale/timezone from the egress IP — `timezone_mismatch` behind a proxy falls back to en-US/UTC, never raises to MCP callers
 - Robots policy: `RESPECT_ROBOTS_TXT` (default `false`); set `true` to enforce `robots.txt` for the ScrapingAgent extract chain and Crawl4AI `crawl`, `sitemap`, and `list_media` actions
 - Disable-local toggles (skip heavy in-process fallbacks per capability): `DISABLE_LOCAL_BROWSER`, `DISABLE_LOCAL_SEARCH`, `DISABLE_LOCAL_EMBED`, `DISABLE_LOCAL_RERANK`
@@ -121,7 +121,7 @@ With `auth = "token"` or `"multi"`, add the client's bearer token header
 
 1. Ruff lint (`--fix --target-version=py313`) + format
 2. ty type check
-3. pytest (`--tb=short -q --timeout=30`)
+3. pytest (`--tb=short -q --timeout=120`)
 4. Commit message: enforce `feat`/`fix` prefix
 
 ## Luu y quan trong
