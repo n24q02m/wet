@@ -23,6 +23,7 @@ and ``wet -V`` stay instant.
 from __future__ import annotations
 
 import argparse
+import getpass
 import importlib.metadata
 import json
 import os
@@ -36,6 +37,13 @@ import urllib.request
 from pathlib import Path
 
 SERVER_NOT_RUNNING = "wet server is not running — start it with `wet server start`"
+
+# Same refusal as hull-core's own ``token hash``: a token on argv lands in
+# shell history, so it is read from stdin or a hidden prompt instead.
+_TOKEN_ON_ARGV_REFUSAL = (
+    "wet: refusing to read a token from the command line (it would land in "
+    "shell history); pipe it on stdin or omit it to be prompted"
+)
 
 # LifecycleLock root: <name>-<port>.lock files, wet server uses name "wet".
 LOCKS_DIR = Path.home() / ".config" / "mcp" / "locks"
@@ -472,9 +480,20 @@ def _cmd_config(args: argparse.Namespace) -> int:
 
 
 def _cmd_token_hash(args: argparse.Namespace) -> int:
+    if args.token is not None:
+        print(_TOKEN_ON_ARGV_REFUSAL, file=sys.stderr)
+        return 2
+    if sys.stdin.isatty():
+        token = getpass.getpass("Token: ")
+    else:
+        token = sys.stdin.read().strip()
+    if not token:
+        print("wet: empty token", file=sys.stderr)
+        return 1
+
     from hull_core.auth.tokens import hash_token
 
-    print(hash_token(args.token))  # never echo the token itself
+    print(hash_token(token))  # never echo the token itself
     return 0
 
 
@@ -895,9 +914,14 @@ def build_parser() -> argparse.ArgumentParser:
     p_token = sub.add_parser("token", help="token helpers")
     token_sub = p_token.add_subparsers(dest="token_action", required=True)
     p_token_hash = token_sub.add_parser(
-        "hash", help="print the storable scrypt hash of a token"
+        "hash",
+        help="print the storable scrypt hash of a token read from stdin "
+        "or a hidden prompt",
     )
-    p_token_hash.add_argument("token")
+    # Declared only so an argv token reaches the refusal in _cmd_token_hash
+    # instead of argparse's "unrecognized arguments"; the safe input paths
+    # are stdin and the hidden prompt.
+    p_token_hash.add_argument("token", nargs="?", default=None, help=argparse.SUPPRESS)
     p_token_hash.set_defaults(func=_cmd_token_hash)
 
     p_users = sub.add_parser("users", help="user store helpers")

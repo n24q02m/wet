@@ -14,7 +14,7 @@ client không tự spawn wet như subprocess.
 - `wet --help` — xem toàn bộ subcommands; `wet -V` — in phiên bản
 - `wet server start|stop|status` — vòng đời server HTTP (`start`: detached, `--foreground` để giữ tiến trình; `status`: pid/lock/HTTP liveness)
 - `wet config init|path|show|get|set` — cấu hình `~/.wet/config.toml` (`get`/`set` dùng key dạng `server.port`)
-- `wet token hash <token>` — in scrypt hash để dán vào `[server] token_hash` (mode `token`) hoặc `token_hash` của user trong `users.toml` (mode `multi`)
+- `printf '%s' "$TOKEN" | wet token hash` — đọc token từ stdin (hoặc prompt ẩn khi chạy trên terminal; token đưa qua argv bị từ chối vì sẽ nằm trong shell history) rồi in scrypt hash để dán vào `[server] token_hash` (mode `token`) hoặc `token_hash` của user trong `users.toml` (mode `multi`)
 - `wet users path` — in đường dẫn `users.toml`
 - `wet docs list|reindex|import|reembed` — bảo trì docs store, chạy trực tiếp trên SQLite (không cần server)
 - `wet search "<query>"` — gọi server đang chạy qua MCP; server down thì in hint và exit 2
