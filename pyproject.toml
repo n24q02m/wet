@@ -223,3 +223,11 @@ exclude_lines = ["pragma: no cover", "if TYPE_CHECKING:"]
 # which this project never calls (it uses AsyncWebCrawler/BrowserConfig/
 # CrawlerRunConfig).
 override-dependencies = ["unclecode-litellm ; sys_platform == 'unreachable'"]
+# Resolve only releases at least 7 days old, the same hold Renovate's
+# minimumReleaseAge puts on third-party packages. Without it Renovate's
+# artifact step (`uv lock`) and lock file maintenance (`uv lock --upgrade`)
+# pick up releases younger than the hold, and Renovate rejects the branch.
+# n24q02m-hull and fastretrieval are released by this stack and consumed right
+# after release, so they are exempt here and in renovate.json alike.
+exclude-newer = "7 days"
+exclude-newer-package = { n24q02m-hull = false, fastretrieval = false }
