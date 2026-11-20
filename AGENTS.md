@@ -68,7 +68,7 @@ streamable HTTP; with no server running they exit 2 and print a hint to run
 - Per-port lifecycle lock (`LifecycleLock("wet", port)`, lock files under `~/.config/mcp/locks`) -- one instance per port, several ports can run side by side.
 - `[server] auth` modes:
   - `no-auth` -- loopback bind only; the server refuses to start on a non-loopback host.
-  - `token` -- single bearer token; store only its hash (`wet token hash <token>`).
+  - `token` -- single bearer token; store only its hash (`printf '%s' "$TOKEN" | wet token hash`; the token is read from stdin or a hidden prompt, a token on argv is refused).
   - `multi` -- per-user tokens from `[server] users_file` (default `~/.wet/users.toml`, see `wet users path`); data is namespaced per sub under `~/.wet/subs/<sub>/`.
 - Client config points at the HTTP endpoint (see the manual example below).
 

@@ -156,8 +156,8 @@ switch to token auth.
 ```bash
 # 1. Mint a token and its scrypt hash (hull-core canonical; the hash command
 #    never echoes the token itself)
-openssl rand -hex 32                 # the token — give it to clients, keep it secret
-uv run wet token hash <token>        # paste the output as token_hash
+TOKEN=$(openssl rand -hex 32)        # the token — give it to clients, keep it secret
+printf '%s' "$TOKEN" | uv run wet token hash   # paste the output as token_hash
 
 # 2. Instance config from the example
 cp docker-config/config.example.toml docker-config/config.toml
@@ -357,7 +357,7 @@ wet server status               # pid, lock and HTTP liveness
 wet server stop
 
 wet config init                 # write ~/.wet/config.toml; `config get|set` reads/edits one key
-wet token hash <token>          # print the storable scrypt hash for users.toml
+printf '%s' "$TOKEN" | wet token hash   # print the storable scrypt hash (token from stdin, or a hidden prompt; argv is refused)
 wet users path                  # print the users.toml path
 
 wet docs list                   # indexed library names (the input for `docs reindex`)

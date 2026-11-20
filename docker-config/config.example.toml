@@ -15,8 +15,10 @@ port = 8000
 auth = "token"
 # scrypt hash of your token. Canonical mint (hull-core, never echoes the
 # token itself):
-#   openssl rand -hex 32                     # generate the token
-#   wet token hash <token>                   # -> paste output here
+#   TOKEN=$(openssl rand -hex 32)            # generate the token
+#   printf '%s' "$TOKEN" | wet token hash    # -> paste output here
+# (the token is read from stdin or a hidden prompt; a token on argv is
+# refused so it never lands in shell history)
 # The plaintext token is what clients put in the Authorization header
 # (Authorization: Bearer <token>); only the hash lives in this file.
 token_hash = "scrypt$REPLACE_ME"

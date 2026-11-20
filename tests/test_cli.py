@@ -8,6 +8,7 @@ settings, DocsDB and reembed/warmup are mocked.
 """
 
 import argparse
+import io
 import re
 import tomllib
 from pathlib import Path
@@ -441,14 +442,84 @@ class TestConfigCommand:
 # ---------------------------------------------------------------------------
 
 
+class _FakeStdin(io.StringIO):
+    """A stdin stand-in whose ``isatty`` answer the test picks."""
+
+    def __init__(self, text: str = "", *, tty: bool) -> None:
+        super().__init__(text)
+        self._tty = tty
+
+    def isatty(self) -> bool:
+        return self._tty
+
+
 class TestTokenHash:
-    def test_prints_storable_hash_never_the_token(self, capsys):
-        rc = cli.main(["token", "hash", "my-secret-token"])
+    def test_argv_token_is_refused_and_nothing_is_hashed(self, monkeypatch, capsys):
+        # A token on argv lands in shell history, so it is refused outright.
+        monkeypatch.setattr("sys.stdin", _FakeStdin("", tty=False))
+        hasher = MagicMock(return_value="scrypt$never")
+        with patch("hull_core.auth.tokens.hash_token", hasher):
+            rc = cli.main(["token", "hash", "my-secret-token"])
+
+        assert rc == 2
+        captured = capsys.readouterr()
+        assert captured.out == ""
+        assert "refusing to read a token from the command line" in captured.err
+        assert "my-secret-token" not in captured.err
+        hasher.assert_not_called()
+
+    def test_piped_stdin_token_is_hashed(self, monkeypatch, capsys):
+        from hull_core.auth.tokens import verify_token
+
+        monkeypatch.setattr("sys.stdin", _FakeStdin("my-secret-token\n", tty=False))
+        with patch("getpass.getpass") as prompt:
+            rc = cli.main(["token", "hash"])
 
         assert rc == 0
+        prompt.assert_not_called()
         out = capsys.readouterr().out.strip()
         assert "my-secret-token" not in out
         assert out.startswith("scrypt$")
+        # The trailing newline from the pipe is not part of the token.
+        assert verify_token("my-secret-token", out)
+
+    def test_tty_prompts_without_echo(self, monkeypatch, capsys):
+        from hull_core.auth.tokens import verify_token
+
+        monkeypatch.setattr("sys.stdin", _FakeStdin("", tty=True))
+        with patch("getpass.getpass", return_value="typed-token") as prompt:
+            rc = cli.main(["token", "hash"])
+
+        assert rc == 0
+        prompt.assert_called_once_with("Token: ")
+        out = capsys.readouterr().out.strip()
+        assert "typed-token" not in out
+        assert verify_token("typed-token", out)
+
+    def test_empty_token_is_rejected(self, monkeypatch, capsys):
+        monkeypatch.setattr("sys.stdin", _FakeStdin("  \n", tty=False))
+        hasher = MagicMock(return_value="scrypt$never")
+        with patch("hull_core.auth.tokens.hash_token", hasher):
+            rc = cli.main(["token", "hash"])
+
+        assert rc == 1
+        captured = capsys.readouterr()
+        assert captured.out == ""
+        assert "empty token" in captured.err
+        hasher.assert_not_called()
+
+    def test_help_points_at_stdin_not_an_argv_token(self, capsys):
+        with pytest.raises(SystemExit) as exc:
+            cli.main(["token", "hash", "--help"])
+        assert exc.value.code == 0
+        hash_help = capsys.readouterr().out
+        assert hash_help.splitlines()[0] == "usage: wet token hash [-h]"
+        assert "positional arguments" not in hash_help
+
+        with pytest.raises(SystemExit) as exc:
+            cli.main(["token", "--help"])
+        assert exc.value.code == 0
+        assert "stdin" in capsys.readouterr().out
 
 
 class TestUsersPath:

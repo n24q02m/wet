@@ -54,7 +54,8 @@ uv run wet server start           # dev loopback; serves http://127.0.0.1:8000/m
 `wet-home` volume (caches in `wet-data`). Config edits take effect on
 `docker compose restart`.
 
-Token auth: `uv run wet token hash <token>` (scrypt, never echoes the token) →
+Token auth: `printf '%s' "$TOKEN" | uv run wet token hash` (scrypt, reads the
+token from stdin or a hidden prompt, refuses a token on argv, never echoes it) →
 paste into `[server] token_hash`; clients send `Authorization: Bearer`.
 
 ## CLI
@@ -147,8 +148,9 @@ Every provider credential wet resolves goes through hull's shared pool
 
 - `no-auth` refuses non-loopback binds — the server is localhost-only until
   token auth is configured.
-- The token-hash command never echoes the token; only `token_hash` is stored
-  in `config.toml`.
+- The token-hash command reads the token from stdin or a hidden prompt,
+  refuses a token on argv (it would land in shell history) and never echoes
+  the token; only `token_hash` is stored in `config.toml`.
 - `media.analyze` was removed in v2.0.0 (see `docs/migration.md`); current
   release line is v3.x.
 
