@@ -116,7 +116,7 @@ Version-aware library docs query honoring optional topic filter, project lock (C
 {"action": "docs_query", "library": "fastapi", "project_path": "/repo/my-api", "query": "dependency injection"}
 ```
 
-When the requested library is not yet indexed, the action returns `status: "indexing_in_progress"` and starts a background Tier 2 ingestion (GitHub README + RTD/Docusaurus/Mintlify detection via web-core scraper). Retry shortly.
+When the requested library is not yet indexed, the action returns `status: "indexing_in_progress"` and starts a background Tier 2 ingestion (GitHub README + RTD/Docusaurus/Mintlify detection via the `hull_web` scraper). Retry shortly.
 
 ---
 

@@ -5,14 +5,14 @@ Extract content from web pages, crawl sites, or map site structure.
 ## Actions
 
 ### extract
-Get clean content from one or more URLs. Powered by web-core's `ScrapingAgent`
+Get clean content from one or more URLs. Powered by `hull_web`'s `ScrapingAgent`
 escalation chain (`basic_http` -> `tls_spoof` -> `headless`) with cache-recommended
 ordering and LLM selector inference fallback.
 
 **Parameters:**
 - `urls` (required): List of URLs to extract
 - `format`: Reserved for backward compat (smart chunks always emit both `markdown` and `clean_text`)
-- `stealth`: Forwarded to the headless strategy when the agent is built (default: true)
+- `stealth`: Forwarded to the headless strategy when the agent is built (default: false)
 
 **Example:**
 ```json
@@ -57,7 +57,7 @@ Deep crawl starting from root URLs.
 - `depth`: How many levels deep to crawl (default: 2)
 - `max_pages`: Maximum pages to crawl (default: 20)
 - `format`: Output format (default: markdown)
-- `stealth`: Enable stealth mode (default: true)
+- `stealth`: Enable stealth mode (default: false)
 
 **Example:**
 ```json

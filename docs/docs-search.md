@@ -31,7 +31,7 @@ that no longer exist. A self-hosted indexed docs cache solves both:
 | Tier | Source | Freshness | Latency |
 |---|---|---|---|
 | **Tier 1** | Curated `data/tier1_libraries.json` (50 popular libs across React/Next/Vue/Svelte/SolidJS/Express/Nest/Fastify/Prisma/Drizzle/TanStack/TailwindCSS/Zod/Vite/esbuild/Axios/Lodash/TypeScript/FastAPI/Pydantic/SQLAlchemy/Django/Flask/pytest/NumPy/pandas/Polars/Requests/HTTPX/Celery/PyTorch/Transformers/LangChain/Gin/Echo/Fiber/sqlc/Cobra/Tokio/Axum/Serde/clap/MongoDB/PostgreSQL/Redis/DuckDB/SQLite/Kafka...). Metadata seeded at startup; chunks ingested lazily on first `docs_query` or eagerly via the weekly `build_tier1_index.py` script. | Re-validated weekly (>= 90% within 7 days) | Metadata < 50 ms; chunks served from local SQLite (FTS5 + sqlite-vec) |
-| **Tier 2** | On-demand discovery via `discover_library` chain (npm / PyPI / crates.io / Go / Hex / Packagist / Pub / RubyGems / NuGet / Maven / GitHub README) and content fetch via `fetch_docs_pages` (web-core ScrapingAgent strategy chain). | Refreshes whenever the chunk fetch runs | First call: 3-30 s for ingestion + indexing; subsequent calls: < 500 ms |
+| **Tier 2** | On-demand discovery via `discover_library` chain (npm / PyPI / crates.io / Go / Hex / Packagist / Pub / RubyGems / NuGet / Maven / GitHub README) and content fetch via `fetch_docs_pages` (`hull_web` ScrapingAgent strategy chain). | Refreshes whenever the chunk fetch runs | First call: 3-30 s for ingestion + indexing; subsequent calls: < 500 ms |
 
 ## When to use which action
 
@@ -75,7 +75,7 @@ search(action="docs_query",
 | Capability | wet | Context7 | Nia | Docfork | Grounded Docs |
 |---|---|---|---|---|---|
 | Tier 1 curated libs | 50 (expanding) | 9000+ aspirational | varies | varies | varies |
-| Tier 2 on-demand | Yes (web-core ScrapingAgent + RTD/Docusaurus/Mintlify/MkDocs detection) | No | partial | No | partial |
+| Tier 2 on-demand | Yes (`hull_web` ScrapingAgent + RTD/Docusaurus/Mintlify/MkDocs detection) | No | partial | No | partial |
 | Version-aware queries | Yes (per-version chunks via `version_id`) | partial | partial | partial | partial |
 | Project lock (Cabinets) | Yes (pyproject + package.json + go.mod + Cargo.toml) | partial | No | No | No |
 | Token cap per response | 5000 tokens (greedy accumulator) | configurable | partial | configurable | partial |

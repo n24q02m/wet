@@ -21,9 +21,10 @@ not repeat the number, so a release never leaves it stale.
 - Post-de-host the project operates no hosted MCP endpoint; all deployments
   are user-owned (local HTTP, the compose stack, or the user's own cloud).
 - Public OCI image publication is discontinued; build containers from source.
-- Local state is machine-bound under `~/.wet/`: `config.toml` (AES-GCM,
-  machine-bound key), `docs.db`, `subs/` (per-namespace persistent browser
-  profiles).
+- Local state lives under `~/.wet/` as plain files: `config.toml`, `docs.db`,
+  and `subs/<namespace>/` (web cache, browsing identity, persistent browser
+  profiles). Neither `config.toml` nor `docs.db` is encrypted; pooled provider
+  keys live in hull's sealed store (see below).
 
 ## Install
 
@@ -63,7 +64,7 @@ result; `wet config …` and `wet docs …` print plain text; `wet search` print
 tool's text answer from the running server.
 
 ```bash
-wet warmup                    # pre-download local models + auto-setup (SearXNG, browser)
+wet warmup                    # first-run setup (browser; SearXNG only with WET_AUTO_SEARXNG) + models
 wet docs list                 # indexed library names (the input for `docs reindex`)
 wet docs reindex <library>    # drop a cached docs index; next search re-indexes
 ```
@@ -89,12 +90,14 @@ uv run wet server start --foreground
   configuration (regression covered since PR #1864). Embedding/rerank chains
   fall back to the local Fastretrieval reference model when empty; configured
   cloud chains do not silently fall back.
-- Per-task chain selection: `EMBEDDING_MODELS` / `RERANK_MODELS` /
-  `LLM_MODELS` (CSV `provider/model`, order = litellm fallback; provider
-  inferred from the prefix; keys never select a model).
+- Per-task model selection is the cell's own `model` (resolved by
+  `wet.runtime.model_cell`). The old `EMBEDDING_MODELS` / `RERANK_MODELS` /
+  `LLM_MODELS` env chains are not settings anymore and are ignored.
 - Web search is the `SEARCH_BACKENDS` fallback chain (Tavily, Brave, Exa,
-  Kagi, OpenRouter, Firecrawl, DuckDuckGo, Startpage, SearXNG). Unset, it is
-  `tavily,duckduckgo`; SearXNG is opt-in via `SEARXNG_URL`.
+  Kagi, OpenRouter, Firecrawl, Keenable, DuckDuckGo, Startpage, SearXNG). Unset,
+  it is `tavily,duckduckgo`. SearXNG runs only when `searxng` is in the chain:
+  against `SEARXNG_URL`, or a local instance wet installs and starts when
+  `WET_AUTO_SEARXNG=true` (`DISABLE_LOCAL_SEARCH` blocks it).
 - `DISABLE_LOCAL_BROWSER|SEARCH|EMBED|RERANK` opt out of in-process local
   fallbacks (slim containers).
 
@@ -105,7 +108,7 @@ Every provider credential wet resolves goes through hull's shared pool
 (`[models.<task>]`) and the cloud search backends' `*_API_KEY` CSV.
 
 - Store: `~/.hull/hull.db` (hull's default; `WET_HULL_DB` overrides the path).
-  Keys are sealed with `~/.hull/.credential-key`; rows keep a 4-character hint
+  Keys are sealed with AES-256-GCM under `~/.hull/.credential-key` (0600); rows keep a 4-character hint
   only. The tables are additive, so an older hull ignores them and a newer wet
   keeps reading a file an older wet wrote.
 - Rotation (hull's policy, identical in hull's TypeScript mirror): `401`/`403`

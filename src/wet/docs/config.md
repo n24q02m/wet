@@ -12,7 +12,7 @@ Show current server configuration and status.
 {"action": "status"}
 ```
 
-Returns: auth mode (from `[server]` in `~/.wet/config.toml`) plus the caller's namespace in multi mode, database stats, embedding status (`backend`, resolved `model`, stored `dims`, `available`, and `unavailable_reason` when disabled), reranker status (`backend`, resolved `model`, `available`), cache status, SearXNG status.
+Returns: auth mode (from `[server]` in `~/.wet/config.toml`) plus the caller's namespace in multi mode, database stats, embedding status (`backend`, resolved `model`, stored `dims`, `available`, and `unavailable_reason` when disabled), reranker status (`backend`, resolved `model`, `available`), cache status, runtime settings (`log_level`, `tool_timeout`), and search metrics (per-provider latency EMA and query counts).
 
 ### set
 
@@ -29,7 +29,7 @@ Valid keys:
 | `log_level` | `DEBUG`, `INFO`, `WARNING`, `ERROR` | Server log level |
 | `tool_timeout` | Integer (seconds) | Max time per tool call |
 | `wet_cache` | `true`, `false` | Enable/disable web cache |
-| `wet_search_budget` | Integer | Per-search crawl budget |
+| `wet_search_budget` | Integer | Per-provider web-search query budget per process; a provider at the cap is skipped by the chain (`0` = unlimited) |
 
 Settings that are per-task model/provider cells (`[models.*]`), auth mode
 (`[server] auth`), and storage paths are host-owned: edit
@@ -54,13 +54,15 @@ Force re-index documentation for a library.
 
 ### warmup
 
-Pre-download local models and run first-time setup (SearXNG).
+Run first-time setup (browser installs; SearXNG only when `WET_AUTO_SEARXNG`
+is on), then check the cloud model cells or pre-download local models.
 
 ```json
 {"action": "warmup"}
 ```
 
-Returns: status of each component (models downloaded, SearXNG ready, etc.).
+Returns: status of each step (`auto_setup`, `geoip_mmdb`, then the cloud
+check or the local model downloads).
 When a cloud cell (`[models.embed]` / `[models.rerank]`) is configured in
 `~/.wet/config.toml`, its model is validated instead of downloading local
 ONNX weights.

@@ -4,7 +4,7 @@
 > removed (BREAKING).
 
 This document describes the runtime architecture of wet built on the
-`n24q02m-web-core` `ScrapingAgent`. It covers the component graph,
+`hull_web` `ScrapingAgent` from `n24q02m-hull`. It covers the component graph,
 strategy escalation chain, storage layout, and LLM provider dispatch
 model.
 
@@ -17,15 +17,16 @@ wet client (Claude Code / Codex / Cursor / Antigravity)
     v
 wet server (FastMCP)
     |
-    +-- search tool   ----> sources/searxng.py + cache.py (TTL 1h / 5min)
+    +-- search tool   ----> sources/search_backends.py + cache.py (TTL 1h / 5min)
     |                          |
+    |                          | SEARCH_BACKENDS chain (default tavily,duckduckgo)
     |                          v
-    |                       SearXNG (bundled subprocess on port 41592)
+    |                       search providers; SearXNG only when named in the chain
     |
     +-- extract tool  ----> sources/crawler.py
     |                          |
     |                          v
-    |                       web_core.scraper.ScrapingAgent
+    |                       hull_web.scraper.ScrapingAgent
     |                          |
     |                          | strategy chain (escalation)
     |                          v
@@ -43,9 +44,9 @@ wet server (FastMCP)
     |
     +-- media tool    ----> sources/crawler.py
     |                          |
-    |                          +-- list:     web_core.scraper helpers
-    |                          +-- download: SSRF-safe via web-core
-    |                          +-- analyze:  DEPRECATED -> imagine-mcp.understand
+    |                          +-- list:     list_media
+    |                          +-- download: SSRF-safe via hull_web
+    |                          +-- analyze:  removed in v2.0.0 -> imagine-mcp.understand
     |
     +-- config tool   ----> config.py + cache management
     |
@@ -77,7 +78,7 @@ The chain extends with `patchright` (stealth interactive) and `captcha`
 - **Crawl4AI fallback**: serves the long tail (JS-heavy SPAs,
   infinite-scroll, dynamic loaders).
 - **Markitdown bridge**: low-tier raw HTML routed through markitdown for
-  HTML -> Markdown conversion when web-core does not supply MD natively.
+  HTML -> Markdown conversion when hull_web does not supply MD natively.
 
 ### Smart chunks output schema
 
@@ -115,13 +116,17 @@ live in `src/wet/sources/_smart_chunks.py`.
 | File | Purpose | Backend |
 |---|---|---|
 | `~/.wet/docs.db` | Library docs index (chunks + embeddings) | SQLite WAL + sqlite-vec |
-| `~/.wet/cache.db` | Web search + extract cache (TTL gated) | SQLite WAL |
-| `~/.wet/config.json` | Encrypted credentials (mcp-core `PerPluginStore`) | AES-GCM, machine-bound key at `~/.wet/.secret` |
+| `~/.wet/subs/<namespace>/cache.db` | Web search + extract cache (TTL gated), one file per namespace | SQLite WAL |
+| `~/.wet/config.toml` | `[server]` auth and `[models.*]` cells (a cell may hold an `api_key`) | Plain TOML, not encrypted |
+| `~/.hull/hull.db` | Provider credential pool (`WET_HULL_DB` overrides the path) | SQLite; keys sealed with AES-256-GCM under `~/.hull/.credential-key` |
 | `~/.wet/downloads/` | Media download output dir | Filesystem |
 
-SearXNG runs as a bundled subprocess on `localhost:41592` (configurable
-via `WET_SEARXNG_PORT`). It is not persisted across restarts; SearXNG
-internal state is ephemeral.
+SearXNG is opt-in. `searxng` in `SEARCH_BACKENDS` queries `SEARXNG_URL`; with
+`WET_AUTO_SEARXNG=true` (and `DISABLE_LOCAL_SEARCH` unset) wet starts a local
+SearXNG on `localhost:41592` (configurable via `WET_SEARXNG_PORT`), as a Docker
+container when Docker is available or else as a subprocess of the installed
+package. It is not persisted across restarts; SearXNG internal state is
+ephemeral.
 
 Docs-search schema additions (libraries, versions, project_context)
 land via Alembic revisions `docs_002_libraries`,
@@ -164,8 +169,20 @@ is the `[server] auth` value in `~/.wet/config.toml`:
 | `token` | any | Shared local store under `~/.wet/`, one Bearer token (hash stored) | No |
 | `multi` | any | Per-sub namespace `~/.wet/subs/<sub>/` | Yes |
 
-Pick `no-auth` for one machine, `token` or `multi` for multi-device use,
-claude.ai web, or team sharing.
+Pick `no-auth` for one machine, `token` or `multi` for multi-device use or
+team sharing.
+
+claude.ai reaches wet as a custom connector added by URL, under the
+conditions in Anthropic's connector docs:
+
+- The `/mcp` endpoint must be reachable from the internet (Anthropic's MCP
+  tunnels for private networks are a research preview for Enterprise
+  organizations). `no-auth` refuses non-loopback binds, so this needs `token`
+  or `multi`.
+- wet has no OAuth flow, so the Bearer token goes in the connector's request
+  headers (authentication "No sign-in", header value
+  `Authorization: Bearer <token>`). Anthropic documents request-header
+  authentication as a beta available to a limited set of organizations.
 
 ## Library docs search (Context7-parity)
 
@@ -215,7 +232,7 @@ First docs_query for library X
     |                chunks land, so resolution alone is not the gate)
     |
     +-- ingest_tier2 reuses discover_library + fetch_docs_pages
-            (delegates to web_core.scraper.ScrapingAgent strategy chain)
+            (delegates to hull_web.scraper.ScrapingAgent strategy chain)
             -> chunks stored with topic / section / token_count
             -> mark_library_indexed updates last_indexed_at
 ```
@@ -250,7 +267,7 @@ extract(action="agent", query=...)
   |     |                     (does not crash the SDK)
   |     +-- configured     -> proceed
   |
-  +-- searxng_search(query, max_results=clamp(max_urls, 1, 20))
+  +-- run_search_chain(query, max_results=clamp(max_urls, 1, 20))
   |     |
   |     v
   |   urls = [r.url for r in results]
@@ -326,7 +343,7 @@ Reserved for the future LLM-enhanced summaries feature.
 
 - Migration guide: `docs/migration.md` (v1.x.y -> v2.0.0)
 - Interact reference: `docs/interact.md` (action language + session)
-- Web-core repo: `n24q02m/web-core` (`web_core.scraper.ScrapingAgent`,
-  future `web_core.browsers.patchright.InteractOps`)
-- mcp-core repo: `n24q02m/mcp-core` (JWT issuer, config storage primitives)
-- Trust model: <https://mcp.n24q02m.com/servers/mcp-core/trust-model/>
+- hull repo: `n24q02m/hull` (`hull_web.scraper.ScrapingAgent`, `hull_core`
+  auth modes and credential pool)
+- Trust model: the README "Trust Model" section and hull's
+  [provider key pools](https://github.com/n24q02m/hull/blob/main/packages/core-py/README.md#provider-key-pools-and-named-accounts)

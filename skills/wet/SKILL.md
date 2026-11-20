@@ -14,11 +14,11 @@ client không tự spawn wet như subprocess.
 - `wet --help` — xem toàn bộ subcommands; `wet -V` — in phiên bản
 - `wet server start|stop|status` — vòng đời server HTTP (`start`: detached, `--foreground` để giữ tiến trình; `status`: pid/lock/HTTP liveness)
 - `wet config init|path|show|get|set` — cấu hình `~/.wet/config.toml` (`get`/`set` dùng key dạng `server.port`)
-- `wet token hash <token>` — in scrypt hash để dán vào `users.toml`
+- `wet token hash <token>` — in scrypt hash để dán vào `[server] token_hash` (mode `token`) hoặc `token_hash` của user trong `users.toml` (mode `multi`)
 - `wet users path` — in đường dẫn `users.toml`
 - `wet docs list|reindex|import|reembed` — bảo trì docs store, chạy trực tiếp trên SQLite (không cần server)
 - `wet search "<query>"` — gọi server đang chạy qua MCP; server down thì in hint và exit 2
-- `wet warmup` — pre-download model + auto-setup (SearXNG, browser) để tránh chậm lần đầu
+- `wet warmup` — auto-setup (browser lần đầu; SearXNG chỉ khi bật `WET_AUTO_SEARXNG`), rồi kiểm tra cell model cloud hoặc pre-download model local để tránh chậm lần đầu
 
 ## Ghi chú
 - Repo + CLI: `wet`; distribution PyPI là `n24q02m-wet` (`uvx --from n24q02m-wet wet …`). Console scripts: `n24q02m-wet`, `wet`, `wet-mcp` (legacy alias) — cả ba chạy cùng một CLI.
