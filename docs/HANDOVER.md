@@ -32,7 +32,7 @@ not repeat the number, so a release never leaves it stale.
 uvx --python 3.13 --from n24q02m-wet wet server start   # start the HTTP server without a persistent install
 claude mcp add --transport http wet http://127.0.0.1:8000/mcp  # Claude Code -> the running instance
 pip install n24q02m-wet               # persistent install (CLI + server)
-uvx --from n24q02m-wet wet warmup     # try a subcommand without a persistent install
+uvx --python 3.13 --from n24q02m-wet wet warmup     # try a subcommand without a persistent install
 ```
 
 Extras: `n24q02m-wet[identity]`, `n24q02m-wet[invisible]` (n24q02m-hull passthrough;
