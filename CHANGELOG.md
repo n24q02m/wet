@@ -2,6 +2,49 @@
 
 <!-- version list -->
 
+## v3.23.0-beta.1 (2026-11-21)
+
+### Bug Fixes
+
+- Align docs with code and install opt-in SearXNG after first run
+  ([#1980](https://github.com/n24q02m/wet/pull/1980),
+  [`bb69e55`](https://github.com/n24q02m/wet/commit/bb69e55f1bee946d4cb41981e93022e3bb3bc871))
+
+- Enforce 95% coverage on all three CI operating systems
+  ([#1979](https://github.com/n24q02m/wet/pull/1979),
+  [`d74c464`](https://github.com/n24q02m/wet/commit/d74c464e8c4616c513e3282fe07c4464cf118b83))
+
+- Let Renovate digest updates clear the release-age hold
+  ([#1984](https://github.com/n24q02m/wet/pull/1984),
+  [`d4791d8`](https://github.com/n24q02m/wet/commit/d4791d8b07c48888ec893f06071b3185edd063b8))
+
+- Pin Python 3.13 in documented uvx launches ([#1988](https://github.com/n24q02m/wet/pull/1988),
+  [`35b22d9`](https://github.com/n24q02m/wet/commit/35b22d9ad79d8d1d554e21253be811794d6c2ef9))
+
+- Read the token for wet token hash from stdin or a hidden prompt
+  ([#1981](https://github.com/n24q02m/wet/pull/1981),
+  [`a138c1d`](https://github.com/n24q02m/wet/commit/a138c1df3eae4ef778c275d2c989957a653fd52b))
+
+- Resolve dependencies under the same 7-day hold as Renovate
+  ([#1983](https://github.com/n24q02m/wet/pull/1983),
+  [`f26f40a`](https://github.com/n24q02m/wet/commit/f26f40a1715d6530a179fb899cd4aa11f5e06c9f))
+
+- **deps**: Lock file maintenance ([#1986](https://github.com/n24q02m/wet/pull/1986),
+  [`6e8b5a1`](https://github.com/n24q02m/wet/commit/6e8b5a15e87a10fb97190213347438dd42a80a0d))
+
+- **deps**: Lock file maintenance ([#1982](https://github.com/n24q02m/wet/pull/1982),
+  [`3f62163`](https://github.com/n24q02m/wet/commit/3f62163c3b7588c5ff99af9372a253a3bf72285c))
+
+- **deps**: Update ghcr.io/astral-sh/uv:latest Docker digest to d3b601f
+  ([#1985](https://github.com/n24q02m/wet/pull/1985),
+  [`e807e3f`](https://github.com/n24q02m/wet/commit/e807e3fe66a217f0a8d66de05ec5daa2950af9ed))
+
+### Features
+
+- Sync cross-promo section ([#1987](https://github.com/n24q02m/wet/pull/1987),
+  [`e25fd6f`](https://github.com/n24q02m/wet/commit/e25fd6fbc4ac8d277820bcf8d7f099b4dc7269ea))
+
+
 ## v3.22.1-beta.1 (2026-11-17)
 
 ### Bug Fixes
