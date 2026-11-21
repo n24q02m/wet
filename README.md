@@ -2,7 +2,7 @@
 
 **Open-source MCP server for AI agents: web search, content extraction, and library docs.**
 
-> **Distribution & CLI:** the repo, CLI and Python module are `wet`. The PyPI distribution is **`n24q02m-wet`** (install `pip install n24q02m-wet` / `uvx n24q02m-wet`). wet is an HTTP-only MCP server: start it with `wet server start` and point clients at `http://127.0.0.1:8000/mcp`. There is no stdio mode; a bare `wet` prints the control-plane usage. The `wet` and `wet-mcp` aliases remain available.
+> **Distribution & CLI:** the repo, CLI and Python module are `wet`. The PyPI distribution is **`n24q02m-wet`** (install `pip install n24q02m-wet` / `uvx --python 3.13 n24q02m-wet`). wet is an HTTP-only MCP server: start it with `wet server start` and point clients at `http://127.0.0.1:8000/mcp`. There is no stdio mode; a bare `wet` prints the control-plane usage. The `wet` and `wet-mcp` aliases remain available.
 
 mcp-name: io.github.n24q02m/wet
 
@@ -349,7 +349,7 @@ In-repo references (Spec F single source of truth: setup docs live in
 The package installs three console scripts: **`n24q02m-wet`** (primary package command), `wet` (short alias), and `wet-mcp` (legacy alias). `wet` is the control plane for the HTTP server plus one thin client; a bare invocation prints its usage.
 
 ```bash
-uvx --from n24q02m-wet wet warmup   # try a subcommand without a persistent install
+uvx --python 3.13 --from n24q02m-wet wet warmup   # try a subcommand without a persistent install
 
 wet server start                # start the Streamable HTTP server (detached; --foreground to attach)
 wet server status               # pid, lock and HTTP liveness
