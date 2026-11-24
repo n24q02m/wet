@@ -171,13 +171,18 @@ def smart_chunks(
     """
     is_html = _looks_like_html(content)
     if is_html:
-        markdown = _html_to_markdown(content)
-        clean_text = _strip_html(content)
+        from wet.security import strip_hidden_dom_and_zero_width
+
+        sanitized_html = strip_hidden_dom_and_zero_width(content)
+        markdown = strip_hidden_dom_and_zero_width(_html_to_markdown(sanitized_html))
+        clean_text = strip_hidden_dom_and_zero_width(_strip_html(sanitized_html))
         structured_data = _extract_jsonld(content)
         source_format = "html"
     else:
-        markdown = content
-        clean_text = " ".join(content.split())
+        from wet.security import strip_hidden_dom_and_zero_width
+
+        markdown = strip_hidden_dom_and_zero_width(content)
+        clean_text = " ".join(markdown.split())
         structured_data = []
         source_format = "markdown"
 

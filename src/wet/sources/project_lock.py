@@ -1,14 +1,10 @@
-"""Project manifest detection + lock builder for Cabinets isolation.
+"""Project manifest + lockfile detection, docs status & audit (WET-10, WET-26, WET-41).
 
-Walks a project root and detects supported manifests (pyproject.toml,
-package.json, go.mod, Cargo.toml). Returns a flat list of
-``{"id": <library-name>, "version": <version-spec-or-pin>}`` entries
-suitable for storing in ``DocsDB.upsert_project_context``.
-
-Detection scope is intentionally minimal — top-level dependencies only.
-Lock files (uv.lock, poetry.lock, package-lock.json, Cargo.lock) are
-out of scope for v1; we use what the human-authored manifest declares
-because Cabinets is a hint, not a SAT solver.
+Walks a project root and detects supported manifests (``pyproject.toml``,
+``package.json``, ``go.mod``, ``Cargo.toml``, ``Gemfile``, ``composer.json``)
+and all 12 ecosystem lockfiles (``uv.lock``, ``poetry.lock``, ``pdm.lock``,
+``requirements.txt``, ``package-lock.json``, ``pnpm-lock.yaml``, ``yarn.lock``,
+``bun.lock``, ``Cargo.lock``, ``go.sum``, ``Gemfile.lock``, ``composer.lock``).
 """
 
 from __future__ import annotations
@@ -151,6 +147,200 @@ def _detect_cargo_toml(path: Path) -> list[dict]:
     return out
 
 
+# 12 ecosystem lockfiles --------------------------------------------------
+
+
+def _detect_uv_or_toml_lock(path: Path) -> list[dict]:
+    """Parse ``uv.lock``, ``poetry.lock``, ``pdm.lock``, or ``Cargo.lock``."""
+    out: list[dict] = []
+    try:
+        with path.open("rb") as fh:
+            data = tomllib.load(fh)
+    except Exception as exc:  # pragma: no cover
+        logger.debug(f"Failed to parse {path}: {exc}")
+        return out
+    for pkg in data.get("package", []) or []:
+        if not isinstance(pkg, dict):
+            continue
+        name = str(pkg.get("name") or "").strip().lower()
+        version = str(pkg.get("version") or "").strip()
+        if name and version:
+            out.append({"id": name, "version": version})
+    return out
+
+
+def _detect_requirements_txt(path: Path) -> list[dict]:
+    out: list[dict] = []
+    try:
+        text = path.read_text(encoding="utf-8")
+    except Exception:  # pragma: no cover
+        return out
+    for raw in text.splitlines():
+        line = raw.split("#", 1)[0].strip()
+        if not line or line.startswith(("-", "--")):
+            continue
+        name, version = _parse_pep508(line)
+        if name:
+            out.append({"id": name.lower(), "version": version})
+    return out
+
+
+def _detect_package_lock_json(path: Path) -> list[dict]:
+    out: list[dict] = []
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:  # pragma: no cover
+        return out
+    packages = data.get("packages") or {}
+    if isinstance(packages, dict):
+        for pkg_path, info in packages.items():
+            if not pkg_path or not isinstance(info, dict):
+                continue
+            name = str(info.get("name") or "")
+            if not name and "node_modules/" in pkg_path:
+                name = pkg_path.rsplit("node_modules/", 1)[-1]
+            version = str(info.get("version") or "")
+            if name and not name.startswith("@types/"):
+                out.append({"id": name.lower(), "version": version})
+    deps = data.get("dependencies") or {}
+    if isinstance(deps, dict):
+        for name, info in deps.items():
+            if isinstance(info, dict) and not name.startswith("@types/"):
+                out.append(
+                    {"id": name.lower(), "version": str(info.get("version") or "")}
+                )
+    return out
+
+
+_PNPM_PKG_KEY_RE = re.compile(r"^['\"]?/?(@?[^@/'\"(]+)@([^('\":\s]+)")
+
+
+def _detect_pnpm_lock_yaml(path: Path) -> list[dict]:
+    out: list[dict] = []
+    try:
+        text = path.read_text(encoding="utf-8")
+    except Exception:  # pragma: no cover
+        return out
+    for raw in text.splitlines():
+        stripped = raw.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        m = _PNPM_PKG_KEY_RE.match(stripped)
+        if m:
+            name, version = m.group(1).lower(), m.group(2)
+            if not name.startswith("@types/"):
+                out.append({"id": name, "version": version})
+        elif stripped.startswith("specifier:") or stripped.startswith("version:"):
+            continue
+    return out
+
+
+_YARN_HEADER_RE = re.compile(r'^"?(@?[^@"\s]+)@[^":\n]+[":]')
+_YARN_VERSION_RE = re.compile(r'^\s+version(?:\s+|:\s*)"?([^\s"]+)"?')
+
+
+def _detect_yarn_lock(path: Path) -> list[dict]:
+    out: list[dict] = []
+    try:
+        text = path.read_text(encoding="utf-8")
+    except Exception:  # pragma: no cover
+        return out
+    current_name = ""
+    for raw in text.splitlines():
+        if not raw.strip() or raw.lstrip().startswith("#"):
+            continue
+        if not raw.startswith((" ", "\t")):
+            m = _YARN_HEADER_RE.match(raw.strip())
+            current_name = m.group(1).lower() if m else ""
+            continue
+        if current_name:
+            vm = _YARN_VERSION_RE.match(raw)
+            if vm:
+                if not current_name.startswith("@types/"):
+                    out.append({"id": current_name, "version": vm.group(1)})
+                current_name = ""
+    return out
+
+
+def _detect_bun_lock(path: Path) -> list[dict]:
+    out: list[dict] = []
+    try:
+        raw = path.read_text(encoding="utf-8")
+        # Strip trailing commas (JSONC in bun.lock)
+        cleaned = re.sub(r",(\s*[}\]])", r"\1", raw)
+        data = json.loads(cleaned)
+    except Exception:  # pragma: no cover
+        return out
+    packages = data.get("packages") or {}
+    if isinstance(packages, dict):
+        for name, entry in packages.items():
+            version = ""
+            if isinstance(entry, list) and entry and isinstance(entry[0], str):
+                pkg_spec = entry[0]
+                if "@" in pkg_spec.lstrip("@"):
+                    version = pkg_spec.rsplit("@", 1)[-1]
+            elif isinstance(entry, dict):
+                version = str(entry.get("version") or "")
+            if name and not name.startswith("@types/"):
+                out.append({"id": name.lower(), "version": version})
+    return out
+
+
+_GO_SUM_LINE_RE = re.compile(r"^(\S+)\s+(v[^\s/]+)(?:/go\.mod)?\s+")
+
+
+def _detect_go_sum(path: Path) -> list[dict]:
+    out: list[dict] = []
+    seen: set[str] = set()
+    try:
+        text = path.read_text(encoding="utf-8")
+    except Exception:  # pragma: no cover
+        return out
+    for raw in text.splitlines():
+        m = _GO_SUM_LINE_RE.match(raw.strip())
+        if not m:
+            continue
+        name = m.group(1).removeprefix("github.com/").lower()
+        version = m.group(2)
+        if name not in seen:
+            seen.add(name)
+            out.append({"id": name, "version": version})
+    return out
+
+
+_GEMFILE_SPEC_RE = re.compile(r"^\s{4}([A-Za-z0-9_.\-]+)\s+\(([^)]+)\)")
+
+
+def _detect_gemfile_lock(path: Path) -> list[dict]:
+    out: list[dict] = []
+    try:
+        text = path.read_text(encoding="utf-8")
+    except Exception:  # pragma: no cover
+        return out
+    for raw in text.splitlines():
+        m = _GEMFILE_SPEC_RE.match(raw)
+        if m:
+            out.append({"id": m.group(1).lower(), "version": m.group(2)})
+    return out
+
+
+def _detect_composer_lock(path: Path) -> list[dict]:
+    out: list[dict] = []
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:  # pragma: no cover
+        return out
+    for section in ("packages", "packages-dev"):
+        for pkg in data.get(section, []) or []:
+            if not isinstance(pkg, dict):
+                continue
+            name = str(pkg.get("name") or "").strip().lower()
+            version = str(pkg.get("version") or "").strip()
+            if name:
+                out.append({"id": name, "version": version})
+    return out
+
+
 # Public API -------------------------------------------------------------
 
 
@@ -159,7 +349,91 @@ _MANIFESTS: tuple[tuple[str, Any], ...] = (
     ("package.json", _detect_package_json),
     ("go.mod", _detect_go_mod),
     ("Cargo.toml", _detect_cargo_toml),
+    # 12 lockfiles: parsed after manifests so pinned lock versions enrich constraints.
+    ("requirements.txt", _detect_requirements_txt),
+    ("uv.lock", _detect_uv_or_toml_lock),
+    ("poetry.lock", _detect_uv_or_toml_lock),
+    ("pdm.lock", _detect_uv_or_toml_lock),
+    ("package-lock.json", _detect_package_lock_json),
+    ("pnpm-lock.yaml", _detect_pnpm_lock_yaml),
+    ("yarn.lock", _detect_yarn_lock),
+    ("bun.lock", _detect_bun_lock),
+    ("Cargo.lock", _detect_uv_or_toml_lock),
+    ("go.sum", _detect_go_sum),
+    ("Gemfile.lock", _detect_gemfile_lock),
+    ("composer.lock", _detect_composer_lock),
 )
+
+SUPPORTED_LOCKFILES: tuple[str, ...] = (
+    "uv.lock",
+    "poetry.lock",
+    "pdm.lock",
+    "requirements.txt",
+    "package-lock.json",
+    "pnpm-lock.yaml",
+    "yarn.lock",
+    "bun.lock",
+    "Cargo.lock",
+    "go.sum",
+    "Gemfile.lock",
+    "composer.lock",
+)
+
+
+def docs_status(db: Any) -> dict[str, Any]:
+    """Return local docs index summary: libraries, versions, chunks, and health."""
+    return db.docs_status_summary()
+
+
+def docs_audit(db: Any, project_path: Path, *, sub: str = "default") -> dict[str, Any]:
+    """Audit a project's detected dependencies against the local docs database."""
+    project_path = project_path.expanduser().resolve()
+    detected = detect_manifests(project_path)
+    context = db.get_project_context(str(project_path), sub=sub)
+    locked_ids = {
+        str(item.get("name") or item.get("id") or "").lower()
+        for item in (context or {}).get("locked_libraries", [])
+    }
+
+    indexed: list[dict[str, Any]] = []
+    missing: list[dict[str, Any]] = []
+    stale: list[dict[str, Any]] = []
+
+    for entry in detected:
+        name = entry["id"]
+        version = entry.get("version", "")
+        lib_row = db.get_library(name)
+        item = {
+            "id": lib_row["id"] if lib_row else name,
+            "name": name,
+            "version": version,
+            "locked": name in locked_ids,
+        }
+        if lib_row is None:
+            missing.append({**item, "status": "missing"})
+            continue
+        versions = (
+            db.list_versions(lib_row["id"]) if hasattr(db, "list_versions") else []
+        )
+        has_indexed_version = any(v.get("status") == "indexed" for v in versions) or (
+            hasattr(db, "get_best_version")
+            and db.get_best_version(lib_row["id"]) is not None
+        )
+        if has_indexed_version or lib_row.get("last_indexed_at"):
+            indexed.append({**item, "status": "indexed"})
+        else:
+            stale.append({**item, "status": "unindexed"})
+
+    return {
+        "project_path": str(project_path),
+        "total_dependencies": len(detected),
+        "indexed_count": len(indexed),
+        "missing_count": len(missing),
+        "stale_count": len(stale),
+        "indexed": indexed,
+        "missing": missing,
+        "stale": stale,
+    }
 
 
 def detect_manifests(project_path: Path) -> list[dict]:

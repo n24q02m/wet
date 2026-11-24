@@ -230,8 +230,8 @@ an unkeyed chat cell disables LLM features (e.g. `extract(action="agent")`).
 
 **Search backends** -- `SEARCH_BACKENDS` is an ordered runtime fallback chain:
 `tavily` / `brave` / `exa` / `kagi` / `openrouter` (keyed), `firecrawl` / `keenable` (optional key),
-and credential-free `duckduckgo` / `startpage`. The default chain is
-`tavily,duckduckgo`. `searxng` runs only when it is named in `SEARCH_BACKENDS`:
+and opt-in HTML SERP scrapers `duckduckgo` / `startpage` (disabled by default; set `WET_ALLOW_SERP_SCRAPE=true` to opt in). The default chain is
+`tavily,keenable,firecrawl`, ordered by `WET_ROUTER_POLICY` (`free` | `balanced` | `quality`) and guarded by per-provider circuit breakers. `searxng` runs only when it is named in `SEARCH_BACKENDS`:
 against a third-party instance at `SEARXNG_URL`, or, with the opt-in
 `WET_AUTO_SEARXNG=true`, a local SearXNG that wet installs (server startup or
 `wet warmup`) and starts when a search needs it
@@ -333,8 +333,8 @@ In-repo references (Spec F single source of truth: setup docs live in
 
 | Tool | Description |
 |:-----|:------------|
-| `search` | Web (multi-backend metasearch), news, images, academic research (search chain with the `science` category; `searxng` maps it to Scholar / arXiv / PubMed / CrossRef / Semantic Scholar / BASE), library docs (HyDE + FTS5), find similar pages. Includes `docs_resolve` (library name -> ranked id), `docs_query` (version-aware + topic + 5000-token cap), `docs_lock_project` (Cabinets project pin via pyproject / package.json / go.mod / Cargo.toml manifest detection). |
-| `extract` | URL -> smart chunks dict (`clean_text` + `markdown` + `structured_data` + `code_blocks` + `metadata`) via the `hull_web` 5-strategy chain. Batch processing (up to 50 URLs), deep crawling, site mapping, local file conversion (PDF/DOCX/XLSX/PPTX/EPUB), structured extraction (JSON Schema) |
+| `search` | Web (multi-backend metasearch), news, images, academic research (search chain with the `science` category), library docs (HyDE + FTS5), find similar pages. Includes `docs_resolve`, `docs_query` (version-aware + topic + 5000-token cap), `docs_lock_project` (manifests + all 12 ecosystem lockfiles), `docs_status`, `docs_audit`. |
+| `extract` | URL -> smart chunks dict (`clean_text` + `markdown` + `structured_data` + `code_blocks` + `metadata`) via `/llms.txt` fast-path + `hull_web` 5-strategy chain. Supports `batch`, `crawl`, `map`, `convert`, deterministic-first `extract_structured`, `agent` (sync or async `job_op`), `interact`, semantic `diff`, and `monitor` watches/alerts. |
 | `media` | `list` (discover URLs from gallery pages), `download` (SSRF-safe). `analyze` was removed in v2.0.0 -- use `imagine-mcp.understand` instead |
 | `config` | `status`, `set`, `cache_clear`, `docs_reindex`, `warmup` |
 | `help` | Per-tool documentation: `search`, `extract`, `media`, `config` |
@@ -360,9 +360,13 @@ printf '%s' "$TOKEN" | wet token hash   # print the storable scrypt hash (token 
 wet users path                  # print the users.toml path
 
 wet docs list                   # indexed library names (the input for `docs reindex`)
+wet docs status                 # local docs database counts and recently indexed libraries
+wet docs audit [path]           # audit detected project manifests + lockfiles against docs.db
 wet docs reindex <library>      # drop the cached docs index for <library>; the next docs search re-indexes it
 
-wet search "<query>"            # call the running server; exits 2 when it is down
+wet doctor [--json]             # 12-point diagnostics check for runtime, SQLite, search providers, and browser fallback
+wet search "<query>"            # call the running server (or --local in-process); also accepts `docs-status` / `docs-audit`
+wet extract <url>               # extract/crawl/map/research/monitor URLs in-process
 wet warmup                      # first-run setup (browser deps; SearXNG with WET_AUTO_SEARXNG), then check cloud model cells or pre-download local models
 ```
 

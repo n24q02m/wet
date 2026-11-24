@@ -117,8 +117,10 @@ class Settings(BaseSettings):
     # Single web search backend selector (back-compat for SEARCH_BACKENDS):
     # searxng or a cloud adapter (tavily/brave/exa/kagi/openrouter/...).
     # Empty by default so an unset chain resolves to the external
-    # ``tavily,duckduckgo`` default in ``chain_backend_names``.
+    # ``tavily,keenable,firecrawl`` default in ``chain_backend_names``.
     search_backend: str = ""  # env SEARCH_BACKEND
+    allow_serp_scrape: bool = False  # env WET_ALLOW_SERP_SCRAPE
+    router_policy: str = "free"  # env WET_ROUTER_POLICY (free|balanced|quality)
     tavily_api_key: str = ""  # env TAVILY_API_KEY
 
     # SEARCH_BACKENDS: CSV provider chain with runtime fallback (try each, on

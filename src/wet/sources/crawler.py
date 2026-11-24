@@ -20,6 +20,7 @@ import collections
 import json
 import os
 import tempfile
+import time
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
@@ -426,6 +427,63 @@ async def _extract_with_markitdown(url: str) -> dict:
 # ---------------------------------------------------------------------------
 
 
+_LLMS_TXT_NEG_CACHE: dict[str, float] = {}
+_LLMS_TXT_NEG_TTL_SECONDS = 600.0
+_LLMS_TXT_MIN_CHARS = 80
+
+
+def _should_probe_llms_txt(url: str) -> bool:
+    """Return True when ``url`` is an llms.txt path or a docs root eligible for fast-path."""
+    parsed = urlparse(url)
+    path = (parsed.path or "").rstrip("/").lower()
+    if path.endswith(("/llms.txt", "/llms-full.txt")):
+        return True
+    host = (parsed.hostname or "").lower()
+    if host.startswith(("docs.", "developer.", "developers.")):
+        return True
+    return path in ("/docs", "/doc", "/documentation", "/api", "/guide")
+
+
+async def probe_llms_txt(url: str) -> str | None:
+    """Probe ``/llms-full.txt`` then ``/llms.txt`` on docs origins with negative caching."""
+    parsed = urlparse(url)
+    if parsed.scheme not in ("http", "https") or not parsed.netloc:
+        return None
+    origin = f"{parsed.scheme}://{parsed.netloc}"
+    now = time.monotonic()
+    neg_until = _LLMS_TXT_NEG_CACHE.get(origin)
+    if neg_until is not None and now < neg_until:
+        return None
+
+    candidates = (
+        [url]
+        if parsed.path.rstrip("/").lower().endswith(("/llms.txt", "/llms-full.txt"))
+        else [f"{origin}/llms-full.txt", f"{origin}/llms.txt"]
+    )
+    try:
+        async with _safe_httpx_client(timeout=3.0, follow_redirects=True) as client:
+            for candidate in candidates:
+                if not is_safe_url(candidate):
+                    continue
+                resp = await client.get(candidate)
+                if resp.status_code != 200:
+                    continue
+                ctype = (resp.headers.get("content-type") or "").lower()
+                if "text/html" in ctype:
+                    continue
+                body = (resp.text or "").strip()
+                if (
+                    len(body) >= _LLMS_TXT_MIN_CHARS
+                    and "<html" not in body[:512].lower()
+                ):
+                    return body
+    except Exception:
+        pass
+
+    _LLMS_TXT_NEG_CACHE[origin] = now + _LLMS_TXT_NEG_TTL_SECONDS
+    return None
+
+
 async def extract(
     urls: list[str],
     format: str = "markdown",
@@ -473,6 +531,17 @@ async def extract(
             if _is_document_url(url):
                 logger.info(f"Document URL detected, using markitdown: {url}")
                 return await _extract_with_markitdown(url)
+
+            if _should_probe_llms_txt(url):
+                llms_body = await probe_llms_txt(url)
+                if llms_body is not None:
+                    chunks = smart_chunks(
+                        llms_body,
+                        url=url,
+                        strategy_used="llms_txt_fastpath",
+                        latency_ms=0.0,
+                    )
+                    return {"url": url, **chunks}
 
             try:
                 t0 = asyncio.get_event_loop().time()

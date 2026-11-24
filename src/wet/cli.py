@@ -726,6 +726,32 @@ def _text_block_is_error(output: str) -> bool:
     return isinstance(payload, dict) and bool(payload.get("error"))
 
 
+def _unwrap_tool_result(raw):
+    """Extract a JSON dict from FastMCP CallToolResult when calling tools directly."""
+    if isinstance(raw, dict):
+        return raw
+    structured = getattr(raw, "structuredContent", None)
+    if isinstance(structured, dict):
+        return structured
+    content = getattr(raw, "content", None)
+    if content:
+        text = getattr(content[0], "text", None)
+        if isinstance(text, str):
+            try:
+                return json.loads(text)
+            except json.JSONDecodeError:
+                start = text.find("{")
+                if start != -1:
+                    try:
+                        parsed, _ = json.JSONDecoder().raw_decode(text, start)
+                        if isinstance(parsed, dict):
+                            return parsed
+                    except json.JSONDecodeError:
+                        pass
+                return {"text": text}
+    return raw
+
+
 def _run_in_process(call_factory):
     """Execute an in-process async server tool inside the server lifespan."""
     import asyncio
@@ -736,7 +762,7 @@ def _run_in_process(call_factory):
         async with _lifespan(mcp):
             return await call_factory()
 
-    return asyncio.run(_runner())
+    return _unwrap_tool_result(asyncio.run(_runner()))
 
 
 def _cmd_mcp(args: argparse.Namespace) -> int:
@@ -752,18 +778,73 @@ def _cmd_mcp(args: argparse.Namespace) -> int:
 def _cmd_extract(args: argparse.Namespace) -> int:
     from wet.server import extract
 
+    action = args.action
+    if action in ("extract", "crawl", "map") and not args.urls:
+        _emit({"error": f"Error: urls is required for --action {action}."})
+        return 1
+
+    extra_kwargs: dict[str, object] = {}
+    if action == "monitor":
+        extra_kwargs["monitor_op"] = getattr(args, "monitor_op", "list")
+        extra_kwargs["interval_seconds"] = getattr(args, "interval_seconds", 3600)
+        if args.urls:
+            extra_kwargs["url"] = args.urls[0]
+    elif action in ("agent", "research"):
+        extra_kwargs["job_op"] = getattr(args, "job_op", None)
+        extra_kwargs["job_id"] = getattr(args, "job_id", None)
+
     result = _run_in_process(
         lambda: extract(
-            action=args.action,
-            urls=args.urls,
+            action="agent" if action == "research" else action,
+            urls=args.urls or None,
             depth=args.depth,
             max_pages=args.max_pages,
             format=args.format,
             query=args.query,
+            **extra_kwargs,
         )
     )
     _emit(result)
     return 1 if isinstance(result, dict) and result.get("error") else 0
+
+
+def _cmd_docs_status(args: argparse.Namespace) -> int:
+    from wet.server import search
+
+    result = _run_in_process(lambda: search(action="docs_status"))
+    _emit(result)
+    return 1 if isinstance(result, dict) and result.get("error") else 0
+
+
+def _cmd_docs_audit(args: argparse.Namespace) -> int:
+    from wet.server import search
+
+    project_path = args.project_path or "."
+    result = _run_in_process(
+        lambda: search(action="docs_audit", project_path=project_path)
+    )
+    _emit(result)
+    return 1 if isinstance(result, dict) and result.get("error") else 0
+
+
+def _cmd_doctor(args: argparse.Namespace) -> int:
+    from wet.doctor import run_doctor
+
+    report = run_doctor()
+    if getattr(args, "json", False):
+        _emit(report)
+    else:
+        print(
+            f"wet doctor: {report['status'].upper()} "
+            f"({report['total_checks']} checks, "
+            f"{report['failures']} fail, {report['warnings']} warn)"
+        )
+        for check in report["checks"]:
+            tag = check["status"].upper()
+            print(f"  [{tag}] {check['name']}: {check['detail']}")
+            if check.get("hint"):
+                print(f"         hint: {check['hint']}")
+    return 1 if report["status"] == "fail" else 0
 
 
 def _cmd_docs_search(args: argparse.Namespace) -> int:
@@ -783,6 +864,11 @@ def _cmd_docs_search(args: argparse.Namespace) -> int:
 
 
 def _cmd_search(args: argparse.Namespace) -> int:
+    if args.query in ("docs-status", "docs_status"):
+        return _cmd_docs_status(args)
+    if args.query in ("docs-audit", "docs_audit"):
+        return _cmd_docs_audit(args)
+
     if getattr(args, "local", False):
         from wet.server import search
 
@@ -1116,6 +1202,21 @@ def build_parser() -> argparse.ArgumentParser:
     p_docs_search.add_argument("--version", default=None, help="target library version")
     p_docs_search.add_argument("--limit", type=int, default=10, help="max results")
     p_docs_search.set_defaults(func=_cmd_docs_search)
+    p_docs_status = docs_sub.add_parser(
+        "status",
+        parents=[profile_parent],
+        help="show local docs index library/version/chunk summary",
+    )
+    p_docs_status.set_defaults(func=_cmd_docs_status)
+    p_docs_audit = docs_sub.add_parser(
+        "audit",
+        parents=[profile_parent],
+        help="audit project manifests/lockfiles against local docs index",
+    )
+    p_docs_audit.add_argument(
+        "project_path", nargs="?", default=".", help="project root directory"
+    )
+    p_docs_audit.set_defaults(func=_cmd_docs_audit)
 
     p_search = sub.add_parser(
         "search",
@@ -1123,6 +1224,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="search via the RUNNING server (or in-process with --local)",
     )
     p_search.add_argument("query")
+    p_search.add_argument(
+        "--project-path",
+        default=".",
+        help="project root for `wet search docs-audit`",
+    )
     p_search.add_argument(
         "--local",
         action="store_true",
@@ -1151,10 +1257,10 @@ def build_parser() -> argparse.ArgumentParser:
         parents=[profile_parent],
         help="extract/crawl/map/research URLs in-process",
     )
-    p_extract.add_argument("urls", nargs="+", help="one or more target URLs")
+    p_extract.add_argument("urls", nargs="*", help="zero or more target URLs")
     p_extract.add_argument(
         "--action",
-        choices=["extract", "crawl", "map", "research"],
+        choices=["extract", "crawl", "map", "research", "agent", "monitor"],
         default="extract",
         help="extract action mode",
     )
@@ -1167,9 +1273,38 @@ def build_parser() -> argparse.ArgumentParser:
     p_extract.add_argument("--depth", type=int, default=2, help="crawl depth")
     p_extract.add_argument("--max-pages", type=int, default=20, help="max crawl pages")
     p_extract.add_argument(
-        "--query", default=None, help="research query (for --action research)"
+        "--query", default=None, help="research query (for --action research/agent)"
     )
+    p_extract.add_argument(
+        "--monitor-op",
+        default="list",
+        choices=["watch", "list", "unwatch", "check"],
+        help="monitor operation (for --action monitor)",
+    )
+    p_extract.add_argument(
+        "--interval-seconds",
+        type=int,
+        default=3600,
+        help="monitor polling hint in seconds",
+    )
+    p_extract.add_argument(
+        "--job-op",
+        default=None,
+        choices=["start", "status", "resume", "cancel"],
+        help="async research job operation (for --action agent)",
+    )
+    p_extract.add_argument("--job-id", default=None, help="async job ID")
     p_extract.set_defaults(func=_cmd_extract)
+
+    p_doctor = sub.add_parser(
+        "doctor",
+        parents=[profile_parent],
+        help="run 12-point wet diagnostics and configuration audit",
+    )
+    p_doctor.add_argument(
+        "--json", action="store_true", help="emit structured JSON diagnostics"
+    )
+    p_doctor.set_defaults(func=_cmd_doctor)
 
     p_warmup = sub.add_parser(
         "warmup",

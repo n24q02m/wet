@@ -272,8 +272,17 @@ async def run_agent(
             }
         )
 
+    verification: dict[str, Any] | None = None
+    try:
+        from wet.sources.agent_jobs import verify_citations
+
+        verification = verify_citations(markdown, sources, extracts)
+    except Exception as exc:  # pragma: no cover - defensive
+        logger.debug(f"Citation verification skipped: {exc}")
+
     return {
         "markdown": markdown,
         "sources": sources,
         "per_url_metadata": per_url_metadata,
+        **({"verification": verification} if verification is not None else {}),
     }

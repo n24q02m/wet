@@ -334,9 +334,22 @@ async def test_kagi_http_error_returns_error_json():
 # --- factory + uvx runnability + chain --------------------------------------
 
 
+def test_serp_scrape_disabled_by_default(monkeypatch):
+    monkeypatch.delenv("WET_ALLOW_SERP_SCRAPE", raising=False)
+    monkeypatch.delenv("ALLOW_SERP_SCRAPE", raising=False)
+    for name in ("duckduckgo", "startpage"):
+        try:
+            _make_backend(name)
+        except ValueError as exc:
+            assert "WET_ALLOW_SERP_SCRAPE" in str(exc)
+        else:
+            raise AssertionError(f"expected SERP scraper {name} to require opt-in")
+
+
 def test_factory_builds_keyless_backends_without_keys(monkeypatch):
     monkeypatch.delenv("KAGI_API_KEY", raising=False)
     monkeypatch.delenv("FIRECRAWL_API_KEY", raising=False)
+    monkeypatch.setenv("WET_ALLOW_SERP_SCRAPE", "true")
     assert isinstance(_make_backend("duckduckgo"), DuckDuckGoBackend)
     assert isinstance(_make_backend("startpage"), StartpageBackend)
     fc = _make_backend("firecrawl")
@@ -371,6 +384,8 @@ def test_uvx_runnable_with_credential_free_chain(monkeypatch):
     monkeypatch.setenv("SEARCH_BACKENDS", "duckduckgo,startpage")
     monkeypatch.delenv("KAGI_API_KEY", raising=False)
     monkeypatch.delenv("FIRECRAWL_API_KEY", raising=False)
+    assert has_uvx_runnable_backend() is False
+    monkeypatch.setenv("WET_ALLOW_SERP_SCRAPE", "true")
     assert has_uvx_runnable_backend() is True
 
 
@@ -384,6 +399,7 @@ async def test_chain_falls_through_bot_challenge_to_credential_free(monkeypatch)
     # tavily (missing key) is skipped; duckduckgo is bot-challenged; startpage
     # answers — the credential-free tail keeps the chain usable with zero keys.
     monkeypatch.setenv("SEARCH_BACKENDS", "tavily,duckduckgo,startpage")
+    monkeypatch.setenv("WET_ALLOW_SERP_SCRAPE", "true")
     monkeypatch.delenv("TAVILY_API_KEY", raising=False)
 
     async def fake_get(self, url, **kwargs):
@@ -399,6 +415,7 @@ async def test_chain_falls_through_bot_challenge_to_credential_free(monkeypatch)
 
 def test_chain_skips_unbuildable_keeps_new_backends(monkeypatch):
     monkeypatch.setenv("SEARCH_BACKENDS", "kagi,duckduckgo")
+    monkeypatch.setenv("WET_ALLOW_SERP_SCRAPE", "true")
     monkeypatch.delenv("KAGI_API_KEY", raising=False)
     backends = search_backends_from_env()
     assert len(backends) == 1

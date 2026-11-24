@@ -131,6 +131,16 @@ async def _reset_crawler_singleton():
     crawler_mod._browser_semaphore = None
 
 
+@pytest.fixture(autouse=True)
+def _reset_provider_breakers():
+    """Ensure provider circuit breakers start clean for every test."""
+    from wet.sources.provider_registry import reset_breakers
+
+    reset_breakers()
+    yield
+    reset_breakers()
+
+
 @pytest.fixture
 def mock_crawler_instance():
     """Create a mock AsyncWebCrawler instance for use with _get_crawler patch.

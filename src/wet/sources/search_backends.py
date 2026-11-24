@@ -30,6 +30,13 @@ from loguru import logger
 from wet import search_metrics
 from wet.config import settings
 from wet.keypool import PoolExhaustedError, pool_for_provider, pool_run, status_of_http
+from wet.sources.provider_registry import (
+    is_circuit_open,
+    record_provider_failure,
+    record_provider_success,
+    serp_scrape_allowed,
+)
+from wet.sources.provider_router import select_provider_order
 
 
 def split_keys(raw: str | None) -> list[str]:
@@ -1322,15 +1329,23 @@ def _make_backend(name: str, searxng_url: str | None = None) -> SearchBackend:
             )
         )
     if name == "duckduckgo":
+        if not serp_scrape_allowed():
+            raise ValueError(
+                "duckduckgo SERP scraper is disabled by default; set WET_ALLOW_SERP_SCRAPE=true to opt in"
+            )
         return DuckDuckGoBackend()
     if name == "startpage":
+        if not serp_scrape_allowed():
+            raise ValueError(
+                "startpage SERP scraper is disabled by default; set WET_ALLOW_SERP_SCRAPE=true to opt in"
+            )
         return StartpageBackend()
     raise ValueError(f"Unknown search backend: {name}")
 
 
-# Zero-config chain: Tavily when keyed, DuckDuckGo (credential-free) always.
-# The project no longer ships a SearXNG instance, so it is never a default.
-_DEFAULT_SEARCH_CHAIN = ("tavily", "duckduckgo")
+# Zero-config chain: Tavily when keyed, then keyless API fallbacks (Keenable, Firecrawl).
+# The project no longer ships a SearXNG instance, and SERP HTML scraping is opt-in only.
+_DEFAULT_SEARCH_CHAIN = ("tavily", "keenable", "firecrawl")
 
 
 def search_backend_from_env() -> SearchBackend:
@@ -1348,13 +1363,16 @@ def search_backend_from_env() -> SearchBackend:
     )
     if name:
         return _make_backend(name)
-    *keyed, keyless = _DEFAULT_SEARCH_CHAIN
-    for default_name in keyed:
+    last_exc: ValueError | None = None
+    for default_name in _DEFAULT_SEARCH_CHAIN:
         try:
             return _make_backend(default_name)
-        except ValueError:
+        except ValueError as exc:
+            last_exc = exc
             continue
-    return _make_backend(keyless)
+    if last_exc is not None:
+        raise last_exc
+    return _make_backend(_DEFAULT_SEARCH_CHAIN[-1])
 
 
 # The local SearXNG auto-spawn URL (mirrors the ``searxng_url`` default in
@@ -1390,9 +1408,13 @@ def has_uvx_runnable_backend() -> bool:
             _config_value(config, "EXA_API_KEY", settings.exa_api_key)
         ):
             return True
-        if name in ("duckduckgo", "startpage", "firecrawl", "keenable"):
-            # credential-free / keyless-capable: plain httpx, no local spawn
+        if name in ("firecrawl", "keenable"):
+            # keyless-capable REST endpoints: plain httpx, no local spawn
             return True
+        if name in ("duckduckgo", "startpage"):
+            if serp_scrape_allowed():
+                return True
+            continue
         if name == "kagi" and split_keys(
             _config_value(config, "KAGI_API_KEY", settings.kagi_api_key)
         ):
@@ -1418,18 +1440,24 @@ def chain_backend_names() -> list[str]:
     Config is host-only since the per-sub bucket removal (de-host 2026-09):
     every mode reads the ``SEARCH_BACKENDS`` env var, falling back to the
     single ``SEARCH_BACKEND``, then to the external default
-    ``tavily,duckduckgo``. The project no longer ships a SearXNG instance
+    ``tavily,keenable,firecrawl``. The project no longer ships a SearXNG instance
     (retired 2026-11), so an unset chain must never point at one:
     ``searxng`` remains available only when a caller configures a
-    third-party URL explicitly.
+    third-party URL explicitly. SERP HTML scrapers (``duckduckgo``,
+    ``startpage``) require ``WET_ALLOW_SERP_SCRAPE=true``.
     """
     config = _request_search_config()
     raw = _config_value(config, "SEARCH_BACKENDS", settings.search_backends).strip()
     if not raw:
         raw = _config_value(config, "SEARCH_BACKEND", settings.search_backend).strip()
     if not raw:
+        if os.environ.get("WET_ROUTER_POLICY") or os.environ.get("ROUTER_POLICY"):
+            return select_provider_order(_DEFAULT_SEARCH_CHAIN)
         return list(_DEFAULT_SEARCH_CHAIN)
-    return [n.strip().lower() for n in raw.split(",") if n.strip()]
+    names = [n.strip().lower() for n in raw.split(",") if n.strip()]
+    if os.environ.get("WET_ROUTER_POLICY") or os.environ.get("ROUTER_POLICY"):
+        return select_provider_order(names)
+    return names
 
 
 def search_backends_with_skips(
@@ -1523,6 +1551,10 @@ async def run_search_chain(
     """
     requested = chain_backend_names()
     backends, skipped = search_backends_with_skips(searxng_url)
+    if backends and len(backends) > 1:
+        healthy = [b for b in backends if not is_circuit_open(b.name)]
+        if healthy:
+            backends = healthy
     if region and backends:
         unsupported = [
             b.name for b in backends if b.name not in _REGION_SUPPORTED_BACKENDS
@@ -1713,6 +1745,7 @@ async def run_search_chain(
                 )
             except Exception:
                 had_provider_failure = True
+                record_provider_failure(backend.name)
                 raise
             finally:
                 search_metrics.record_latency(
@@ -1720,7 +1753,9 @@ async def run_search_chain(
                 )
             if _search_result_has_failure(payload):
                 had_provider_failure = True
+                record_provider_failure(backend.name)
             elif not _search_result_is_empty(payload):
+                record_provider_success(backend.name)
                 selected = backend.name
             return payload
 

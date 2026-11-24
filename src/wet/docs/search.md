@@ -5,7 +5,7 @@ Search the web, academic papers, or library documentation.
 ## Actions
 
 ### search
-Web search via the `SEARCH_BACKENDS` provider chain with runtime fallback. Unset, the chain is `tavily,duckduckgo` (Tavily only when `TAVILY_API_KEY` is set). Backends: `tavily` | `brave` | `exa` | `kagi` (cloud, keyed) | `firecrawl` (key optional — keyless attempt) | `keenable` (key optional — keyless public endpoint) | `duckduckgo` | `startpage` (credential-free HTML scrape, uvx-safe; may be bot-challenged on datacenter IPs — the chain then advances to the next backend) | `searxng` (opt-in; set `SEARXNG_URL` to your own instance).
+Web search via the `SEARCH_BACKENDS` provider chain with runtime fallback. Unset, the chain is `tavily,keenable,firecrawl` (Tavily when `TAVILY_API_KEY` is set, then keyless KeenAble/Firecrawl APIs), ordered by `WET_ROUTER_POLICY` (`free` | `balanced` | `quality`) and protected by per-provider circuit breakers. Backends: `tavily` | `brave` | `exa` | `kagi` | `openrouter` (cloud, keyed) | `firecrawl` (key optional) | `keenable` (key optional) | `duckduckgo` | `startpage` (opt-in SERP scrapers; require `WET_ALLOW_SERP_SCRAPE=true`) | `searxng` (opt-in; set `SEARXNG_URL` to your own instance).
 
 **Parameters:**
 - `query` (required): Search query string
@@ -121,7 +121,7 @@ When the requested library is not yet indexed, the action returns `status: "inde
 ---
 
 ### docs_lock_project
-Detect project manifests at `project_path` (`pyproject.toml`, `package.json`, `go.mod`, `Cargo.toml`) and persist the locked library set into the Cabinets `project_context` table. Subsequent `docs_query` calls passing the same `project_path` honor the pinned versions automatically.
+Detect project manifests and all 12 ecosystem lockfiles at `project_path` (`pyproject.toml`, `uv.lock`, `poetry.lock`, `pdm.lock`, `requirements.txt`, `package.json`, `package-lock.json`, `pnpm-lock.yaml`, `yarn.lock`, `bun.lock`, `go.mod`, `go.sum`, `Cargo.toml`, `Cargo.lock`, `Gemfile.lock`, `composer.lock`) and persist the locked library set into the Cabinets `project_context` table. Subsequent `docs_query` calls passing the same `project_path` honor the pinned versions automatically.
 
 **Parameters:**
 - `project_path` (required): Absolute path to project root.
@@ -132,6 +132,29 @@ Detect project manifests at `project_path` (`pyproject.toml`, `package.json`, `g
 ```
 
 **Returns:** Lock summary with `project_path`, `locked_libraries` (each `{id, name, version, indexed}`), `total`, `indexed`.
+
+---
+
+### docs_status
+Inspect the local `docs.db` index summary (total libraries, version counts by status, total chunks, and recently indexed libraries).
+
+**Example:**
+```json
+{"action": "docs_status"}
+```
+
+---
+
+### docs_audit
+Audit all detected project manifests and lockfiles at `project_path` against local indexed documentation coverage (`indexed`, `missing`, `stale`).
+
+**Parameters:**
+- `project_path` (required): Absolute path to project root.
+
+**Example:**
+```json
+{"action": "docs_audit", "project_path": "/repo/my-app"}
+```
 
 ---
 
