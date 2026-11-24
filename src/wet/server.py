@@ -3468,6 +3468,13 @@ def run_server_blocking(
         uvicorn.run(app, host=bind_host, port=bind_port, log_level="info")
 
 
+def run_stdio() -> None:
+    """Run the MCP server over stdio transport (stderr-only logging)."""
+    logger.remove()
+    logger.add(sys.stderr, level=settings.log_level, diagnose=False)
+    mcp.run(transport="stdio")
+
+
 def main() -> None:
     """Blocking server entry (used by `wet server start` and `python -m wet`).
 

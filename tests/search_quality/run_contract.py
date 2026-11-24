@@ -16,10 +16,13 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, TypeVar
 
 import benchmark_contract as contract
 import httpx
+
+_CaseT = TypeVar("_CaseT")
+_ResultT = TypeVar("_ResultT")
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 TESTS_ROOT = Path(__file__).resolve().parents[1]
@@ -208,13 +211,13 @@ def web_concurrency_for(backend: str) -> int:
     return 1
 
 
-async def run_cases_bounded[CaseT, ResultT](
-    cases: list[CaseT],
-    runner: Callable[[CaseT], Awaitable[ResultT]],
+async def run_cases_bounded(
+    cases: list[_CaseT],
+    runner: Callable[[_CaseT], Awaitable[_ResultT]],
     *,
     concurrency: int,
     on_done: Callable[[int], Awaitable[None]],
-) -> list[ResultT]:
+) -> list[_ResultT]:
     """Run ``cases`` with at most ``concurrency`` in flight, results in order.
 
     ``on_done`` sees the running completion count; when it raises (the spend
@@ -225,7 +228,7 @@ async def run_cases_bounded[CaseT, ResultT](
     results: list[Any] = [None] * len(cases)
     done = 0
 
-    async def run_one(index: int, case: CaseT) -> None:
+    async def run_one(index: int, case: _CaseT) -> None:
         nonlocal done
         async with semaphore:
             results[index] = await runner(case)
@@ -419,7 +422,7 @@ def _server_environment(temp_root: Path, docs_db_path: Path) -> dict[str, str]:
 def _write_benchmark_config(env: dict[str, str]) -> None:
     """Drop the isolated config.toml into the spawned server's tmp home."""
     home = Path(env["HOME"])  # ``wet_server_env`` points every home var here.
-    config_dir = home / ".wet"
+    config_dir = home / ".n24q02m" / "wet"
     config_dir.mkdir(parents=True, exist_ok=True)
     (config_dir / "config.toml").write_text(_BENCHMARK_CONFIG_TOML, encoding="utf-8")
 

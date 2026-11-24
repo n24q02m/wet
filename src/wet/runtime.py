@@ -48,9 +48,14 @@ DEFAULT_EMBEDDING_DIMS = 768
 DEFAULT_NAMESPACE = "default"
 
 
-def wet_config_dir() -> Path:
-    """wet's instance-config + data root: ``~/.wet/``."""
-    return Path.home() / ".wet"
+def wet_config_dir(profile: str | None = None) -> Path:
+    """wet's instance-config + data root: ``~/.n24q02m/wet/`` (or ``profiles/<profile>/``)."""
+    from hull_core.storage import data_dir, migrate_legacy_data_dir, resolve_profile
+
+    migrate_legacy_data_dir("wet")
+    root = data_dir("wet")
+    prof = resolve_profile("wet", profile)
+    return root if prof == "default" else root / "profiles" / prof
 
 
 def wet_config_path() -> Path:

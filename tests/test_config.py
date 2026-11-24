@@ -258,11 +258,11 @@ def test_get_data_dir_custom_cache_dir(tmp_path):
 
 
 def test_get_data_dir_default():
-    """get_data_dir returns ~/.wet when cache_dir is empty."""
+    """get_data_dir returns ~/.n24q02m/wet when cache_dir is empty."""
     from pathlib import Path
 
     settings = Settings(cache_dir="")
-    assert settings.get_data_dir() == Path.home() / ".wet"
+    assert settings.get_data_dir() == Path.home() / ".n24q02m" / "wet"
 
 
 def test_get_db_path_custom_docs_db_path(tmp_path):
