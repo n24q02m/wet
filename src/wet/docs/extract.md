@@ -147,24 +147,46 @@ Extract structured data from web pages using LLM + JSON Schema. Provide a schema
 }
 ```
 
-**Returns:** `{data: <extracted>, urls: [...]}` or `{data: <extracted>, validation_warning: "...", urls: [...]}` if schema validation fails partially.
+**Returns:** `{data: <extracted>, urls: [...]}` with `"extraction_method": "deterministic"` when JSON-LD/OpenGraph/microdata satisfies the schema cleanly without an LLM, or falls back to your configured `[models.chat]` LLM cell.
 
-**Requires:** LLM (proxy or SDK mode). Returns error in local-only mode.
+**Requires:** Only requires an LLM when deterministic HTML/JSON-LD extraction cannot satisfy all required schema properties (or when custom `prompt` instructions are supplied).
 
 ---
 
 ### agent
-Multi-step research orchestration -- search the web, extract the top results, then synthesise a citation-preserving Markdown answer with one configured LLM. Internally runs `search` (one round) -> `extract` (concurrent, sem-bounded 3) -> LLM synthesis with numbered `[N]` citations.
+Multi-step research orchestration -- search the web, extract the top results, then synthesise a citation-preserving Markdown answer with deterministic citation `verification`. Supports synchronous execution or persistent async lifecycle (`job_op`: `start` | `status` | `resume` | `cancel`, plus `job_id`).
 
 **Parameters:**
 - `query` (required): Research question to answer
 - `max_urls`: Number of search hits to extract and cite (default: 5, hard cap: 20)
 - `synthesis_model`: Override the LLM model used for the synthesis step; falls back to the `[models.chat]` cell's model
 - `token_budget`: Soft cap on prompt tokens for the synthesis call (default: 10000). Each extract gets `(token_budget - 200) / N` tokens of room and is truncated above that.
+- `job_op`: Optional async job lifecycle operation (`start`, `status`, `resume`, `cancel`)
+- `job_id`: Job ID for `status`, `resume`, or `cancel`
 
 **Example:**
 ```json
 {"action": "agent", "query": "latest pydantic 2 changes", "max_urls": 5}
+{"action": "agent", "job_op": "start", "query": "compare python lockfile tools"}
+{"action": "agent", "job_op": "status", "job_id": "job_123abc"}
+```
+
+**Returns:** Synchronous mode returns `{markdown, sources, per_url_metadata, verification}`; async `start` returns `{job_id, status: "running", query}`.
+
+---
+
+### monitor
+Persistent URL change monitoring watches and noise-filtered alerts stored per namespace (`watches` and `alerts` tables).
+
+**Parameters:**
+- `monitor_op`: `watch` | `list` | `unwatch` | `check`
+- `url`: Target URL to watch/unwatch/check (or `urls[0]`)
+- `interval_seconds`: Advisory check interval in seconds (default: 3600)
+
+**Example:**
+```json
+{"action": "monitor", "monitor_op": "watch", "url": "https://example.com/changelog"}
+{"action": "monitor", "monitor_op": "check", "url": "https://example.com/changelog"}
 ```
 
 **Returns:**

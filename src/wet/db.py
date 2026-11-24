@@ -320,6 +320,7 @@ class DocsDB:
             self._create_vector_table()
             self._create_project_context_table()
             self._create_store_meta_table()
+            self._create_jobs_and_monitors_tables()
             if self._seed_stamp_migration_pending:
                 # Deferred until the versions table exists — the relabel needs it.
                 self._migrate_seed_stamps_off_last_indexed_at()
@@ -2114,6 +2115,328 @@ class DocsDB:
                 "WHERE sub = ? AND project_path = ?",
                 (_now_ts(), sub, project_path),
             )
+
+    # -----------------------------------------------------------------------
+    # Async jobs, URL monitor watches & alerts (docs_008_jobs_and_monitors)
+    # -----------------------------------------------------------------------
+
+    def _create_jobs_and_monitors_tables(self) -> None:
+        """Create ``jobs``, ``watches``, and ``alerts`` tables idempotently."""
+        with self._lock:
+            self._conn.execute("""
+                CREATE TABLE IF NOT EXISTS jobs (
+                    id TEXT PRIMARY KEY,
+                    sub TEXT NOT NULL DEFAULT 'default',
+                    kind TEXT NOT NULL DEFAULT 'research',
+                    status TEXT NOT NULL DEFAULT 'pending',
+                    query TEXT NOT NULL,
+                    params_json TEXT NOT NULL DEFAULT '{}',
+                    result_json TEXT,
+                    evidence_json TEXT,
+                    error TEXT,
+                    created_at REAL NOT NULL,
+                    updated_at REAL NOT NULL,
+                    completed_at REAL
+                )
+            """)
+            self._conn.execute("""
+                CREATE INDEX IF NOT EXISTS idx_jobs_sub_status
+                ON jobs(sub, status, updated_at)
+            """)
+            self._conn.execute("""
+                CREATE TABLE IF NOT EXISTS watches (
+                    id TEXT PRIMARY KEY,
+                    sub TEXT NOT NULL DEFAULT 'default',
+                    url TEXT NOT NULL,
+                    interval_seconds INTEGER NOT NULL DEFAULT 3600,
+                    last_content TEXT,
+                    last_hash TEXT,
+                    last_checked_at REAL,
+                    created_at REAL NOT NULL,
+                    enabled INTEGER NOT NULL DEFAULT 1,
+                    UNIQUE(sub, url)
+                )
+            """)
+            self._conn.execute("""
+                CREATE INDEX IF NOT EXISTS idx_watches_sub
+                ON watches(sub, url)
+            """)
+            self._conn.execute("""
+                CREATE TABLE IF NOT EXISTS alerts (
+                    id TEXT PRIMARY KEY,
+                    watch_id TEXT NOT NULL,
+                    sub TEXT NOT NULL DEFAULT 'default',
+                    url TEXT NOT NULL,
+                    change_status TEXT NOT NULL,
+                    change_ratio REAL NOT NULL DEFAULT 0.0,
+                    summary TEXT NOT NULL DEFAULT '',
+                    diff_text TEXT NOT NULL DEFAULT '',
+                    created_at REAL NOT NULL,
+                    FOREIGN KEY (watch_id) REFERENCES watches(id) ON DELETE CASCADE
+                )
+            """)
+            self._conn.execute("""
+                CREATE INDEX IF NOT EXISTS idx_alerts_watch_created
+                ON alerts(watch_id, created_at DESC)
+            """)
+
+    def create_job(
+        self,
+        *,
+        job_id: str,
+        sub: str = "default",
+        kind: str = "research",
+        query: str,
+        params_json: str = "{}",
+    ) -> dict:
+        """Insert a new async research job row."""
+        now = _now_ts()
+        with self._lock, self._conn:
+            self._conn.execute(
+                """
+                INSERT INTO jobs
+                (id, sub, kind, status, query, params_json, created_at, updated_at)
+                VALUES (?, ?, ?, 'pending', ?, ?, ?, ?)
+                """,
+                (job_id, sub, kind, query, params_json, now, now),
+            )
+        return self.get_job(job_id, sub=sub) or {"id": job_id, "status": "pending"}
+
+    def get_job(self, job_id: str, *, sub: str = "default") -> dict | None:
+        """Return a job row by ``job_id`` and namespace ``sub``."""
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT * FROM jobs WHERE id = ? AND sub = ?",
+                (job_id, sub),
+            ).fetchone()
+        return dict(row) if row is not None else None
+
+    def update_job(
+        self,
+        job_id: str,
+        *,
+        sub: str = "default",
+        status: str | None = None,
+        result_json: str | None = None,
+        evidence_json: str | None = None,
+        error: str | None = None,
+        completed_at: float | None = None,
+    ) -> None:
+        """Update status/result columns of an existing job."""
+        now = _now_ts()
+        fields: list[str] = ["updated_at = ?"]
+        values: list[object] = [now]
+        if status is not None:
+            fields.append("status = ?")
+            values.append(status)
+        if result_json is not None:
+            fields.append("result_json = ?")
+            values.append(result_json)
+        if evidence_json is not None:
+            fields.append("evidence_json = ?")
+            values.append(evidence_json)
+        if error is not None:
+            fields.append("error = ?")
+            values.append(error)
+        if completed_at is not None:
+            fields.append("completed_at = ?")
+            values.append(completed_at)
+        values.extend([job_id, sub])
+        with self._lock, self._conn:
+            self._conn.execute(
+                f"UPDATE jobs SET {', '.join(fields)} WHERE id = ? AND sub = ?",
+                values,
+            )
+
+    def list_jobs(
+        self, *, sub: str = "default", status: str | None = None, limit: int = 20
+    ) -> list[dict]:
+        """List async jobs for ``sub``, optionally filtered by status."""
+        with self._lock:
+            if status:
+                rows = self._conn.execute(
+                    "SELECT * FROM jobs WHERE sub = ? AND status = ? "
+                    "ORDER BY updated_at DESC LIMIT ?",
+                    (sub, status, limit),
+                ).fetchall()
+            else:
+                rows = self._conn.execute(
+                    "SELECT * FROM jobs WHERE sub = ? ORDER BY updated_at DESC LIMIT ?",
+                    (sub, limit),
+                ).fetchall()
+        return [dict(r) for r in rows]
+
+    def upsert_watch(
+        self,
+        *,
+        watch_id: str,
+        sub: str = "default",
+        url: str,
+        interval_seconds: int = 3600,
+        last_content: str | None = None,
+        last_hash: str | None = None,
+        last_checked_at: float | None = None,
+        enabled: bool = True,
+    ) -> dict:
+        """Create or update a monitored URL watch under ``sub``."""
+        now = _now_ts()
+        with self._lock, self._conn:
+            existing = self._conn.execute(
+                "SELECT id FROM watches WHERE sub = ? AND url = ?",
+                (sub, url),
+            ).fetchone()
+            if existing:
+                row_id = existing["id"]
+                self._conn.execute(
+                    """
+                    UPDATE watches
+                       SET interval_seconds = ?,
+                           last_content = COALESCE(?, last_content),
+                           last_hash = COALESCE(?, last_hash),
+                           last_checked_at = COALESCE(?, last_checked_at),
+                           enabled = ?
+                     WHERE id = ?
+                    """,
+                    (
+                        interval_seconds,
+                        last_content,
+                        last_hash,
+                        last_checked_at,
+                        1 if enabled else 0,
+                        row_id,
+                    ),
+                )
+            else:
+                row_id = watch_id
+                self._conn.execute(
+                    """
+                    INSERT INTO watches
+                    (id, sub, url, interval_seconds, last_content, last_hash,
+                     last_checked_at, created_at, enabled)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        row_id,
+                        sub,
+                        url,
+                        interval_seconds,
+                        last_content,
+                        last_hash,
+                        last_checked_at,
+                        now,
+                        1 if enabled else 0,
+                    ),
+                )
+        return self.get_watch(row_id, sub=sub) or {"id": row_id, "url": url}
+
+    def get_watch(self, url_or_id: str, *, sub: str = "default") -> dict | None:
+        """Lookup a watch by ID or URL within ``sub``."""
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT * FROM watches WHERE sub = ? AND (id = ? OR url = ?)",
+                (sub, url_or_id, url_or_id),
+            ).fetchone()
+        return dict(row) if row is not None else None
+
+    def list_watches(self, *, sub: str = "default") -> list[dict]:
+        """List all URL monitor watches for ``sub``."""
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT * FROM watches WHERE sub = ? ORDER BY created_at DESC",
+                (sub,),
+            ).fetchall()
+        return [dict(r) for r in rows]
+
+    def delete_watch(self, url_or_id: str, *, sub: str = "default") -> bool:
+        """Delete a watch (and cascading alerts) by ID or URL within ``sub``."""
+        with self._lock, self._conn:
+            cur = self._conn.execute(
+                "DELETE FROM watches WHERE sub = ? AND (id = ? OR url = ?)",
+                (sub, url_or_id, url_or_id),
+            )
+            return cur.rowcount > 0
+
+    def record_alert(
+        self,
+        *,
+        alert_id: str,
+        watch_id: str,
+        sub: str = "default",
+        url: str,
+        change_status: str,
+        change_ratio: float = 0.0,
+        summary: str = "",
+        diff_text: str = "",
+    ) -> dict:
+        """Persist a URL change alert row."""
+        now = _now_ts()
+        with self._lock, self._conn:
+            self._conn.execute(
+                """
+                INSERT INTO alerts
+                (id, watch_id, sub, url, change_status, change_ratio, summary, diff_text, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    alert_id,
+                    watch_id,
+                    sub,
+                    url,
+                    change_status,
+                    change_ratio,
+                    summary,
+                    diff_text,
+                    now,
+                ),
+            )
+            row = self._conn.execute(
+                "SELECT * FROM alerts WHERE id = ?",
+                (alert_id,),
+            ).fetchone()
+        return dict(row) if row is not None else {"id": alert_id}
+
+    def list_alerts(
+        self, *, sub: str = "default", watch_id: str | None = None, limit: int = 20
+    ) -> list[dict]:
+        """List recent change alerts for ``sub``."""
+        with self._lock:
+            if watch_id:
+                rows = self._conn.execute(
+                    "SELECT * FROM alerts WHERE sub = ? AND watch_id = ? "
+                    "ORDER BY created_at DESC LIMIT ?",
+                    (sub, watch_id, limit),
+                ).fetchall()
+            else:
+                rows = self._conn.execute(
+                    "SELECT * FROM alerts WHERE sub = ? ORDER BY created_at DESC LIMIT ?",
+                    (sub, limit),
+                ).fetchall()
+        return [dict(r) for r in rows]
+
+    def docs_status_summary(self) -> dict:
+        """Return aggregated library, version, chunk, and queue counts for docs_status."""
+        with self._lock:
+            lib_count = self._conn.execute("SELECT COUNT(*) FROM libraries").fetchone()[
+                0
+            ]
+            ver_rows = self._conn.execute(
+                "SELECT status, COUNT(*) AS cnt FROM versions GROUP BY status"
+            ).fetchall()
+            chunk_count = self._conn.execute(
+                "SELECT COUNT(*) FROM doc_chunks"
+            ).fetchone()[0]
+            libs = self._conn.execute(
+                "SELECT id, name, docs_url, tier, last_indexed_at, total_versions "
+                "FROM libraries ORDER BY COALESCE(last_indexed_at, 0) DESC, name ASC LIMIT 50"
+            ).fetchall()
+        status_counts = {str(r["status"]): int(r["cnt"]) for r in ver_rows}
+        return {
+            "libraries_total": int(lib_count),
+            "versions_by_status": status_counts,
+            "indexed_versions": status_counts.get("indexed", 0),
+            "chunks_total": int(chunk_count),
+            "libraries": [dict(r) for r in libs],
+        }
 
     @contextmanager
     def connection(self) -> Generator[sqlite3.Connection]:

@@ -935,7 +935,9 @@ def _unified_diff_truncated(old_content: str, new_content: str, url: str) -> str
     return diff_text
 
 
-def _build_diff_result(url: str, snapshots: list[dict[str, Any]]) -> dict[str, Any]:
+def _legacy_build_diff_result(
+    url: str, snapshots: list[dict[str, Any]]
+) -> dict[str, Any]:
     """Turn up to 2 ``latest_snapshots`` rows (newest first) into a diff payload."""
     if not snapshots:
         return {
@@ -968,6 +970,15 @@ def _build_diff_result(url: str, snapshots: list[dict[str, Any]]) -> dict[str, A
         "old_fetched_at": old["fetched_at"],
         "new_fetched_at": newest["fetched_at"],
     }
+
+
+def _build_diff_result(url: str, snapshots: list[dict[str, Any]]) -> dict[str, Any]:
+    """Build semantic-aware diff payload using wet.handlers.extract_handlers."""
+    from wet.handlers.extract_handlers import build_semantic_diff_result
+
+    return build_semantic_diff_result(
+        url, snapshots, legacy_builder=_legacy_build_diff_result
+    )
 
 
 def _wrap_tool(tool_name: str):
@@ -1178,7 +1189,9 @@ async def search(  # noqa: PLR0913
     - docs: Search library documentation with auto-indexing. Example: search(action="docs", query="how to create routes", library="fastapi")
     - docs_resolve: Free-form library name to ranked library_id list. Example: search(action="docs_resolve", query="react")
     - docs_query: Version-aware library docs query honoring project lock + token cap. Example: search(action="docs_query", library="react", version="latest", topic="useState", query="how to set initial state")
-    - docs_lock_project: Detect project manifests (pyproject/package.json/go.mod/Cargo.toml) and lock the library set for Cabinets isolation. Example: search(action="docs_lock_project", project_path="/repo/my-app")
+    - docs_lock_project: Detect project manifests and lockfiles (`pyproject.toml`, `uv.lock`, `package-lock.json`, etc.) for Cabinets isolation. Example: search(action="docs_lock_project", project_path="/repo/my-app")
+    - docs_status: Inspect local docs index counts (libraries, indexed versions, chunks). Example: search(action="docs_status")
+    - docs_audit: Audit project dependencies against indexed local docs. Example: search(action="docs_audit", project_path="/repo/my-app")
     - similar: Find pages similar to a URL (pass URL as query). Example: search(action="similar", query="https://example.com/article")
 
     Key parameters:
@@ -1730,14 +1743,27 @@ async def search(  # noqa: PLR0913
                 return {"error": f"Error: project_path does not exist: {exc}"}
             return lock
 
+        case "docs_status" | "docs_audit":
+            from wet.handlers.search_handlers import search_meta_actions
+
+            meta = await search_meta_actions(
+                action,
+                docs_db=_docs_db,
+                project_path=project_path,
+                sub=current_sub(),
+            )
+            return meta or {"error": f"Error: Unhandled search meta action '{action}'."}
+
         case _:
             import difflib
 
             valid_actions = [
                 "docs",
+                "docs_audit",
                 "docs_resolve",
                 "docs_query",
                 "docs_lock_project",
+                "docs_status",
                 "research",
                 "search",
                 "similar",
@@ -1793,6 +1819,10 @@ async def extract(  # noqa: PLR0913
     screenshot: bool = False,
     url: str | None = None,
     refetch: bool = True,
+    job_op: str | None = None,
+    job_id: str | None = None,
+    monitor_op: str = "list",
+    interval_seconds: int = 3600,
 ) -> dict[str, Any]:
     """Read and return full page content from URLs or local files. Use this when you have a specific URL and need its content. For finding URLs first, use the `search` tool instead.
 
@@ -1802,10 +1832,11 @@ async def extract(  # noqa: PLR0913
     - crawl: Deep crawl following links from root URLs. Example: extract(action="crawl", urls=["https://docs.example.com"], depth=2)
     - map: Discover site URL structure without extracting content. Example: extract(action="map", urls=["https://example.com"])
     - convert: Convert local files (PDF, DOCX, PPTX, XLSX) to Markdown. Example: extract(action="convert", paths=["/home/user/report.pdf"])
-    - extract_structured: Extract structured data using JSON Schema + LLM. Example: extract(action="extract_structured", urls=["https://example.com/pricing"], schema={"type": "object", "properties": {"price": {"type": "string"}}})
-    - agent: Multi-step research orchestration -- search the web, extract top results, synthesize a cited Markdown answer. Example: extract(action="agent", query="latest pydantic 2 changes", max_urls=5)
+    - extract_structured: Extract structured data (deterministic JSON-LD/OpenGraph/microdata first, BYO-LLM fallback). Example: extract(action="extract_structured", urls=["https://example.com/pricing"], schema={"type": "object", "properties": {"price": {"type": "string"}}})
+    - agent: Multi-step research orchestration -- synchronous one-shot or async lifecycle via `job_op` ("start"|"status"|"resume"|"cancel") + `job_id`. Example: extract(action="agent", query="latest pydantic 2 changes", max_urls=5)
     - interact: Drive a page with click/fill/submit via patchright. Example: extract(action="interact", url="https://example.com/login", actions=[{"type": "fill", "selector": "#email", "value": "x@y.com"}, {"type": "submit", "selector": "form"}])
-    - diff: Track content changes across fetches of the same URL(s). Example: extract(action="diff", urls=["https://example.com/pricing"])
+    - diff: Track content changes across fetches of the same URL(s) with semantic noise filtering. Example: extract(action="diff", urls=["https://example.com/pricing"])
+    - monitor: Persistent URL change watches and alerts via `monitor_op` ("watch"|"list"|"unwatch"|"check"). Example: extract(action="monitor", monitor_op="watch", url="https://example.com/changelog")
 
     Key parameters:
     - urls (required for extract/batch/crawl/map/extract_structured/diff): List of URLs
@@ -1951,6 +1982,21 @@ async def extract(  # noqa: PLR0913
             )
 
         case "agent":
+            if job_op:
+                from wet.handlers.extract_handlers import handle_async_agent
+
+                return _payload(
+                    await handle_async_agent(
+                        docs_db=_docs_db,
+                        job_op=job_op,
+                        job_id=job_id,
+                        query=query,
+                        max_urls=max_urls,
+                        synthesis_model=synthesis_model,
+                        token_budget=token_budget,
+                        sub=current_sub(),
+                    )
+                )
             if not query:
                 return {
                     "error": 'Error: query is required for agent action. Example: extract(action="agent", query="latest pydantic 2 changes", max_urls=5)'
@@ -2039,6 +2085,23 @@ async def extract(  # noqa: PLR0913
                 diff_items.append(_build_diff_result(target_url, snapshots))
             return _payload(diff_items[0] if len(diff_items) == 1 else diff_items)
 
+        case "monitor":
+            from wet.handlers.extract_handlers import handle_monitor
+
+            return _payload(
+                await handle_monitor(
+                    docs_db=_docs_db,
+                    monitor_op=monitor_op,
+                    url=url,
+                    urls=urls,
+                    interval_seconds=interval_seconds,
+                    sub=current_sub(),
+                    extract_fn=_extract,
+                    format=format,
+                    stealth=stealth,
+                )
+            )
+
         case _:
             valid_actions = [
                 "agent",
@@ -2050,6 +2113,7 @@ async def extract(  # noqa: PLR0913
                 "extract_structured",
                 "interact",
                 "map",
+                "monitor",
             ]
             closest = (
                 difflib.get_close_matches(action, valid_actions, n=1)
@@ -2269,6 +2333,7 @@ async def _handle_config_status() -> dict[str, Any]:
     # host-owned info: status is read by the operator on the box, so the
     # path is shown as-is and `backend` names where `docs_indexed` came from.
     docs_backend = _active_docs_backend()
+    from wet.handlers.config_handlers import config_status_providers
     from wet.runtime import hull_settings, sub_root
 
     hs = hull_settings()
@@ -2324,6 +2389,7 @@ async def _handle_config_status() -> dict[str, Any]:
             "tool_timeout": settings.tool_timeout,
         },
         "search_metrics": search_metrics.snapshot(),
+        "search_providers": config_status_providers(),
     }
     return status
 

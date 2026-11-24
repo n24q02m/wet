@@ -257,8 +257,8 @@ async def test_search_action_proceeds_when_not_uvx(monkeypatch):
 async def test_search_proceeds_in_uvx_with_zero_config(monkeypatch):
     """uvx=True + no search config at all -> the guard lets 'search' through.
 
-    The unset chain is the external ``tavily,duckduckgo`` default and
-    DuckDuckGo needs no key, so a pip-less venv must never be told to set
+    The unset chain is the external ``tavily,keenable,firecrawl`` default and
+    Keenable/Firecrawl need no key, so a pip-less venv must never be told to set
     one up.
     """
     from wet.config import Settings

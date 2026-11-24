@@ -893,7 +893,7 @@ class TestDocumentedCommands:
         assert _wet_verb("wet-mcp") is None
 
         subcommands, flags = _parser_vocabulary()
-        assert "doctor" not in subcommands
+        assert "doctor" in subcommands
         assert "auth" not in subcommands
         assert "logout" not in subcommands
         assert "--http" not in flags

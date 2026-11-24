@@ -7,7 +7,6 @@ from structured import text
 
 from wet.sources.search_backends import (
     BraveBackend,
-    DuckDuckGoBackend,
     ExaBackend,
     SearxngBackend,
     TavilyBackend,
@@ -70,8 +69,10 @@ def unconfigured_search(monkeypatch):
 
 def test_factory_default_is_credential_free_without_keys(unconfigured_search):
     """Zero config never resolves to SearXNG: the project ships no instance."""
-    assert chain_backend_names() == ["tavily", "duckduckgo"]
-    assert isinstance(search_backend_from_env(), DuckDuckGoBackend)
+    from wet.sources.search_backends import KeenableBackend
+
+    assert chain_backend_names() == ["tavily", "keenable", "firecrawl"]
+    assert isinstance(search_backend_from_env(), KeenableBackend)
 
 
 def test_factory_default_prefers_tavily_when_keyed(unconfigured_search):
@@ -289,7 +290,7 @@ def test_chain_falls_back_to_single_backend(monkeypatch):
 
 
 def test_chain_defaults_to_external_chain_when_unset(monkeypatch):
-    """Zero config -> the documented ``tavily,duckduckgo`` chain.
+    """Zero config -> the documented ``tavily,keenable,firecrawl`` chain.
 
     The settings defaults themselves must not name a backend: the project no
     longer ships a SearXNG instance, so an unset chain resolving to the local
@@ -302,7 +303,7 @@ def test_chain_defaults_to_external_chain_when_unset(monkeypatch):
     monkeypatch.setattr(
         "wet.sources.search_backends.settings", Settings(_env_file=None)
     )
-    assert chain_backend_names() == ["tavily", "duckduckgo"]
+    assert chain_backend_names() == ["tavily", "keenable", "firecrawl"]
 
 
 def test_chain_skips_missing_key_backends(monkeypatch):

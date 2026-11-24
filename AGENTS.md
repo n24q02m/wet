@@ -6,8 +6,11 @@ Xem `AGENTS.md` va `README.md` de hieu architecture va configuration.
 ## Cau truc
 
 - `src/wet/` -- Package chinh (src layout)
-  - `server.py` -- FastMCP server (orchestrator, file lon nhat); always the HTTP MCP endpoint (no stdio mode)
-  - `cli.py` -- `wet` control plane: `server start|stop|status`, `config`, `token hash`, `users path`, `docs list|reindex|import|reembed`, `search`, `warmup`
+  - `server.py` -- FastMCP server (orchestrator, HTTP + stdio MCP endpoints)
+  - `handlers/` -- Business logic handlers (`config_handlers`, `docs_handlers`, `extract_handlers`, `search_handlers`)
+  - `cli.py` -- `wet` control plane: `server start|stop|status`, `doctor`, `config`, `token hash`, `users path`, `docs list|status|audit|reindex|import|reembed`, `search`, `extract`, `warmup`
+  - `doctor.py` -- 12-point health and config diagnostics (`wet doctor`)
+  - `errors.py` -- Structured `E1xx`/`E2xx` error codes
   - `runtime.py` -- Bridge to hull-core (settings, auth mode, users store, per-sub namespace)
   - `config.py` -- Pydantic Settings (singleton)
   - `cache.py`, `db.py`, `embedder.py`, `reranker.py` -- Infrastructure
