@@ -361,7 +361,12 @@ async def test_llms_txt_fastpath_and_negative_cache():
         patch("wet.sources.crawler.is_safe_url", return_value=True),
     ):
         assert await probe_llms_txt("https://docs.missing.example/") is None
-        assert "https://docs.missing.example" in _LLMS_TXT_NEG_CACHE
+        from urllib.parse import urlparse
+
+        assert any(
+            urlparse(cached_url).hostname == "docs.missing.example"
+            for cached_url in _LLMS_TXT_NEG_CACHE
+        )
         # Second probe hits negative cache without invoking HTTP client
         mock_client.get.reset_mock()
         assert await probe_llms_txt("https://docs.missing.example/") is None

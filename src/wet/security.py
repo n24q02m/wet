@@ -12,6 +12,7 @@ backward compatibility and adds MCP-specific helpers:
 
 import json
 import re
+from html.parser import HTMLParser
 from pathlib import Path
 from typing import Any
 
@@ -68,11 +69,108 @@ UNTRUSTED_WARNING = (
 )
 
 _ZERO_WIDTH_RE = re.compile(r"[\u200b-\u200f\u202a-\u202e\u2060-\u206f\ufeff]")
-_HIDDEN_DOM_RE = re.compile(
-    r"<!--[\s\S]*?-->|<script\b[^>]*>[\s\S]*?</script>|<style\b[^>]*>[\s\S]*?</style>|"
-    r"<([a-zA-Z0-9]+)\b[^>]*?(?:display\s*:\s*none|visibility\s*:\s*hidden|aria-hidden\s*=\s*['\"]?true['\"]?)[^>]*>[\s\S]*?</\1>",
+_HIDDEN_STYLE_RE = re.compile(
+    r"(?:display\s*:\s*none|visibility\s*:\s*hidden)",
     re.IGNORECASE,
 )
+_VOID_HTML_TAGS = frozenset(
+    {
+        "area",
+        "base",
+        "br",
+        "col",
+        "embed",
+        "hr",
+        "img",
+        "input",
+        "link",
+        "meta",
+        "param",
+        "source",
+        "track",
+        "wbr",
+    }
+)
+
+
+class _HiddenDomStripper(HTMLParser):
+    """Strip HTML comments, script/style blocks, and CSS/ARIA-hidden elements."""
+
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=False)
+        self._chunks: list[str] = []
+        self._skip_stack: list[str] = []
+
+    @staticmethod
+    def _is_hidden_tag(tag: str, attrs: list[tuple[str, str | None]]) -> bool:
+        if tag in ("script", "style"):
+            return True
+        for name, value in attrs:
+            key = name.lower()
+            val = value or ""
+            if key == "aria-hidden" and val.strip().lower() == "true":
+                return True
+            if key == "style" and _HIDDEN_STYLE_RE.search(val):
+                return True
+        return False
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        tag_l = tag.lower()
+        if self._skip_stack:
+            if tag_l not in _VOID_HTML_TAGS:
+                self._skip_stack.append(tag_l)
+            return
+        if self._is_hidden_tag(tag_l, attrs):
+            if tag_l not in _VOID_HTML_TAGS:
+                self._skip_stack.append(tag_l)
+            return
+        raw = self.get_starttag_text()
+        if raw is not None:
+            self._chunks.append(raw)
+
+    def handle_startendtag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        tag_l = tag.lower()
+        if self._skip_stack or self._is_hidden_tag(tag_l, attrs):
+            return
+        raw = self.get_starttag_text()
+        if raw is not None:
+            self._chunks.append(raw)
+
+    def handle_endtag(self, tag: str) -> None:
+        tag_l = tag.lower()
+        if self._skip_stack:
+            if tag_l in self._skip_stack:
+                idx = len(self._skip_stack) - 1 - self._skip_stack[::-1].index(tag_l)
+                del self._skip_stack[idx:]
+            return
+        self._chunks.append(f"</{tag}>")
+
+    def handle_data(self, data: str) -> None:
+        if not self._skip_stack:
+            self._chunks.append(data)
+
+    def handle_comment(self, data: str) -> None:
+        return None
+
+    def handle_entityref(self, name: str) -> None:
+        if not self._skip_stack:
+            self._chunks.append(f"&{name};")
+
+    def handle_charref(self, name: str) -> None:
+        if not self._skip_stack:
+            self._chunks.append(f"&#{name};")
+
+    def handle_decl(self, decl: str) -> None:
+        if not self._skip_stack:
+            self._chunks.append(f"<!{decl}>")
+
+    def handle_pi(self, data: str) -> None:
+        if not self._skip_stack:
+            self._chunks.append(f"<?{data}>")
+
+    def get_cleaned(self) -> str:
+        return "".join(self._chunks)
+
 
 _INJECTION_RULES: tuple[tuple[str, re.Pattern[str]], ...] = (
     (
@@ -103,7 +201,13 @@ def strip_hidden_dom_and_zero_width(text: str) -> str:
     """Remove invisible Unicode characters and hidden DOM blocks from untrusted text."""
     if not text:
         return text
-    cleaned = _HIDDEN_DOM_RE.sub("", text)
+    if "<" in text:
+        stripper = _HiddenDomStripper()
+        stripper.feed(text)
+        stripper.close()
+        cleaned = stripper.get_cleaned()
+    else:
+        cleaned = text
     return _ZERO_WIDTH_RE.sub("", cleaned)
 
 
