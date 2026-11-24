@@ -51,7 +51,7 @@ import os
 from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import replace
 from pathlib import Path
-from typing import Any
+from typing import Any, TypeVar
 
 import httpx
 from hull_core.config.models import ModelCell
@@ -454,12 +454,15 @@ def _shared_credential(pool: KeyPool) -> Credential | None:
     return None
 
 
-async def pool_run[T](
+_T = TypeVar("_T")
+
+
+async def pool_run(
     pool: KeyPool,
-    call: Callable[[Credential], Awaitable[T]],
+    call: Callable[[Credential], Awaitable[_T]],
     *,
     status_of: Callable[[BaseException], int | None] | None = None,
-) -> T:
+) -> _T:
     """Run one provider call through ``pool``: acquire -> call -> report.
 
     Multi-credential pools use hull's rotation verbatim (lease per call,
@@ -638,8 +641,8 @@ class PooledProviderClient:
 
     # -- plumbing ---------------------------------------------------------
 
-    async def _run[T](self, call: Callable[[OpenAICompatClient], Awaitable[T]]) -> T:
-        async def attempt(credential: Credential) -> T:
+    async def _run(self, call: Callable[[OpenAICompatClient], Awaitable[_T]]) -> _T:
+        async def attempt(credential: Credential) -> _T:
             client = self._client_for(credential)
             slot: dict[str, Any] = {}
             token = _CAPTURE.set(slot)

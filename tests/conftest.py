@@ -44,6 +44,8 @@ def _isolate_home(tmp_path_factory, monkeypatch):
     fake_home = tmp_path_factory.mktemp("wet_test_home")
     monkeypatch.setenv("HOME", str(fake_home))
     monkeypatch.setenv("USERPROFILE", str(fake_home))
+    for _env_key in ("N24Q02M_HOME", "N24Q02M_USE_XDG", "WET_PROFILE", "HULL_PROFILE"):
+        monkeypatch.delenv(_env_key, raising=False)
 
 
 @pytest.fixture(autouse=True)

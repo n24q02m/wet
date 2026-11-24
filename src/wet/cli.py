@@ -726,7 +726,73 @@ def _text_block_is_error(output: str) -> bool:
     return isinstance(payload, dict) and bool(payload.get("error"))
 
 
+def _run_in_process(call_factory):
+    """Execute an in-process async server tool inside the server lifespan."""
+    import asyncio
+
+    async def _runner():
+        from wet.server import _lifespan, mcp
+
+        async with _lifespan(mcp):
+            return await call_factory()
+
+    return asyncio.run(_runner())
+
+
+def _cmd_mcp(args: argparse.Namespace) -> int:
+    from wet.server import run_server_blocking, run_stdio
+
+    if args.http:
+        run_server_blocking(host=args.host, port=args.port)
+    else:
+        run_stdio()
+    return 0
+
+
+def _cmd_extract(args: argparse.Namespace) -> int:
+    from wet.server import extract
+
+    result = _run_in_process(
+        lambda: extract(
+            action=args.action,
+            urls=args.urls,
+            depth=args.depth,
+            max_pages=args.max_pages,
+            format=args.format,
+            query=args.query,
+        )
+    )
+    _emit(result)
+    return 1 if isinstance(result, dict) and result.get("error") else 0
+
+
+def _cmd_docs_search(args: argparse.Namespace) -> int:
+    from wet.server import search
+
+    result = _run_in_process(
+        lambda: search(
+            action="docs",
+            library=args.library,
+            query=args.query,
+            version=args.version,
+            limit=args.limit,
+        )
+    )
+    _emit(result)
+    return 1 if isinstance(result, dict) and result.get("error") else 0
+
+
 def _cmd_search(args: argparse.Namespace) -> int:
+    if getattr(args, "local", False):
+        from wet.server import search
+
+        limit = args.max_results if args.max_results is not None else 10
+        result = _run_in_process(
+            lambda: search(action="search", query=args.query, limit=limit)
+        )
+        _emit(result)
+        return 1 if isinstance(result, dict) and result.get("error") else 0
+
     base = (args.url or f"http://127.0.0.1:{_resolved_port()}").rstrip("/")
     url = f"{base}/mcp"
     token = args.token or os.environ.get("WET_TOKEN")
@@ -833,11 +899,19 @@ def _cmd_warmup(args: argparse.Namespace) -> int:
 
 
 def build_parser() -> argparse.ArgumentParser:
+    profile_parent = argparse.ArgumentParser(add_help=False)
+    profile_parent.add_argument(
+        "--profile",
+        default=argparse.SUPPRESS,
+        help="profile name (overrides WET_PROFILE)",
+    )
+
     parser = argparse.ArgumentParser(
         prog="wet",
+        parents=[profile_parent],
         description=(
-            "wet control plane: run and configure the HTTP server, "
-            "maintain the docs store, and call the server as a consumer."
+            "wet control plane: run and configure the MCP server, "
+            "maintain the docs store, and call wet tools."
         ),
     )
     parser.add_argument(
@@ -849,11 +923,40 @@ def build_parser() -> argparse.ArgumentParser:
     )
     sub = parser.add_subparsers(dest="command", metavar="<command>")
 
-    p_server = sub.add_parser("server", help="start/stop/status the wet HTTP server")
+    p_mcp = sub.add_parser(
+        "mcp",
+        parents=[profile_parent],
+        help="start MCP server (stdio by default, --http for Streamable HTTP)",
+    )
+    p_mcp.add_argument(
+        "--http",
+        action="store_true",
+        help="run Streamable HTTP transport instead of stdio",
+    )
+    p_mcp.add_argument(
+        "--host",
+        default=None,
+        help="bind host when --http is set (default: [server].host in config.toml)",
+    )
+    p_mcp.add_argument(
+        "--port",
+        type=int,
+        default=None,
+        help="bind port when --http is set (default: [server].port)",
+    )
+    p_mcp.set_defaults(func=_cmd_mcp)
+
+    p_server = sub.add_parser(
+        "server",
+        parents=[profile_parent],
+        help="start/stop/status the wet HTTP server",
+    )
     server_sub = p_server.add_subparsers(dest="server_action", required=True)
 
     p_start = server_sub.add_parser(
-        "start", help="start the server as a detached background process"
+        "start",
+        parents=[profile_parent],
+        help="start the server as a detached background process",
     )
     p_start.add_argument(
         "--host",
@@ -871,50 +974,63 @@ def build_parser() -> argparse.ArgumentParser:
     p_start.set_defaults(func=_cmd_server_start)
 
     p_stop = server_sub.add_parser(
-        "stop", help="stop the running server via its lock file"
+        "stop",
+        parents=[profile_parent],
+        help="stop the running server via its lock file",
     )
     p_stop.add_argument(
         "--port", type=int, default=None, help="target a specific wet-<port>.lock"
     )
     p_stop.set_defaults(func=_cmd_server_stop)
 
-    p_status = server_sub.add_parser("status", help="report pid/lock/HTTP liveness")
+    p_status = server_sub.add_parser(
+        "status", parents=[profile_parent], help="report pid/lock/HTTP liveness"
+    )
     p_status.add_argument(
         "--port", type=int, default=None, help="probe a specific port"
     )
     p_status.set_defaults(func=_cmd_server_status)
 
-    p_config = sub.add_parser("config", help="manage ~/.wet/config.toml")
+    p_config = sub.add_parser(
+        "config", parents=[profile_parent], help="manage config.toml"
+    )
     config_sub = p_config.add_subparsers(dest="config_action", required=True)
     p_config_init = config_sub.add_parser(
-        "init", help="write the default config template"
+        "init", parents=[profile_parent], help="write the default config template"
     )
     p_config_init.add_argument(
         "--force", action="store_true", help="overwrite an existing config"
     )
     p_config_init.set_defaults(func=_cmd_config)
-    p_config_path = config_sub.add_parser("path", help="print the config file path")
+    p_config_path = config_sub.add_parser(
+        "path", parents=[profile_parent], help="print the config file path"
+    )
     p_config_path.set_defaults(func=_cmd_config)
     p_config_show = config_sub.add_parser(
-        "show", help="print the config file (or the template)"
+        "show", parents=[profile_parent], help="print the config file (or the template)"
     )
     p_config_show.set_defaults(func=_cmd_config)
     p_config_get = config_sub.add_parser(
-        "get", help="print one value (dotted key, e.g. server.port)"
+        "get",
+        parents=[profile_parent],
+        help="print one value (dotted key, e.g. server.port)",
     )
     p_config_get.add_argument("key")
     p_config_get.set_defaults(func=_cmd_config)
     p_config_set = config_sub.add_parser(
-        "set", help="set one value (line-based edit of the file)"
+        "set",
+        parents=[profile_parent],
+        help="set one value (line-based edit of the file)",
     )
     p_config_set.add_argument("key")
     p_config_set.add_argument("value")
     p_config_set.set_defaults(func=_cmd_config)
 
-    p_token = sub.add_parser("token", help="token helpers")
+    p_token = sub.add_parser("token", parents=[profile_parent], help="token helpers")
     token_sub = p_token.add_subparsers(dest="token_action", required=True)
     p_token_hash = token_sub.add_parser(
         "hash",
+        parents=[profile_parent],
         help="print the storable scrypt hash of a token read from stdin "
         "or a hidden prompt",
     )
@@ -924,26 +1040,38 @@ def build_parser() -> argparse.ArgumentParser:
     p_token_hash.add_argument("token", nargs="?", default=None, help=argparse.SUPPRESS)
     p_token_hash.set_defaults(func=_cmd_token_hash)
 
-    p_users = sub.add_parser("users", help="user store helpers")
+    p_users = sub.add_parser(
+        "users", parents=[profile_parent], help="user store helpers"
+    )
     users_sub = p_users.add_subparsers(dest="users_action", required=True)
-    p_users_path = users_sub.add_parser("path", help="print the users.toml path")
+    p_users_path = users_sub.add_parser(
+        "path", parents=[profile_parent], help="print the users.toml path"
+    )
     p_users_path.set_defaults(func=_cmd_users_path)
 
     p_docs = sub.add_parser(
-        "docs", help="host-side docs-store maintenance (no server needed)"
+        "docs",
+        parents=[profile_parent],
+        help="host-side docs-store maintenance (no server needed)",
     )
     docs_sub = p_docs.add_subparsers(dest="docs_action", required=True)
     p_docs_list = docs_sub.add_parser(
-        "list", help="print the indexed library names that reindex accepts"
+        "list",
+        parents=[profile_parent],
+        help="print the indexed library names that reindex accepts",
     )
     p_docs_list.set_defaults(func=_cmd_docs_list)
     p_docs_reindex = docs_sub.add_parser(
-        "reindex", help="clear a library's chunks so the next search re-indexes"
+        "reindex",
+        parents=[profile_parent],
+        help="clear a library's chunks so the next search re-indexes",
     )
     p_docs_reindex.add_argument("library")
     p_docs_reindex.set_defaults(func=_cmd_docs_reindex)
     p_docs_import = docs_sub.add_parser(
-        "import", help="import a CF D1 SQL export into the local docs.db"
+        "import",
+        parents=[profile_parent],
+        help="import a CF D1 SQL export into the local docs.db",
     )
     p_docs_import.add_argument("export", help="path to the exported .sql file")
     p_docs_import.add_argument(
@@ -963,7 +1091,9 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p_docs_import.set_defaults(func=_cmd_docs_import)
     p_docs_reembed = docs_sub.add_parser(
-        "reembed", help="backfill vectors for chunks missing them"
+        "reembed",
+        parents=[profile_parent],
+        help="backfill vectors for chunks missing them",
     )
     p_docs_reembed.add_argument(
         "--db", default=None, help="docs db (default: ~/.wet/docs.db)"
@@ -976,11 +1106,28 @@ def build_parser() -> argparse.ArgumentParser:
         "--dry-run", action="store_true", help="report counts only, no writes"
     )
     p_docs_reembed.set_defaults(func=_cmd_docs_reembed)
+    p_docs_search = docs_sub.add_parser(
+        "search",
+        parents=[profile_parent],
+        help="search indexed library documentation locally",
+    )
+    p_docs_search.add_argument("library", help="library name")
+    p_docs_search.add_argument("query", help="documentation search query")
+    p_docs_search.add_argument("--version", default=None, help="target library version")
+    p_docs_search.add_argument("--limit", type=int, default=10, help="max results")
+    p_docs_search.set_defaults(func=_cmd_docs_search)
 
     p_search = sub.add_parser(
-        "search", help="search via the RUNNING server (streamable HTTP MCP)"
+        "search",
+        parents=[profile_parent],
+        help="search via the RUNNING server (or in-process with --local)",
     )
     p_search.add_argument("query")
+    p_search.add_argument(
+        "--local",
+        action="store_true",
+        help="execute search in-process instead of calling the HTTP server",
+    )
     p_search.add_argument(
         "--max-results",
         type=int,
@@ -999,8 +1146,35 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p_search.set_defaults(func=_cmd_search)
 
+    p_extract = sub.add_parser(
+        "extract",
+        parents=[profile_parent],
+        help="extract/crawl/map/research URLs in-process",
+    )
+    p_extract.add_argument("urls", nargs="+", help="one or more target URLs")
+    p_extract.add_argument(
+        "--action",
+        choices=["extract", "crawl", "map", "research"],
+        default="extract",
+        help="extract action mode",
+    )
+    p_extract.add_argument(
+        "--format",
+        choices=["markdown", "text", "json"],
+        default="markdown",
+        help="output format",
+    )
+    p_extract.add_argument("--depth", type=int, default=2, help="crawl depth")
+    p_extract.add_argument("--max-pages", type=int, default=20, help="max crawl pages")
+    p_extract.add_argument(
+        "--query", default=None, help="research query (for --action research)"
+    )
+    p_extract.set_defaults(func=_cmd_extract)
+
     p_warmup = sub.add_parser(
-        "warmup", help="probe configured providers (unchanged warmup behavior)"
+        "warmup",
+        parents=[profile_parent],
+        help="probe configured providers (unchanged warmup behavior)",
     )
     p_warmup.set_defaults(func=_cmd_warmup)
 
@@ -1010,6 +1184,14 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
+    profile = getattr(args, "profile", None)
+    if profile is not None:
+        from hull_core.storage import validate_profile
+
+        from wet.runtime import reset_settings_cache
+
+        os.environ["WET_PROFILE"] = validate_profile(profile)
+        reset_settings_cache()
     handler = getattr(args, "func", None)
     if handler is None:
         parser.print_help()

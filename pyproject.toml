@@ -13,11 +13,14 @@ classifiers = [
     "License :: OSI Approved :: Apache Software License",
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
     "Topic :: Internet :: WWW/HTTP",
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
 ]
-requires-python = "==3.13.*"
+requires-python = ">=3.11.5,<3.15"  # lts-exempt: onnxruntime/fastretrieval cp315 wheel pending and n24q02m-hull requires >=3.11.5
 dependencies = [
     # Shared hull stack, published on PyPI as `n24q02m-hull` (import packages:
     # `hull_core` + `hull_web` + `hull_embedding_daemon`). The `[web]` extra
@@ -28,7 +31,7 @@ dependencies = [
     # (Browser rendering is native chromium or self-hosted browserless only.)
     # 0.5 adds the provider key pool + account registry
     # (`hull_core.credentials`) every provider call now rotates through.
-    "n24q02m-hull[web]>=0.8.0,<0.9",
+    "n24q02m-hull[web]>=0.11.0b1,<0.12",
     # MCP Server
     "mcp[cli]>=2.3.0,<3",
     # HTTP Client
@@ -45,7 +48,7 @@ dependencies = [
     # Vector search for docs
     "sqlite-vec",
     # Local ONNX embedding + reranking (auto-fallback when no cloud API)
-    "fastretrieval>=1.1.0,<2",
+    "fastretrieval>=1.16.0b1,<2",
     "pillow>=12.3.0",
     "diskcache>=5.6.3",
     "cryptography>=50.0.0",
@@ -87,8 +90,8 @@ dependencies = [
 # Seeded-identity + invisible browser tier (E1-e/E1-f): opt-in at install time,
 # enabled at runtime via BROWSER_BACKENDS=invisible / WET_IDENTITY_SEED. Without
 # these extras strategies keep legacy behavior (warn-once). See AGENTS.md.
-identity = ["n24q02m-hull[identity]>=0.8.0,<0.9"]
-invisible = ["n24q02m-hull[invisible]>=0.8.0,<0.9"]
+identity = ["n24q02m-hull[identity]>=0.11.0b1,<0.12"]
+invisible = ["n24q02m-hull[invisible]>=0.11.0b1,<0.12"]
 
 [dependency-groups]
 dev = [
@@ -180,7 +183,7 @@ type = "github"
 
 [tool.ruff]
 line-length = 88
-target-version = "py313"
+target-version = "py311"
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "UP", "B", "C4"]

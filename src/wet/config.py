@@ -20,8 +20,13 @@ from pydantic_settings import BaseSettings
 
 
 def _default_data_dir() -> Path:
-    """Get default data directory (~/.wet/)."""
-    return Path.home() / ".wet"
+    """Get default data directory (~/.n24q02m/wet/, or profile subdirectory)."""
+    from hull_core.storage import data_dir, migrate_legacy_data_dir, resolve_profile
+
+    migrate_legacy_data_dir("wet")
+    root = data_dir("wet")
+    prof = resolve_profile("wet")
+    return root if prof == "default" else root / "profiles" / prof
 
 
 def _detect_gpu() -> bool:

@@ -99,14 +99,14 @@ RUN mkdir -p /opt/playwright && if [ "$SLIM" != "1" ]; then \
     uv run python -m playwright install chromium && \
     uv run python -m patchright install chromium; fi
 
-# Non-root runtime. The code reads no WET_HOME-style env (config root is
-# Path.home()/.wet), so mount-friendliness comes from pinning HOME and
-# pre-creating the config dir with the setup marker (skips first-boot auto-setup
-# inside the container).
+# Non-root runtime. Hull v2 resolves the config root under ~/.n24q02m/wet
+# (honoring N24Q02M_HOME / N24Q02M_USE_XDG), so mount-friendliness comes from
+# pinning HOME and pre-creating the config dir with the setup marker (skips
+# first-boot auto-setup inside the container).
 ENV HOME=/home/appuser
 RUN groupadd -r appuser && useradd -r -g appuser -d /home/appuser -m appuser \
-    && mkdir -p /data/downloads /home/appuser/.wet \
-    && touch /home/appuser/.wet/.setup-complete \
+    && mkdir -p /data/downloads /home/appuser/.n24q02m/wet \
+    && touch /home/appuser/.n24q02m/wet/.setup-complete \
     && chown -R appuser:appuser /app /data /home/appuser /opt/playwright
 
 ENV PATH="/app/.venv/bin:$PATH" \

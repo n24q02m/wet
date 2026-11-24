@@ -513,7 +513,10 @@ class TestTokenHash:
             cli.main(["token", "hash", "--help"])
         assert exc.value.code == 0
         hash_help = capsys.readouterr().out
-        assert hash_help.splitlines()[0] == "usage: wet token hash [-h]"
+        assert (
+            hash_help.splitlines()[0]
+            == "usage: wet token hash [-h] [--profile PROFILE]"
+        )
         assert "positional arguments" not in hash_help
 
         with pytest.raises(SystemExit) as exc:
