@@ -2,6 +2,20 @@
 
 <!-- version list -->
 
+## v3.24.0-beta.1 (2026-11-24)
+
+### Bug Fixes
+
+- **deps**: Lock file maintenance ([#1989](https://github.com/n24q02m/wet/pull/1989),
+  [`482ba6f`](https://github.com/n24q02m/wet/commit/482ba6fc3e47136f1a8bbb87b2b7194a8de958c1))
+
+### Features
+
+- Add python 3.14 support, hull v2 profiles, and stdio cli parity
+  ([#1992](https://github.com/n24q02m/wet/pull/1992),
+  [`c0263e5`](https://github.com/n24q02m/wet/commit/c0263e583ad49dce0dcb85e2170c9dfc08e75056))
+
+
 ## v3.23.0 (2026-11-22)
 
 
