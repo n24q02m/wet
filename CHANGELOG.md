@@ -2,6 +2,21 @@
 
 <!-- version list -->
 
+## v3.24.0-beta.2 (2026-11-24)
+
+### Bug Fixes
+
+- Resolve CodeQL HTML tag filter and URL check alerts
+  ([#1993](https://github.com/n24q02m/wet/pull/1993),
+  [`6201361`](https://github.com/n24q02m/wet/commit/62013613fddc6c528ad5e73d009803fd175baf33))
+
+### Features
+
+- Add SOTA search routing, security, docs audit, monitor, and diagnostics
+  ([#1993](https://github.com/n24q02m/wet/pull/1993),
+  [`6201361`](https://github.com/n24q02m/wet/commit/62013613fddc6c528ad5e73d009803fd175baf33))
+
+
 ## v3.24.0-beta.1 (2026-11-24)
 
 ### Bug Fixes
