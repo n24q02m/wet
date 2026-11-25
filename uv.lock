@@ -2496,7 +2496,7 @@ web = [
 
 [[package]]
 name = "n24q02m-wet"
-version = "3.24.0b2"
+version = "3.24.0"
 source = { editable = "." }
 dependencies = [
     { name = "aiolimiter" },
