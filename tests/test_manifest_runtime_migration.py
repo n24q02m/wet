@@ -57,9 +57,9 @@ def test_dependency_specs_and_lock_use_stable_fastretrieval():
     project = _project_metadata()["project"]
     dependencies = project["dependencies"]
 
-    assert "fastretrieval>=1.16.0b1,<2" in dependencies
+    assert "fastretrieval>=1.16.0,<2" in dependencies
     locked_fr = Version(_locked_package("fastretrieval")["version"])
-    assert locked_fr >= Version("1.16.0b1"), locked_fr
+    assert locked_fr >= Version("1.16.0"), locked_fr
     assert locked_fr < Version("2"), locked_fr
 
 

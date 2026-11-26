@@ -7,7 +7,7 @@ license = { text = "Apache-2.0" }
 authors = [{ name = "n24q02m", email = "quangminh2422004@gmail.com" }]
 keywords = ["mcp", "mcp-server", "model-context-protocol", "web-scraping", "searxng", "crawl4ai", "library-docs", "claude", "cursor", "copilot", "antigravity", "codex", "opencode"]
 classifiers = [
-    "Development Status :: 4 - Beta",
+    "Development Status :: 5 - Production/Stable",
     "Environment :: Console",
     "Intended Audience :: Developers",
     "License :: OSI Approved :: Apache Software License",
@@ -31,7 +31,7 @@ dependencies = [
     # (Browser rendering is native chromium or self-hosted browserless only.)
     # 0.5 adds the provider key pool + account registry
     # (`hull_core.credentials`) every provider call now rotates through.
-    "n24q02m-hull[web]>=0.11.0b1,<0.12",
+    "n24q02m-hull[web]>=0.11.0,<0.12",
     # MCP Server
     "mcp[cli]>=2.3.0,<3",
     # HTTP Client
@@ -48,7 +48,7 @@ dependencies = [
     # Vector search for docs
     "sqlite-vec",
     # Local ONNX embedding + reranking (auto-fallback when no cloud API)
-    "fastretrieval>=1.16.0b1,<2",
+    "fastretrieval>=1.16.0,<2",
     "pillow>=12.3.0",
     "diskcache>=5.6.3",
     "cryptography>=50.0.0",
@@ -90,8 +90,8 @@ dependencies = [
 # Seeded-identity + invisible browser tier (E1-e/E1-f): opt-in at install time,
 # enabled at runtime via BROWSER_BACKENDS=invisible / WET_IDENTITY_SEED. Without
 # these extras strategies keep legacy behavior (warn-once). See AGENTS.md.
-identity = ["n24q02m-hull[identity]>=0.11.0b1,<0.12"]
-invisible = ["n24q02m-hull[invisible]>=0.11.0b1,<0.12"]
+identity = ["n24q02m-hull[identity]>=0.11.0,<0.12"]
+invisible = ["n24q02m-hull[invisible]>=0.11.0,<0.12"]
 
 [dependency-groups]
 dev = [
