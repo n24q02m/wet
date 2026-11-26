@@ -2,13 +2,13 @@
 
 **Open-source MCP server for AI agents: web search, content extraction, and library docs.**
 
-> **Distribution & CLI:** the repo, CLI and Python module are `wet`. The PyPI distribution is **`n24q02m-wet`** (install `pip install n24q02m-wet` / `uvx --python 3.13 n24q02m-wet`). wet is an HTTP-only MCP server: start it with `wet server start` and point clients at `http://127.0.0.1:8000/mcp`. There is no stdio mode; a bare `wet` prints the control-plane usage. The `wet` and `wet-mcp` aliases remain available.
+> **Distribution & CLI:** the repo, CLI and Python module are `wet`. The PyPI distribution is **`n24q02m-wet`** (install `pip install n24q02m-wet` / `uvx --python 3.14 n24q02m-wet`). Run `wet mcp` for **stdio** (default for local MCP clients), or `wet mcp --http` / `wet server start` for **Streamable HTTP** (`http://127.0.0.1:8000/mcp`); a bare `wet` prints control-plane usage. The `n24q02m-wet` and `wet-mcp` aliases remain available.
 
 mcp-name: io.github.n24q02m/wet
 
 | Phase | Status | Scope |
 |---|---|---|
-| Phase 1 | Shipped | web-core ScrapingAgent migration, smart chunks output, search polish, media slim |
+| Phase 1 | Shipped | hull_web ScrapingAgent migration, smart chunks output, search polish, media slim |
 | Phase 2 | Shipped | Context7-level docs search: library index (Tier 1 + Tier 2), version-aware queries with token cap, project lock (Cabinets) |
 | Phase 3 | **Shipped** | `extract.agent` multi-step research with cited synthesis, `extract.interact` click/fill/submit via patchright (optional session persistence), `docs_004_chunk_summaries` migration, **`media.analyze` removed (v2.0.0)** |
 
@@ -43,7 +43,6 @@ mcp-name: io.github.n24q02m/wet
 | [email](https://github.com/n24q02m/email)                                     | IMAP/SMTP email for AI agents -- read, send, organize folders, and manage att... | MCP         |
 | [fastretrieval](https://github.com/n24q02m/fastretrieval)                     | Fast multi-model retrieval runtime: ONNX and GGUF embeddings, reranking, and ... | Tooling     |
 | [hull](https://github.com/n24q02m/hull)                                       | hull is the shared monorepo core for the wet, crg and mnemo self-hosted stack    | MCP         |
-| [jules-task-archiver](https://github.com/n24q02m/jules-task-archiver)         | Chrome Extension for bulk operations on Jules tasks via batchexecute API -- a... | Tooling     |
 | [mnemo](https://github.com/n24q02m/mnemo)                                     | Persistent AI memory with hybrid search. Open, free, unlimited.                  | MCP         |
 | [notion](https://github.com/n24q02m/notion)                                   | Markdown-first Notion for AI agents -- pages, databases, blocks, and comments... | MCP         |
 | [skret](https://github.com/n24q02m/skret)                                     | Secrets without the server.                                                      | CLI         |
@@ -96,8 +95,11 @@ mcp-name: io.github.n24q02m/wet
 /plugin marketplace add n24q02m/claude-plugins
 /plugin install wet@n24q02m-plugins
 
-# Method 2 (CLI): start a local instance, then register its HTTP endpoint
-uvx --python 3.13 --from n24q02m-wet wet server start
+# Method 2 (CLI, stdio default): register wet over stdio
+claude mcp add wet -- uvx --python 3.14 --from n24q02m-wet wet mcp
+
+# Method 2b (local HTTP instance): start server then register URL
+uvx --python 3.14 --from n24q02m-wet wet server start
 claude mcp add --transport http wet http://127.0.0.1:8000/mcp
 
 # Method 3 (always-on): compose stack from a clone of this repo (token auth)
@@ -107,7 +109,7 @@ docker compose up --build -d
 claude mcp add --transport http wet https://<your-host>/mcp
 ```
 
-Every method needs a running instance: wet never runs as a client-spawned subprocess. Install matrix (all Streamable HTTP; see the [Setup](https://mcp.n24q02m.com/servers/wet/setup/) page for full steps):
+Install matrix (stdio via `wet mcp` or Streamable HTTP via `wet server start`; see the [Setup](https://docs.n24q02m.com/plugins/servers/wet/setup/) page for full steps):
 
 | Client | Install |
 |---|---|
@@ -127,7 +129,7 @@ the client sends `Authorization: Bearer <token>`; `no-auth` is loopback-only.
 Stand one up via Method 2 or 3.
 
 Full setup matrices live at the canonical docs site
-[mcp.n24q02m.com/servers/wet/setup/](https://mcp.n24q02m.com/servers/wet/setup/)
+[docs.n24q02m.com/plugins/servers/wet/setup/](https://docs.n24q02m.com/plugins/servers/wet/setup/)
 and the paste-to-agent snippets at
 [claude-plugins/plugins/wet/setup-with-agent.md](https://github.com/n24q02m/claude-plugins/blob/main/plugins/wet/setup-with-agent.md)
 (per Spec F single source of truth).
@@ -136,8 +138,7 @@ and the paste-to-agent snippets at
 
 Two supported ways to run the always-listening HTTP server. In both, the MCP
 endpoint is `http://127.0.0.1:8000/mcp` (Streamable HTTP) and the config root
-is `~/.wet/` (`config.toml`, `docs.db`, `subs/`). Never run the server as a
-spawned subprocess of a client — register the endpoint in your client instead.
+is `~/.wet/` (`config.toml`, `docs.db`, `subs/`). Use `wet mcp` for client-spawned stdio, or register the `/mcp` endpoint of `wet server start` / Docker for shared HTTP.
 
 ### Dev (uv, no-auth loopback)
 
@@ -181,7 +182,7 @@ config takes effect on `docker compose restart`.
 
 ```bash
 # CLI (talks to the running server over HTTP; exits 2 with a hint when none runs):
-uvx --python 3.13 --from n24q02m-wet wet search "<query>"
+uvx --python 3.14 --from n24q02m-wet wet search "<query>"
 
 # MCP client (Claude Code):
 claude mcp add --transport http wet http://127.0.0.1:8000/mcp \
@@ -301,19 +302,17 @@ in the file.
 
 ## Status
 
-Stable architecture with a single transport: Streamable HTTP, always served by
-`wet server start` (self-host). No stdio mode, no daemon-bridge layer and no
-auto-spawn by clients. The `media.analyze` action was removed in the v2.0.0 BREAKING
+Stable architecture supporting both **stdio** (`wet mcp`, default for local clients) and **Streamable HTTP** (`wet mcp --http` or `wet server start`). The `media.analyze` action was removed in the v2.0.0 BREAKING
 release -- see [`docs/migration.md`](docs/migration.md) for the upgrade
 recipe. Current release line: v3.x.
 
 ## Documentation
 
-Full docs at **[mcp.n24q02m.com/servers/wet/setup/](https://mcp.n24q02m.com/servers/wet/setup/)**:
+Full docs at **[docs.n24q02m.com/plugins/servers/wet/setup/](https://docs.n24q02m.com/plugins/servers/wet/setup/)**:
 
-- [Setup](https://mcp.n24q02m.com/servers/wet/setup/) -- install methods for Claude Code, Codex, Gemini CLI, Cursor, Windsurf, mcp.json
-- [Modes overview](https://mcp.n24q02m.com/get-started/modes-overview/) -- transports and HTTP auth modes
-- [Multi-user setup](https://mcp.n24q02m.com/get-started/multi-user/) -- `multi` mode: per-user tokens from `users.toml`, one namespace per user
+- [Setup](https://docs.n24q02m.com/plugins/servers/wet/setup/) -- install methods for Claude Code, Codex, Gemini CLI, Cursor, Windsurf, mcp.json
+- [Modes overview](https://docs.n24q02m.com/plugins/get-started/modes-overview/) -- transports and HTTP auth modes
+- [Multi-user setup](https://docs.n24q02m.com/plugins/get-started/multi-user/) -- `multi` mode: per-user tokens from `users.toml`, one namespace per user
 
 In-repo references (Spec F single source of truth: setup docs live in
 [claude-plugins/plugins/wet/](https://github.com/n24q02m/claude-plugins/tree/main/plugins/wet)):
@@ -349,7 +348,7 @@ In-repo references (Spec F single source of truth: setup docs live in
 The package installs three console scripts: **`n24q02m-wet`** (primary package command), `wet` (short alias), and `wet-mcp` (legacy alias). `wet` is the control plane for the HTTP server plus one thin client; a bare invocation prints its usage.
 
 ```bash
-uvx --python 3.13 --from n24q02m-wet wet warmup   # try a subcommand without a persistent install
+uvx --python 3.14 --from n24q02m-wet wet warmup   # try a subcommand without a persistent install
 
 wet server start                # start the Streamable HTTP server (detached; --foreground to attach)
 wet server status               # pid, lock and HTTP liveness
