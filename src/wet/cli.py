@@ -730,7 +730,9 @@ def _unwrap_tool_result(raw):
     """Extract a JSON dict from FastMCP CallToolResult when calling tools directly."""
     if isinstance(raw, dict):
         return raw
-    structured = getattr(raw, "structuredContent", None)
+    structured = getattr(raw, "structured_content", None)
+    if not isinstance(structured, dict):
+        structured = getattr(raw, "structuredContent", None)
     if isinstance(structured, dict):
         return structured
     content = getattr(raw, "content", None)

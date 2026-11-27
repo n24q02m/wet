@@ -31,9 +31,10 @@ dependencies = [
     # (Browser rendering is native chromium or self-hosted browserless only.)
     # 0.5 adds the provider key pool + account registry
     # (`hull_core.credentials`) every provider call now rotates through.
-    "n24q02m-hull[web]>=0.11.0,<0.12",
+    "n24q02m-hull[web]>=0.12.0b1,<0.13",
     # MCP Server
     "mcp[cli]>=2.3.0,<3",
+    "fastmcp[tasks]>=4.2.2,<5",
     # HTTP Client
     "httpx",
     # Config
@@ -90,8 +91,8 @@ dependencies = [
 # Seeded-identity + invisible browser tier (E1-e/E1-f): opt-in at install time,
 # enabled at runtime via BROWSER_BACKENDS=invisible / WET_IDENTITY_SEED. Without
 # these extras strategies keep legacy behavior (warn-once). See AGENTS.md.
-identity = ["n24q02m-hull[identity]>=0.11.0,<0.12"]
-invisible = ["n24q02m-hull[invisible]>=0.11.0,<0.12"]
+identity = ["n24q02m-hull[identity]>=0.12.0b1,<0.13"]
+invisible = ["n24q02m-hull[invisible]>=0.12.0b1,<0.13"]
 
 [dependency-groups]
 dev = [
@@ -129,6 +130,9 @@ artifacts = ["src/wet/data/**/*.json"]
 [tool.hatch.build.targets.wheel.sources]
 "src" = ""
 
+[tool.hatch.build.targets.wheel.force-include]
+"skills" = "skills"
+
 [tool.hatch.build.targets.sdist]
 include = [
     "src/wet/**/*.py",
@@ -138,6 +142,7 @@ include = [
     "src/wet/**/*.ini",
     "src/wet/**/*.mako",
     "src/wet/alembic/README",
+    "skills/**/*",
 ]
 
 [tool.pytest.ini_options]

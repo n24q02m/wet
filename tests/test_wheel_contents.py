@@ -18,9 +18,9 @@ import pytest
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def _tracked_package_files() -> set[str]:
+def _tracked_wheel_files() -> set[str]:
     result = subprocess.run(
-        ["git", "ls-files", "src/wet"],
+        ["git", "ls-files", "src/wet", "skills"],
         cwd=ROOT,
         capture_output=True,
         text=True,
@@ -44,6 +44,10 @@ def test_wheel_built_like_cd_ships_every_package_file(tmp_path: Path):
     (wheel,) = tmp_path.glob("*.whl")
     shipped = set(zipfile.ZipFile(wheel).namelist())
 
-    missing = sorted(_tracked_package_files() - shipped)
+    missing = sorted(_tracked_wheel_files() - shipped)
 
     assert not missing, "dropped from the wheel:\n" + "\n".join(missing)
+    skill_docs = sorted(
+        n for n in shipped if n.startswith("skills/") and n.endswith("/SKILL.md")
+    )
+    assert len(skill_docs) >= 4, f"Expected bundled SKILL.md entries, got: {skill_docs}"

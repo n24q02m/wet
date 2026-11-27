@@ -26,8 +26,16 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 
+from fastmcp import FastMCP
+from fastmcp.server.dependencies import get_context
+from fastmcp_tasks import TasksExtension
+from hull_core.server import (
+    attach_skills_provider,
+    build_file_payload,
+    build_task_config,
+    elicit_with_fallback,
+)
 from loguru import logger
-from mcp.server.mcpserver import MCPServer
 from mcp.types import CallToolResult, TextContent, ToolAnnotations
 
 from wet import search_metrics
@@ -321,7 +329,7 @@ def _detect_gh_token() -> str | None:
 
 
 @asynccontextmanager
-async def _lifespan(_server: MCPServer):
+async def _lifespan(_server: FastMCP):
     """Server lifespan: startup SearXNG, init cache/docs DB, cleanup on shutdown."""
     warmup_task = await _lifespan_startup()
     yield
@@ -816,7 +824,17 @@ except Exception:
     except Exception:
         _server_version = "dev"
 
-mcp = MCPServer(
+
+def _resolve_skills_dir() -> Path | None:
+    """Locate bundled Agent Skills directory in source checkout or installed wheel."""
+    pkg_dir = Path(__file__).resolve().parent
+    for candidate in (pkg_dir.parent / "skills", pkg_dir.parents[1] / "skills"):
+        if candidate.is_dir():
+            return candidate
+    return None
+
+
+mcp = FastMCP(
     name="wet",
     version=_server_version,
     instructions=(
@@ -830,6 +848,10 @@ mcp = MCPServer(
     ),
     lifespan=_lifespan,
 )
+mcp.add_extension(TasksExtension())
+_skills_dir = _resolve_skills_dir()
+if _skills_dir is not None:
+    attach_skills_provider(mcp, _skills_dir)
 
 
 # Grace period (seconds) given to a cancelled task to clean up resources
@@ -1159,6 +1181,7 @@ async def _run_configured_search(*, timeout: float | None = None, **kwargs: Any)
         open_world_hint=True,
         idempotent_hint=True,
     ),
+    task=build_task_config("optional"),
 )
 @_wrap_tool("search")
 async def search(  # noqa: PLR0913
@@ -1798,6 +1821,7 @@ async def search(  # noqa: PLR0913
         read_only_hint=True,
         open_world_hint=True,
     ),
+    task=build_task_config("optional"),
 )
 @_wrap_tool("extract")
 async def extract(  # noqa: PLR0913
@@ -2133,11 +2157,49 @@ async def extract(  # noqa: PLR0913
             }
 
 
+_MAX_INLINE_FILE_BYTES = 5 * 1024 * 1024
+
+
+def _attach_download_files(data: dict[str, Any]) -> dict[str, Any]:
+    """Attach ``io.modelcontextprotocol/files`` payloads for downloaded local files."""
+    items = data.get("results")
+    if not isinstance(items, list):
+        return data
+
+    files_payload: list[dict[str, Any]] = []
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        raw_path = item.get("path")
+        if not isinstance(raw_path, str) or not raw_path:
+            continue
+        file_path = Path(raw_path)
+        if not file_path.is_file():
+            continue
+        try:
+            if file_path.stat().st_size > _MAX_INLINE_FILE_BYTES:
+                continue
+            files_payload.append(
+                build_file_payload(
+                    file_path.read_bytes(),
+                    file_path.name,
+                    uri=file_path.as_uri(),
+                )
+            )
+        except OSError as exc:
+            logger.debug(f"Skipping file payload for {file_path}: {exc}")
+
+    if files_payload:
+        data["files"] = files_payload
+    return data
+
+
 @mcp.tool(
     annotations=ToolAnnotations(
         read_only_hint=False,
         open_world_hint=True,
     ),
+    task=build_task_config("optional"),
 )
 @_wrap_tool("media")
 async def media(  # noqa: PLR0913
@@ -2205,13 +2267,15 @@ async def media(  # noqa: PLR0913
                     )
                 }
 
-            return _payload(
-                await _with_timeout(
-                    download_media(
-                        media_urls=media_urls,
-                        output_dir=str(target_dir),
-                    ),
-                    "media.download",
+            return _attach_download_files(
+                _payload(
+                    await _with_timeout(
+                        download_media(
+                            media_urls=media_urls,
+                            output_dir=str(target_dir),
+                        ),
+                        "media.download",
+                    )
                 )
             )
 
@@ -2433,11 +2497,32 @@ def _handle_config_set(key: str | None, value: str | None) -> dict[str, Any]:
     }
 
 
-async def _handle_config_cache_clear() -> dict[str, Any]:
-    if _web_cache:
-        await asyncio.to_thread(_web_cache.clear, None, current_sub())
-        return {"status": "cache cleared"}
-    return {"error": "Cache is not enabled"}
+def _current_mcp_context():
+    """Return active FastMCP request context when running inside an MCP call."""
+    try:
+        return get_context()
+    except RuntimeError:
+        return None
+
+
+async def _handle_config_cache_clear(*, force: bool = False) -> dict[str, Any]:
+    if not _web_cache:
+        return {"error": "Cache is not enabled"}
+    if not force:
+        outcome = await elicit_with_fallback(
+            _current_mcp_context(),
+            "Clear all cached web search and extract entries for the current caller?",
+            bool,
+            default=True,
+            response_title="Confirm cache clear",
+        )
+        if outcome.status in ("declined", "cancelled") or outcome.data is False:
+            return {
+                "status": "cancelled",
+                "reason": outcome.reason or "declined",
+            }
+    await asyncio.to_thread(_web_cache.clear, None, current_sub())
+    return {"status": "cache cleared"}
 
 
 def _handle_config_docs_reindex(key: str | None) -> dict[str, Any]:
@@ -2513,7 +2598,7 @@ async def config(
             return _handle_config_set(key, value)
 
         case "cache_clear":
-            return await _handle_config_cache_clear()
+            return await _handle_config_cache_clear(force=force)
 
         case "docs_reindex":
             return _handle_config_docs_reindex(key)
@@ -3445,7 +3530,7 @@ def build_http_app(settings=None):
 
     from wet.runtime import build_authenticator
 
-    inner = mcp.streamable_http_app()
+    inner = mcp.http_app(path="/mcp", transport="streamable-http")
     authenticator = build_authenticator(settings)
     app = HullAuthMiddleware(inner, authenticator)
     return Starlette(

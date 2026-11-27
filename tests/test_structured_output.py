@@ -260,13 +260,11 @@ async def test_fastmcp_validates_structured_content_against_output_schema():
         new_callable=AsyncMock,
         return_value=json.dumps({"images": []}),
     ):
-        result = await _srv().mcp._tool_manager.call_tool(
+        result = await _srv().mcp.call_tool(
             "media",
             {"action": "list", "url": "https://example.com"},
-            context=None,
-            convert_result=True,
         )
 
-    assert isinstance(result, CallToolResult)
+    assert result.structured_content is not None
     assert result.structured_content["_untrusted_source"] == "web"
     assert "<untrusted_media_content>" in result.content[0].text
