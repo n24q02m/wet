@@ -2,6 +2,15 @@
 
 <!-- version list -->
 
+## v3.25.0-beta.2 (2026-11-27)
+
+### Features
+
+- Split sources/docs monolith into package and record W11 baseline benchmark
+  ([#1998](https://github.com/n24q02m/wet/pull/1998),
+  [`bbfea3a`](https://github.com/n24q02m/wet/commit/bbfea3a52bc51c2f1ac9a094da4c2aa8d23fd99b))
+
+
 ## v3.25.0-beta.1 (2026-11-27)
 
 ### Bug Fixes
