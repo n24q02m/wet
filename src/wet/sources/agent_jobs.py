@@ -159,6 +159,155 @@ async def start_research_job(
     }
 
 
+_STEERABLE_STATUSES = ("pending", "running")
+
+
+def _steering_entries(params: dict[str, Any]) -> list[dict[str, Any]]:
+    entries = params.get("steering")
+    if not isinstance(entries, list):
+        return []
+    return [entry for entry in entries if isinstance(entry, dict)]
+
+
+def _fold_steering(direction: Any, entries: list[dict[str, Any]]) -> Any:
+    """Apply each entry's changes to ``direction`` in order (invalid ones skipped)."""
+    from wet.sources.agent_orchestrator import apply_steering, validate_steering
+
+    for entry in entries:
+        changes, _ = validate_steering(entry.get("changes"))
+        if changes is not None:
+            direction = apply_steering(direction, changes)
+    return direction
+
+
+def _begin_run(db: Any, *, job_id: str, sub: str) -> Any:
+    """Start a (re)run: rebuild the direction from steering already applied.
+
+    Progress and the live direction of an earlier run are dropped, since the
+    run starts over from the first search round. Steering still pending is
+    left for the first checkpoint.
+    """
+    from wet.sources.agent_orchestrator import ResearchDirection
+
+    state: dict[str, Any] = {}
+
+    def _mutate(row: dict, params: dict) -> dict | None:
+        applied = [
+            entry
+            for entry in _steering_entries(params)
+            if entry.get("applied_at") is not None
+        ]
+        state["direction"] = _fold_steering(ResearchDirection(), applied)
+        if "progress" not in params and "direction" not in params:
+            return None
+        params.pop("progress", None)
+        params.pop("direction", None)
+        return params
+
+    db.update_job_params(job_id, sub=sub, mutate=_mutate)
+    return state.get("direction") or ResearchDirection()
+
+
+def _checkpoint(
+    db: Any,
+    *,
+    job_id: str,
+    sub: str,
+    step: str,
+    round_no: int,
+    direction: Any,
+) -> Any:
+    """Apply pending steering at an orchestration checkpoint.
+
+    Pending entries are applied in order and stamped with the step and round
+    they took effect at; the step becomes the job's progress. One write
+    transaction covers all of it, so a concurrent ``steer`` call lands either
+    before (applied now) or after (applied at the next checkpoint). A job
+    another process marked cancelled stops here.
+    """
+    state: dict[str, Any] = {"direction": direction}
+
+    def _mutate(row: dict, params: dict) -> dict | None:
+        if row["status"] == "cancelled":
+            state["cancelled"] = True
+            return None
+        now = _now_ts()
+        pending = [
+            entry
+            for entry in _steering_entries(params)
+            if entry.get("applied_at") is None
+        ]
+        current = _fold_steering(direction, pending)
+        for entry in pending:
+            entry.update(applied_at=now, applied_step=step, applied_round=round_no)
+        params["progress"] = {"step": step, "round": round_no, "at": now}
+        params["direction"] = current.to_dict()
+        state["direction"] = current
+        return params
+
+    db.update_job_params(job_id, sub=sub, mutate=_mutate)
+    if state.get("cancelled"):
+        raise asyncio.CancelledError
+    return state["direction"]
+
+
+def steer_research_job(
+    db: Any, *, job_id: str, changes: Any, sub: str = "default"
+) -> dict[str, Any]:
+    """Record a steering change for a pending or running research job.
+
+    The change is validated now and applied at the job's next orchestration
+    checkpoint (before its next search, extraction or synthesis). Once the
+    job has started synthesising its answer, steering is refused.
+    """
+    from wet.sources.agent_orchestrator import STEP_SYNTHESIZE, validate_steering
+
+    outcome: dict[str, Any] = {}
+
+    def _mutate(row: dict, params: dict) -> dict | None:
+        status = row["status"]
+        if status not in _STEERABLE_STATUSES:
+            outcome["error"] = (
+                f"Error: Research job '{job_id}' is {status}; only pending or "
+                "running jobs can be steered."
+            )
+            return None
+        normalized, error = validate_steering(changes)
+        if normalized is None:
+            outcome["error"] = error
+            return None
+        progress = params.get("progress")
+        if isinstance(progress, dict) and progress.get("step") == STEP_SYNTHESIZE:
+            outcome["error"] = (
+                f"Error: Research job '{job_id}' is already synthesising its "
+                "answer; steering applies only before synthesis."
+            )
+            return None
+        entries = _steering_entries(params)
+        last_seq = max(
+            (entry["seq"] for entry in entries if isinstance(entry.get("seq"), int)),
+            default=0,
+        )
+        entry = {
+            "seq": last_seq + 1,
+            "at": _now_ts(),
+            "changes": normalized,
+            "applied_at": None,
+            "applied_step": None,
+            "applied_round": None,
+        }
+        params["steering"] = [*entries, entry]
+        outcome.update(status=status, entry=entry)
+        return params
+
+    row = db.update_job_params(job_id, sub=sub, mutate=_mutate)
+    if row is None:
+        return {"error": f"Error: Research job '{job_id}' not found."}
+    if "error" in outcome:
+        return {"error": outcome["error"]}
+    return {"job_id": job_id, "status": outcome["status"], "steer": outcome["entry"]}
+
+
 def _launch_job_task(
     db: Any,
     *,
@@ -171,6 +320,16 @@ def _launch_job_task(
 ) -> None:
     from wet.sources.agent_orchestrator import run_agent
 
+    async def _on_step(step: str, round_no: int, direction: Any) -> Any:
+        return _checkpoint(
+            db,
+            job_id=job_id,
+            sub=sub,
+            step=step,
+            round_no=round_no,
+            direction=direction,
+        )
+
     async def _runner() -> None:
         db.update_job(job_id, sub=sub, status="running")
         try:
@@ -179,6 +338,8 @@ def _launch_job_task(
                 max_urls=max_urls,
                 synthesis_model=synthesis_model,
                 token_budget=token_budget,
+                direction=_begin_run(db, job_id=job_id, sub=sub),
+                on_step=_on_step,
             )
             if isinstance(outcome, str) and outcome.startswith("Error"):
                 db.update_job(
@@ -244,6 +405,37 @@ def get_research_job(db: Any, *, job_id: str, sub: str = "default") -> dict[str,
             out["result"] = json.loads(row["result_json"])
         except json.JSONDecodeError:
             out["result"] = row["result_json"]
+    out.update(_steering_status(row.get("params_json")))
+    return out
+
+
+def _steering_status(params_json: str | None) -> dict[str, Any]:
+    """Progress, steering log and effective direction for job status.
+
+    The direction is the one the run last used with any still-pending
+    steering applied on top, i.e. where the job will head next.
+    """
+    from wet.sources.agent_orchestrator import ResearchDirection
+
+    try:
+        params = json.loads(params_json or "{}")
+    except json.JSONDecodeError:
+        return {}
+    if not isinstance(params, dict):
+        return {}
+    out: dict[str, Any] = {}
+    if isinstance(params.get("progress"), dict):
+        out["progress"] = params["progress"]
+    entries = _steering_entries(params)
+    if entries:
+        stored = params.get("direction")
+        if isinstance(stored, dict):
+            base = ResearchDirection.from_dict(stored)
+            pending = [e for e in entries if e.get("applied_at") is None]
+        else:
+            base, pending = ResearchDirection(), entries
+        out["steering"] = entries
+        out["direction"] = _fold_steering(base, pending).to_dict()
     return out
 
 

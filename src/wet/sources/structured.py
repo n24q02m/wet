@@ -266,7 +266,19 @@ async def extract_structured(
 
     combined = "\n\n".join(combined_parts)
     if not combined.strip():
-        return json.dumps({"error": "No content extracted from the provided URLs."})
+        failure: dict[str, Any] = {
+            "error": "No content extracted from the provided URLs."
+        }
+        # Surface per-URL causes (blocked URL, open circuit, HTTP failure) so
+        # callers can tell a dead host from an empty page.
+        url_errors = [
+            {"url": page.get("url", ""), "error": page["error"]}
+            for page in pages
+            if isinstance(page, dict) and page.get("error")
+        ]
+        if url_errors:
+            failure["url_errors"] = url_errors
+        return json.dumps(failure)
 
     if len(combined) > _MAX_CONTENT_CHARS:
         combined = combined[:_MAX_CONTENT_CHARS] + "\n...[truncated]"

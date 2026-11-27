@@ -30,7 +30,7 @@ async def test_extract_with_markitdown_success():
     mock_resp.raise_for_status = MagicMock()
 
     mock_client = AsyncMock()
-    mock_client.get.return_value = mock_resp
+    mock_client.request.return_value = mock_resp
     mock_client.__aenter__.return_value = mock_client
 
     mock_result = MagicMock()
@@ -56,7 +56,7 @@ async def test_extract_with_markitdown_http_error():
     url = "https://example.com/test.pdf"
 
     mock_client = AsyncMock()
-    mock_client.get.side_effect = Exception("HTTP Error")
+    mock_client.request.side_effect = Exception("HTTP Error")
     mock_client.__aenter__.return_value = mock_client
 
     with patch("wet.sources.crawler._safe_httpx_client", return_value=mock_client):

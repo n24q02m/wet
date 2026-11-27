@@ -141,6 +141,16 @@ def _reset_provider_breakers():
     reset_breakers()
 
 
+@pytest.fixture(autouse=True)
+def _reset_extract_breaker():
+    """Ensure the per-host extract circuit breaker starts clean for every test."""
+    from wet.sources.resilience import reset_extract_breaker
+
+    reset_extract_breaker()
+    yield
+    reset_extract_breaker()
+
+
 @pytest.fixture
 def mock_crawler_instance():
     """Create a mock AsyncWebCrawler instance for use with _get_crawler patch.

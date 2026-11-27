@@ -845,7 +845,7 @@ class TestExtractWithMarkitdown:
         mock_response.raise_for_status = MagicMock()
 
         mock_client = AsyncMock()
-        mock_client.get.return_value = mock_response
+        mock_client.request.return_value = mock_response
         mock_client.__aenter__ = AsyncMock(return_value=mock_client)
         mock_client.__aexit__ = AsyncMock(return_value=None)
 
@@ -868,7 +868,7 @@ class TestExtractWithMarkitdown:
         )
 
         mock_client = AsyncMock()
-        mock_client.get.return_value = mock_response
+        mock_client.request.return_value = mock_response
         mock_client.__aenter__ = AsyncMock(return_value=mock_client)
         mock_client.__aexit__ = AsyncMock(return_value=None)
 
