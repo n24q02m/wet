@@ -32,8 +32,12 @@ if "wet.sources" not in sys.modules:
     sys.modules["wet.sources"] = _sources_pkg
 
 if "wet.sources.docs" not in sys.modules:
-    _docs_file = _src_root / "wet" / "sources" / "docs.py"
-    _docs_spec = importlib.util.spec_from_file_location("wet.sources.docs", _docs_file)
+    _docs_file = _src_root / "wet" / "sources" / "docs" / "__init__.py"
+    _docs_spec = importlib.util.spec_from_file_location(
+        "wet.sources.docs",
+        _docs_file,
+        submodule_search_locations=[str(_docs_file.parent)],
+    )
     assert _docs_spec is not None
     _docs_mod = importlib.util.module_from_spec(_docs_spec)
     sys.modules["wet.sources.docs"] = _docs_mod

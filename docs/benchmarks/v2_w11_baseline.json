@@ -1,0 +1,83 @@
+{
+  "captured_at": "2026-11-27",
+  "git_head": "1ebb7a65cab379c13e7c421454412e049d367d5f",
+  "version": "3.25.0-beta.1",
+  "phase": "w11-wave2-baseline",
+  "supersedes": "docs/benchmarks/v1_phase2_baseline.json",
+  "purpose": "Real W11 Wave 2 baseline replacing all May 2026 null placeholders via live MCP streamable-HTTP protocol calls and branch coverage.",
+  "metrics": {
+    "test_suite": {
+      "passed": 2286,
+      "skipped": 32,
+      "deselected": 94,
+      "duration_seconds": 280.7
+    },
+    "coverage": {
+      "total_pct": 95.5,
+      "fail_under_gate": 95,
+      "long_term_target_pct": 95
+    },
+    "search_p95_ms": 614.9385,
+    "extract_tier1_success_rate": 0.98,
+    "docs_query_p95_ms": 41.7401,
+    "docs_query_recall_at_10": 1.0,
+    "startup_time_ms": 9254.15,
+    "rss_steady_mb": 399.72
+  },
+  "details": {
+    "process": {
+      "http_ready_ms": 9135.4,
+      "startup_time_ms": 9254.15,
+      "rss_idle_mb": 238.68,
+      "rss_steady_mb": 399.72
+    },
+    "web_search": {
+      "backend": "tavily",
+      "case_count": 50,
+      "wall_seconds": 11.49,
+      "throughput_qps": 4.35,
+      "metrics": {
+        "p50_latency_ms": 409.4539,
+        "p95_latency_ms": 614.9385,
+        "success_rate": 0.98,
+        "mean_hits_at_10": 9.42,
+        "mean_ndcg_at_10": 0.964
+      }
+    },
+    "extract": {
+      "case_count": 50,
+      "wall_seconds": 30.39,
+      "throughput_urls_per_sec": 1.65,
+      "metrics": {
+        "p50_latency_ms": 2643.3036,
+        "p95_latency_ms": 7757.6115,
+        "success_rate": 0.98,
+        "clean_pass_rate": 0.22,
+        "mean_clean_ratio": 0.5213
+      }
+    },
+    "docs_recall": {
+      "case_count": 200,
+      "wall_seconds": 1.59,
+      "throughput_qps": 125.46,
+      "metrics": {
+        "p50_latency_ms": 29.1055,
+        "p95_latency_ms": 41.7401,
+        "success_rate": 1.0,
+        "recall_at_10": 1.0
+      }
+    }
+  },
+  "corpus_sizes": {
+    "docs_corpus": 1916,
+    "docs_recall_cases": 200,
+    "web_search_queries": 50,
+    "extract_urls": 50
+  },
+  "environment": {
+    "platform": "Windows-11-10.0.26300-SP0",
+    "python_version": "3.13.16",
+    "search_backend": "tavily"
+  },
+  "reproduce_command": "skret run -e prod -- uv run python scripts/run_w11_baseline.py"
+}
