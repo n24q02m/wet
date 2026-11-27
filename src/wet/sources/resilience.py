@@ -5,13 +5,15 @@ Two independent pieces:
 - :func:`request_with_retry` retries GET/HEAD on transient failures
   (connection errors, timeouts, 429/502/503/504) with bounded exponential
   backoff and jitter, honouring ``Retry-After``. Other methods get a single
-  attempt. :class:`RetryingHttpClient` adapts it to the ``http_client``
-  hook of the hull-web ``BasicHTTPStrategy``.
+  attempt. Cloudflare's origin-down statuses (520-524) count as transient
+  for the breaker but are not retried. :class:`RetryingHttpClient` adapts it
+  to the ``http_client`` hook of the hull-web ``BasicHTTPStrategy``.
 - :class:`HostCircuitBreaker` tracks consecutive transient failures per host.
   After ``threshold`` of them the host is open: callers fail fast with
   :class:`CircuitOpenError` until the cooldown ends, then one half-open probe
-  is let through. A probe success closes the circuit; a probe failure opens
-  it again for a full cooldown.
+  is let through. The probe holds a token and only that token's result
+  counts: a probe success closes the circuit; a probe failure opens it again
+  for a full cooldown.
 
 The breaker counts whole extract operations, not single HTTP attempts. The
 retry layer reports how the last fetch inside an operation ended through
@@ -25,6 +27,7 @@ from __future__ import annotations
 
 import asyncio
 import contextvars
+import itertools
 import math
 import random
 import time
@@ -39,9 +42,13 @@ import httpx
 from hull_core.credentials import parse_retry_after
 
 from wet.config import settings
+from wet.sources.hosts import normalize_host
 
 IDEMPOTENT_METHODS = frozenset({"GET", "HEAD"})
 RETRY_STATUSES = frozenset({429, 502, 503, 504})
+# Cloudflare: the origin is down or unreachable (520-524). Retrying at once
+# rarely helps, but the host is failing, so these still feed the breaker.
+ORIGIN_DOWN_STATUSES = frozenset(range(520, 525))
 TRANSIENT_ERRORS: tuple[type[Exception], ...] = (
     httpx.TimeoutException,
     httpx.NetworkError,
@@ -54,6 +61,10 @@ MAX_ATTEMPTS = 10
 MAX_COOLDOWN = 900.0
 # Hosts tracked by one breaker; the least recently failing is evicted first.
 DEFAULT_MAX_HOSTS = 1024
+# Longest a half-open probe may run. The probe's slot is leased for this long
+# and extract gives up on a probe at the same deadline, so a slow probe keeps
+# its slot until it ends instead of losing it after one cooldown.
+PROBE_TIMEOUT = 300.0
 
 _DEFAULT_PORTS = {"http": 80, "https": 443}
 
@@ -105,8 +116,9 @@ class FetchOutcome:
     """How the last fetch observed in an operation ended.
 
     ``transient`` is None until a fetch is observed, True when the host
-    failed transiently (connection error, timeout, 429/502/503/504) and False
-    when it answered definitively. ``retry_after`` carries the server hint.
+    failed transiently (connection error, timeout, 429/502/503/504, or a
+    Cloudflare 520-524) and False when it answered definitively.
+    ``retry_after`` carries the server hint.
     """
 
     transient: bool | None = None
@@ -180,7 +192,7 @@ async def request_with_retry(
                 raise
         else:
             if response.status_code not in RETRY_STATUSES:
-                _report(False)
+                _report(response.status_code in ORIGIN_DOWN_STATUSES)
                 return response
             hint = parse_retry_after(response.headers.get("Retry-After"))
             _report(True, hint)
@@ -241,10 +253,14 @@ class RetryingHttpClient:
 
 
 def host_key(url: str) -> str:
-    """Breaker key for ``url``: lower-case host plus any non-default port."""
+    """Breaker key for ``url``: normalised host plus any non-default port.
+
+    The host goes through :func:`~wet.sources.hosts.normalize_host`, so all
+    spellings of one host share a key and an IPv6 literal stays bracketed.
+    """
     try:
         parts = urlsplit(url)
-        host = (parts.hostname or "").lower()
+        host = normalize_host(parts.hostname or "")
         port = parts.port
     except ValueError:
         return ""
@@ -281,6 +297,7 @@ class _HostState:
     failures: int = 0
     opened: bool = False
     open_until: float = 0.0
+    probe_token: int | None = None
     probe_until: float = 0.0
 
 
@@ -289,6 +306,9 @@ class HostCircuitBreaker:
 
     State lives per host key, so one failing host never gates another.
     ``threshold <= 0`` disables the breaker. An empty host is never gated.
+    While a host is open only its current probe's token can change its
+    state; results of requests admitted earlier are ignored. With a zero
+    cooldown every request after the threshold is a probe, one at a time.
     """
 
     def __init__(
@@ -298,53 +318,77 @@ class HostCircuitBreaker:
         *,
         clock: Clock | None = None,
         max_hosts: int = DEFAULT_MAX_HOSTS,
+        probe_timeout: float = PROBE_TIMEOUT,
     ) -> None:
         self.threshold = threshold
         self.cooldown = cooldown
+        self.probe_timeout = probe_timeout
         self._clock = clock or time.monotonic
         self._max_hosts = max(1, max_hosts)
         self._hosts: OrderedDict[str, _HostState] = OrderedDict()
+        self._tokens = itertools.count(1)
 
     def _enabled(self, host: str) -> bool:
         return self.threshold > 0 and bool(host)
 
-    def before_request(self, host: str) -> bool:
+    def before_request(self, host: str) -> int | None:
         """Gate a request to ``host``.
 
-        Returns False when the circuit is closed and True when the caller is
-        the half-open probe; the probe must end with :meth:`record_success`,
-        :meth:`record_failure` or :meth:`release`. Raises
+        Returns None when the circuit is closed. The half-open probe gets a
+        token instead and must end with :meth:`record_success`,
+        :meth:`record_failure` or :meth:`release` given that token. Raises
         :class:`CircuitOpenError` while the circuit is open or another probe
-        is in flight. An abandoned probe lease expires after one cooldown.
+        is in flight. The probe's slot is leased for ``probe_timeout``
+        seconds; after that a new probe may take it.
         """
         if not self._enabled(host):
-            return False
+            return None
         state = self._hosts.get(host)
         if state is None or not state.opened:
-            return False
+            return None
         now = self._clock()
         if now < state.open_until:
             raise CircuitOpenError(host, state.open_until - now)
-        if now < state.probe_until:
+        if state.probe_token is not None and now < state.probe_until:
             raise CircuitOpenError(host, state.probe_until - now, probing=True)
-        state.probe_until = now + self.cooldown
-        return True
+        state.probe_token = next(self._tokens)
+        state.probe_until = now + self.probe_timeout
+        return state.probe_token
 
-    def record_success(self, host: str) -> None:
+    @staticmethod
+    def _settles(state: _HostState | None, token: int | None) -> bool:
+        """Whether a result reported with ``token`` may change ``state``.
+
+        While open only the current probe's token counts; while closed only
+        ordinary requests (no token) do.
+        """
+        if state is not None and state.opened:
+            return token is not None and token == state.probe_token
+        return token is None
+
+    def record_success(self, host: str, token: int | None = None) -> None:
         """The host answered: close its circuit and forget its failures."""
-        if host:
+        if host and self._settles(self._hosts.get(host), token):
             self._hosts.pop(host, None)
 
-    def record_failure(self, host: str, retry_after: float | None = None) -> None:
+    def record_failure(
+        self,
+        host: str,
+        retry_after: float | None = None,
+        *,
+        token: int | None = None,
+    ) -> None:
         """Count a transient failure; open the circuit at the threshold.
 
-        A failure while open or half-open re-opens for a full cooldown. A
+        A failure of the current probe re-opens for a full cooldown. A
         ``retry_after`` hint can stretch the cooldown (capped at
         :data:`MAX_COOLDOWN`) but never shorten it.
         """
         if not self._enabled(host):
             return
         state = self._hosts.get(host)
+        if not self._settles(state, token):
+            return
         if state is None:
             state = self._hosts[host] = _HostState()
             while len(self._hosts) > self._max_hosts:
@@ -357,12 +401,14 @@ class HostCircuitBreaker:
         hint = min(retry_after or 0.0, MAX_COOLDOWN)
         state.opened = True
         state.open_until = self._clock() + max(self.cooldown, hint)
+        state.probe_token = None
         state.probe_until = 0.0
 
-    def release(self, host: str) -> None:
-        """Free the probe slot of a probe that ended without a verdict."""
+    def release(self, host: str, token: int) -> None:
+        """Free the slot of probe ``token`` when it ended without a verdict."""
         state = self._hosts.get(host)
-        if state is not None:
+        if state is not None and state.probe_token == token:
+            state.probe_token = None
             state.probe_until = 0.0
 
 

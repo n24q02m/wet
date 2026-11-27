@@ -275,7 +275,9 @@ A per-host circuit breaker makes a failing host fail fast:
 after `EXTRACT_BREAKER_THRESHOLD` (default 3; 0 disables) consecutive transient
 failures its URLs return an error naming the host and a `retry_after`, for
 `EXTRACT_BREAKER_COOLDOWN` seconds (default 60), then one probe decides whether
-it recovers.
+it recovers (with a cooldown of 0, every request after the threshold is a probe,
+one at a time). Cloudflare's origin-down statuses (HTTP 520-524) are not
+retried but count as transient failures for the breaker.
 
 **Invisible tier + seeded identity** (opt-in) -- append `invisible` to
 `BROWSER_BACKENDS` to add a stealth-Firefox engine tier as the last escalation

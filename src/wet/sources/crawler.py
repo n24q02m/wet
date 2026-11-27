@@ -585,7 +585,7 @@ async def extract(
             # is skipped without a request until its cooldown ends.
             host = host_key(url)
             try:
-                probing = breaker.before_request(host)
+                probe = breaker.before_request(host)
             except CircuitOpenError as exc:
                 logger.warning(f"Skipping {url}: {exc}")
                 return {
@@ -594,20 +594,35 @@ async def extract(
                     "retry_after": exc.retry_seconds,
                 }
 
-            settled = False
+            # A half-open probe runs no longer than its slot is leased; one
+            # that hits the deadline counts as a transient failure.
+            limit = breaker.probe_timeout if probe is not None else None
+            deadline = asyncio.timeout(limit)
             try:
                 with observe_fetches() as outcome:
-                    result = await fetch_url(url)
+                    try:
+                        async with deadline:
+                            result = await fetch_url(url)
+                    except TimeoutError:
+                        if not deadline.expired():
+                            raise
+                        logger.warning(f"Recovery probe timed out for {url}")
+                        result = {
+                            "url": url,
+                            "error": f"Timed out after {limit:g}s probing {host}",
+                        }
+                        outcome.transient, outcome.retry_after = True, None
                 if "error" not in result or outcome.transient is False:
-                    breaker.record_success(host)
-                    settled = True
+                    breaker.record_success(host, probe)
                 elif outcome.transient:
-                    breaker.record_failure(host, retry_after=outcome.retry_after)
-                    settled = True
+                    breaker.record_failure(
+                        host, retry_after=outcome.retry_after, token=probe
+                    )
                 return result
             finally:
-                if probing and not settled:
-                    breaker.release(host)
+                # A no-op once the probe settled above.
+                if probe is not None:
+                    breaker.release(host, probe)
 
     tasks = [process_url(url) for url in urls]
     results = await asyncio.gather(*tasks)

@@ -7,6 +7,7 @@ timer or touches the network.
 
 from __future__ import annotations
 
+import asyncio
 import json
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -200,10 +201,24 @@ async def test_transport_error_then_success():
 @pytest.mark.parametrize("status", [200, 301, 400, 403, 404, 500])
 async def test_non_transient_status_is_not_retried(status):
     handler, calls = _sequence(status, 200)
-    response, delays = await _call(handler)
+    with observe_fetches() as outcome:
+        response, delays = await _call(handler)
     assert response.status_code == status
     assert len(calls) == 1
     assert delays == []
+    assert outcome.transient is False
+
+
+@pytest.mark.parametrize("status", [520, 521, 522, 523, 524])
+async def test_cloudflare_origin_down_is_transient_but_not_retried(status):
+    handler, calls = _sequence(status, 200)
+    with observe_fetches() as outcome:
+        response, delays = await _call(handler)
+    assert response.status_code == status
+    assert len(calls) == 1
+    assert delays == []
+    assert outcome.transient is True
+    assert outcome.retry_after is None
 
 
 async def test_ssrf_block_style_request_error_is_not_retried():
@@ -358,6 +373,23 @@ async def test_retrying_http_client_wraps_factory_and_retries():
         ("http://example.com:8080/x", "example.com:8080"),
         ("https://sub.example.com", "sub.example.com"),
         ("not a url", ""),
+        # Userinfo never leaks into the key.
+        ("https://user:pw@Example.com:8443/x", "example.com:8443"),
+        ("https://example.com@evil.example/x", "evil.example"),
+        # IPv6 literals are bracketed, so the port cannot merge into the address.
+        ("http://[::1]:8080/x", "[::1]:8080"),
+        ("http://[::1:8080]/x", "[::1:8080]"),
+        ("http://[0:0::1]/x", "[::1]"),
+        ("https://[::1]:443/x", "[::1]"),
+        ("http://[::1/x", ""),
+        # Trailing dot, IDN and punycode spellings share one key.
+        ("https://example.com./x", "example.com"),
+        ("https://bücher.example/x", "xn--bcher-kva.example"),
+        ("https://BÜCHER.example./x", "xn--bcher-kva.example"),
+        ("https://xn--bcher-kva.example/x", "xn--bcher-kva.example"),
+        ("https://faß.de/x", "xn--fa-hia.de"),
+        ("https://bad。example/x", "bad.example"),
+        ("https://my_host.example/x", "my_host.example"),
     ],
 )
 def test_host_key_normalises(url, expected):
@@ -369,19 +401,19 @@ def test_host_key_normalises(url, expected):
 # ---------------------------------------------------------------------------
 
 
-def _breaker(threshold=3, cooldown=60.0):
+def _breaker(threshold=3, cooldown=60.0, **kwargs):
     clock = FakeClock()
     return HostCircuitBreaker(
-        threshold=threshold, cooldown=cooldown, clock=clock
+        threshold=threshold, cooldown=cooldown, clock=clock, **kwargs
     ), clock
 
 
 def test_breaker_opens_after_threshold_consecutive_failures():
     breaker, clock = _breaker()
     for _ in range(2):
-        assert breaker.before_request("down.example") is False
+        assert breaker.before_request("down.example") is None
         breaker.record_failure("down.example")
-    assert breaker.before_request("down.example") is False
+    assert breaker.before_request("down.example") is None
     breaker.record_failure("down.example")
 
     with pytest.raises(CircuitOpenError) as info:
@@ -410,7 +442,7 @@ def test_success_resets_consecutive_failure_count():
     breaker.record_success("flaky.example")
     breaker.record_failure("flaky.example")
     breaker.record_failure("flaky.example")
-    assert breaker.before_request("flaky.example") is False
+    assert breaker.before_request("flaky.example") is None
 
 
 def test_half_open_allows_single_probe_and_success_closes():
@@ -418,15 +450,16 @@ def test_half_open_allows_single_probe_and_success_closes():
     breaker.record_failure("down.example")
     clock.advance(30.0)
 
-    assert breaker.before_request("down.example") is True  # the probe
+    probe = breaker.before_request("down.example")
+    assert probe is not None  # the probe
     with pytest.raises(CircuitOpenError) as info:
         breaker.before_request("down.example")  # concurrent caller
     assert info.value.probing is True
     assert "down.example" in str(info.value)
 
-    breaker.record_success("down.example")
-    assert breaker.before_request("down.example") is False
-    assert breaker.before_request("down.example") is False
+    breaker.record_success("down.example", probe)
+    assert breaker.before_request("down.example") is None
+    assert breaker.before_request("down.example") is None
 
 
 def test_half_open_probe_failure_reopens_for_full_cooldown():
@@ -434,9 +467,10 @@ def test_half_open_probe_failure_reopens_for_full_cooldown():
     for _ in range(3):
         breaker.record_failure("down.example")
     clock.advance(31.0)
-    assert breaker.before_request("down.example") is True
+    probe = breaker.before_request("down.example")
+    assert probe is not None
 
-    breaker.record_failure("down.example")
+    breaker.record_failure("down.example", token=probe)
     with pytest.raises(CircuitOpenError) as info:
         breaker.before_request("down.example")
     assert info.value.probing is False
@@ -447,26 +481,143 @@ def test_released_probe_lets_the_next_caller_probe():
     breaker, clock = _breaker(threshold=1, cooldown=30.0)
     breaker.record_failure("down.example")
     clock.advance(30.0)
-    assert breaker.before_request("down.example") is True
-    breaker.release("down.example")
-    assert breaker.before_request("down.example") is True
+    probe = breaker.before_request("down.example")
+    assert probe is not None
+    breaker.release("down.example", probe)
+    assert breaker.before_request("down.example") not in (None, probe)
 
 
-def test_abandoned_probe_lease_expires():
+def test_probe_outliving_the_cooldown_keeps_its_slot():
     breaker, clock = _breaker(threshold=1, cooldown=30.0)
     breaker.record_failure("down.example")
     clock.advance(30.0)
-    assert breaker.before_request("down.example") is True
+    probe = breaker.before_request("down.example")
+    assert probe is not None
+
+    clock.advance(90.0)  # three cooldowns later the probe is still running
+    with pytest.raises(CircuitOpenError) as info:
+        breaker.before_request("down.example")
+    assert info.value.probing is True
+    assert info.value.retry_after == pytest.approx(resilience.PROBE_TIMEOUT - 90.0)
+
+    breaker.record_success("down.example", probe)
+    assert breaker.before_request("down.example") is None
+
+
+def test_abandoned_probe_lease_expires_after_the_probe_timeout():
+    breaker, clock = _breaker(threshold=1, cooldown=30.0, probe_timeout=120.0)
+    breaker.record_failure("down.example")
     clock.advance(30.0)
-    assert breaker.before_request("down.example") is True
+    assert breaker.before_request("down.example") is not None
+    clock.advance(119.0)
+    with pytest.raises(CircuitOpenError):
+        breaker.before_request("down.example")
+    clock.advance(1.0)
+    assert breaker.before_request("down.example") is not None
+
+
+def test_stale_probe_token_cannot_settle_or_release_a_newer_probe():
+    breaker, clock = _breaker(threshold=1, cooldown=30.0, probe_timeout=60.0)
+    breaker.record_failure("down.example")
+    clock.advance(30.0)
+    stale = breaker.before_request("down.example")
+    clock.advance(60.0)  # the first lease ran out; a second probe takes over
+    current = breaker.before_request("down.example")
+    assert current is not None and current != stale
+
+    breaker.release("down.example", stale)
+    breaker.record_success("down.example", stale)
+    breaker.record_failure("down.example", token=stale)
+    with pytest.raises(CircuitOpenError) as info:
+        breaker.before_request("down.example")
+    assert info.value.probing is True
+
+    breaker.record_failure("down.example", token=current)
+    with pytest.raises(CircuitOpenError) as info:
+        breaker.before_request("down.example")
+    assert info.value.probing is False
+    assert info.value.retry_after == pytest.approx(30.0)
+
+
+def test_results_without_the_probe_token_are_ignored_while_open():
+    breaker, clock = _breaker(threshold=1, cooldown=30.0)
+    breaker.record_failure("down.example")
+    clock.advance(10.0)
+    # Requests admitted before the circuit opened end after it did.
+    breaker.record_failure("down.example")
+    breaker.record_success("down.example")
+    with pytest.raises(CircuitOpenError) as info:
+        breaker.before_request("down.example")
+    assert info.value.retry_after == pytest.approx(20.0)
+
+    clock.advance(20.0)
+    probe = breaker.before_request("down.example")
+    breaker.record_success("down.example")
+    breaker.record_failure("down.example")
+    with pytest.raises(CircuitOpenError) as info:
+        breaker.before_request("down.example")
+    assert info.value.probing is True
+    breaker.record_success("down.example", probe)
+    assert breaker.before_request("down.example") is None
+
+
+def test_probe_token_from_an_earlier_cycle_is_ignored_once_closed():
+    breaker, clock = _breaker(threshold=2, cooldown=30.0)
+    breaker.record_failure("down.example")
+    breaker.record_failure("down.example")
+    clock.advance(30.0)
+    probe = breaker.before_request("down.example")
+    breaker.record_success("down.example", probe)
+
+    breaker.record_failure("down.example")
+    breaker.record_failure("down.example", token=probe)  # not counted
+    assert breaker.before_request("down.example") is None
+    breaker.record_success("down.example", probe)  # does not reset the count
+    breaker.record_failure("down.example")
+    with pytest.raises(CircuitOpenError):
+        breaker.before_request("down.example")
+
+
+def test_zero_cooldown_makes_every_request_after_the_threshold_a_probe():
+    breaker, _ = _breaker(threshold=1, cooldown=0.0)
+    breaker.record_failure("down.example")
+    probe = breaker.before_request("down.example")
+    assert probe is not None
+    with pytest.raises(CircuitOpenError) as info:
+        breaker.before_request("down.example")  # still one probe at a time
+    assert info.value.probing is True
+
+    breaker.record_failure("down.example", token=probe)
+    second = breaker.before_request("down.example")
+    assert second is not None and second != probe
+
+
+async def test_concurrent_callers_get_exactly_one_probe():
+    breaker, clock = _breaker(threshold=1, cooldown=30.0)
+    breaker.record_failure("down.example")
+    clock.advance(30.0)
+
+    async def caller():
+        await asyncio.sleep(0)
+        try:
+            return breaker.before_request("down.example")
+        except CircuitOpenError as exc:
+            return exc
+
+    results = await asyncio.gather(*(caller() for _ in range(20)))
+    probes = [r for r in results if isinstance(r, int)]
+    refused = [r for r in results if isinstance(r, CircuitOpenError)]
+    assert len(probes) == 1
+    assert len(refused) == 19
+    assert all(exc.probing for exc in refused)
 
 
 def test_release_without_probe_is_harmless():
     breaker, _ = _breaker()
-    breaker.release("never.example")
+    breaker.release("never.example", 1)
     breaker.record_failure("once.example")
-    breaker.release("once.example")
-    assert breaker.before_request("once.example") is False
+    breaker.release("once.example", 1)
+    assert breaker.before_request("once.example") is None
 
 
 def test_breaker_state_does_not_leak_across_hosts():
@@ -474,8 +625,8 @@ def test_breaker_state_does_not_leak_across_hosts():
     breaker.record_failure("down.example")
     with pytest.raises(CircuitOpenError):
         breaker.before_request("down.example")
-    assert breaker.before_request("up.example") is False
-    assert breaker.before_request("down.example:8443") is False
+    assert breaker.before_request("up.example") is None
+    assert breaker.before_request("down.example:8443") is None
 
 
 def test_retry_after_hint_extends_cooldown_with_a_cap():
@@ -503,7 +654,7 @@ def test_threshold_zero_disables_the_breaker():
     breaker, _ = _breaker(threshold=0)
     for _ in range(10):
         breaker.record_failure("down.example")
-    assert breaker.before_request("down.example") is False
+    assert breaker.before_request("down.example") is None
 
 
 def test_breaker_bounds_tracked_hosts():
@@ -512,7 +663,7 @@ def test_breaker_bounds_tracked_hosts():
     breaker.record_failure("a.example")
     breaker.record_failure("b.example")
     breaker.record_failure("c.example")  # evicts the oldest host
-    assert breaker.before_request("a.example") is False
+    assert breaker.before_request("a.example") is None
     with pytest.raises(CircuitOpenError):
         breaker.before_request("c.example")
 
@@ -520,7 +671,7 @@ def test_breaker_bounds_tracked_hosts():
 def test_empty_host_is_never_gated():
     breaker, _ = _breaker(threshold=1)
     breaker.record_failure("")
-    assert breaker.before_request("") is False
+    assert breaker.before_request("") is None
 
 
 def test_extract_breaker_singleton_reads_settings(monkeypatch):
@@ -531,6 +682,7 @@ def test_extract_breaker_singleton_reads_settings(monkeypatch):
     assert breaker is resilience.extract_breaker()
     assert breaker.threshold == 7
     assert breaker.cooldown == 12.0
+    assert breaker.probe_timeout == resilience.PROBE_TIMEOUT
     resilience.reset_extract_breaker()
     assert resilience.extract_breaker() is not breaker
 
@@ -711,7 +863,99 @@ async def test_extract_releases_probe_when_cancelled(breaker_clock, allow_hosts)
         with pytest.raises(asyncio.CancelledError):
             await task
     # The cancelled probe released its slot: the next caller may probe.
-    assert breaker.before_request("slow.example") is True
+    assert breaker.before_request("slow.example") is not None
+
+
+async def test_extract_probe_past_its_deadline_counts_as_a_failure(
+    breaker_clock, allow_hosts, monkeypatch
+):
+    from wet.sources import crawler
+
+    breaker = HostCircuitBreaker(
+        threshold=1, cooldown=30.0, clock=breaker_clock, probe_timeout=0.05
+    )
+    monkeypatch.setattr(resilience, "_extract_breaker", breaker)
+    breaker.record_failure("slow.example")
+    breaker_clock.advance(30.0)
+
+    async def hang(url):
+        await asyncio.sleep(3600)
+
+    agent = MagicMock()
+    agent.scrape = hang
+    with patch.object(crawler, "_get_scraping_agent", AsyncMock(return_value=agent)):
+        [entry] = json.loads(await crawler.extract(["https://slow.example/a"]))
+    assert "timed out" in entry["error"].lower()
+    assert "retry_after" not in entry
+    with pytest.raises(CircuitOpenError) as info:
+        breaker.before_request("slow.example")
+    assert info.value.probing is False
+    assert info.value.retry_after == pytest.approx(30.0)
+
+
+async def test_concurrent_extracts_send_exactly_one_probe(
+    fast_retry, breaker_clock, allow_hosts, monkeypatch
+):
+    from wet.sources import crawler
+
+    monkeypatch.setattr(crawler, "_browser_semaphore", None)
+    entered = asyncio.Event()
+    gate = asyncio.Event()
+    calls: list[str] = []
+
+    async def handler(request):
+        calls.append(str(request.url))
+        entered.set()
+        await gate.wait()
+        return httpx.Response(200, text=HTML, headers={"content-type": "text/html"})
+
+    agent = _http_only_agent(handler)
+    breaker = resilience.extract_breaker()
+    breaker.record_failure("down.example")
+    breaker.record_failure("down.example")
+    breaker_clock.advance(30.0)
+
+    def wave(tag):
+        return asyncio.gather(
+            *(crawler.extract([f"https://down.example/{tag}{i}"]) for i in range(5))
+        )
+
+    with patch.object(crawler, "_get_scraping_agent", AsyncMock(return_value=agent)):
+        first = asyncio.ensure_future(wave("a"))
+        await entered.wait()
+        breaker_clock.advance(90.0)  # the probe outlives the 30s cooldown
+        second = await wave("b")
+        assert len(calls) == 1
+        gate.set()
+        entries = [json.loads(raw)[0] for raw in [*await first, *second]]
+        [after] = json.loads(await crawler.extract(["https://down.example/after"]))
+
+    assert len(calls) == 2  # the probe, then the request after it closed
+    assert sum("error" not in entry for entry in entries) == 1
+    refused = [entry for entry in entries if "error" in entry]
+    assert len(refused) == 9
+    assert all("probe is already in flight" in e["error"] for e in refused)
+    assert "error" not in after
+
+
+async def test_extract_cloudflare_origin_down_opens_breaker(
+    fast_retry, breaker_clock, allow_hosts
+):
+    calls: list[str] = []
+
+    def handler(request):
+        calls.append(str(request.url))
+        return httpx.Response(522, text="origin down")
+
+    agent = _http_only_agent(handler)
+    for i in range(2):
+        [entry] = await _extract(agent, [f"https://down.example/{i}"])
+        assert "error" in entry
+    assert len(calls) == 2  # 522 is not retried
+
+    [entry] = await _extract(agent, ["https://down.example/2"])
+    assert len(calls) == 2
+    assert "retry after 30s" in entry["error"]
 
 
 async def test_markitdown_download_retries_transient_status(fast_retry, allow_hosts):

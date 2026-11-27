@@ -20,7 +20,9 @@ key is set instead of failing late inside the LLM SDK.
 from __future__ import annotations
 
 import asyncio
+import functools
 import json
+import math
 import os
 import re
 from collections.abc import Awaitable, Callable
@@ -30,6 +32,7 @@ from urllib.parse import urlsplit
 
 from loguru import logger
 
+from wet.sources.hosts import normalize_host
 from wet.sources.search_backends import run_search_chain
 
 # LLM-provider credential env names, checked before falling back to the
@@ -66,9 +69,12 @@ DEFAULT_REMAINING_DEPTH = 2
 MAX_REMAINING_DEPTH = 5
 _MAX_STEER_ITEMS = 20
 _MAX_STEER_ITEM_CHARS = 200
+# Most entries a direction list (focus, constraints, exclusions) may hold
+# across all steering of one job.
+MAX_DIRECTION_ITEMS = 50
 _STEER_LIST_KEYS = ("add_focus", "remove_focus", "add_constraints", "exclude_sources")
 STEER_KEYS = (*_STEER_LIST_KEYS, "depth")
-_HOST_RE = re.compile(r"^[a-z0-9_.:-]+$")
+_HOST_RE = re.compile(r"^[a-z0-9_.:\[\]-]+$")
 
 
 @dataclass
@@ -109,8 +115,15 @@ class ResearchDirection:
         )
 
 
-# ``on_step(step, round_no, direction)`` returns the direction to continue with.
-StepHook = Callable[[str, int, ResearchDirection], Awaitable[ResearchDirection]]
+# ``decide(direction)`` gives the ``(step, round)`` a run takes next when it
+# continues with ``direction``.
+StepDecision = Callable[[ResearchDirection], tuple[str, int]]
+# ``on_step(step, round_no, direction, decide)`` returns the direction to
+# continue with. ``decide`` is set where the next step depends on that
+# direction (after each round: a follow-up search or synthesis), else None.
+StepHook = Callable[
+    [str, int, ResearchDirection, StepDecision | None], Awaitable[ResearchDirection]
+]
 
 
 def _steer_error(message: str) -> tuple[None, str]:
@@ -118,13 +131,17 @@ def _steer_error(message: str) -> tuple[None, str]:
 
 
 def _source_host(value: str) -> str:
-    """Host name of a URL or bare host, without ``www.``; ``""`` if invalid."""
+    """Normalised host of a URL or bare host, without ``www.``; ``""`` if invalid.
+
+    Uses :func:`~wet.sources.hosts.normalize_host`, the same normalisation
+    the checked URL gets in :func:`is_excluded`.
+    """
     target = value if "://" in value else f"//{value}"
     try:
-        host = (urlsplit(target).hostname or "").strip(".")
+        hostname = urlsplit(target).hostname or ""
     except ValueError:
         return ""
-    host = host.removeprefix("www.")
+    host = normalize_host(hostname.lstrip(".")).removeprefix("www.")
     return host if _HOST_RE.match(host) else ""
 
 
@@ -214,34 +231,71 @@ def apply_steering(
     """Return ``direction`` with validated ``changes`` applied.
 
     ``direction`` itself is not modified. Within one change set additions
-    apply before removals, so removing a topic always wins.
+    apply before removals, so removing a topic always wins. Each list keeps
+    at most :data:`MAX_DIRECTION_ITEMS` entries (the earliest ones).
     """
-    removed = {topic.casefold() for topic in changes.get("remove_focus", [])}
-    focus = _dedupe([*direction.focus, *changes.get("add_focus", [])])
+    lists = _steered_lists(direction, changes)
     return replace(
         direction,
-        focus=[topic for topic in focus if topic.casefold() not in removed],
-        constraints=_dedupe(
-            [*direction.constraints, *changes.get("add_constraints", [])]
-        ),
-        exclude_sources=_dedupe(
-            [*direction.exclude_sources, *changes.get("exclude_sources", [])]
-        ),
+        focus=lists["focus"][:MAX_DIRECTION_ITEMS],
+        constraints=lists["constraints"][:MAX_DIRECTION_ITEMS],
+        exclude_sources=lists["exclude_sources"][:MAX_DIRECTION_ITEMS],
         remaining_depth=changes.get("depth", direction.remaining_depth),
     )
 
 
+def _steered_lists(
+    direction: ResearchDirection, changes: dict[str, Any]
+) -> dict[str, list[str]]:
+    """The direction lists after ``changes``, de-duplicated but not capped."""
+    removed = {topic.casefold() for topic in changes.get("remove_focus", [])}
+    focus = _dedupe([*direction.focus, *changes.get("add_focus", [])])
+    return {
+        "focus": [topic for topic in focus if topic.casefold() not in removed],
+        "constraints": _dedupe(
+            [*direction.constraints, *changes.get("add_constraints", [])]
+        ),
+        "exclude_sources": _dedupe(
+            [*direction.exclude_sources, *changes.get("exclude_sources", [])]
+        ),
+    }
+
+
+def steering_limit_error(
+    direction: ResearchDirection, changes: dict[str, Any]
+) -> str | None:
+    """An ``"Error: ..."`` when ``changes`` would push a list past its cap.
+
+    ``changes`` must already be validated. Returns None when every list of
+    the steered direction stays within :data:`MAX_DIRECTION_ITEMS`.
+    """
+    for name, items in _steered_lists(direction, changes).items():
+        if len(items) > MAX_DIRECTION_ITEMS:
+            return (
+                f"Error: steering would give this job {len(items)} {name} "
+                f"entries; a job holds at most {MAX_DIRECTION_ITEMS}. Remove "
+                "focus topics or start a new job."
+            )
+    return None
+
+
 def is_excluded(url: str, exclude_sources: list[str]) -> bool:
-    """Whether ``url`` is on an excluded host or one of its subdomains."""
+    """Whether ``url`` is on an excluded host or one of its subdomains.
+
+    Both sides are normalised the same way, so a trailing dot, letter case,
+    full-width characters or a Unicode spelling of the host cannot slip past
+    an exclusion stored as punycode (or the other way round).
+    """
     if not exclude_sources:
         return False
     try:
-        host = (urlsplit(url).hostname or "").lower()
+        host = normalize_host(urlsplit(url).hostname or "")
     except ValueError:
         return False
     if not host:
         return False
-    return any(host == ex or host.endswith(f".{ex}") for ex in exclude_sources)
+    excluded = {ex for ex in map(_source_host, exclude_sources) if ex}
+    return any(host == ex or host.endswith(f".{ex}") for ex in excluded)
 
 
 def detect_llm_provider() -> str | None:
@@ -287,11 +341,11 @@ def build_cited_prompt(
 ) -> str:
     """Build the synthesis prompt with numbered ``[N]`` citations.
 
-    Greedy: each extract is allotted ``token_budget // len(extracts)``
-    tokens worth of characters (with a 1-token reservation for the
-    framing), preserving order so citation numbers match ``sources``.
-    Steered focus topics and constraints are added when ``direction`` has
-    any.
+    Greedy: 200 tokens are reserved for the framing; steered focus topics
+    and constraints (added when ``direction`` has any) take what they need
+    of the rest, up to half of it, and each extract is allotted an equal
+    share of what remains, preserving order so citation numbers match
+    ``sources``.
     """
     if not extracts:
         return (
@@ -300,8 +354,24 @@ def build_cited_prompt(
             "available rather than inventing one."
         )
 
+    budget = max(token_budget - 200, 0)
+    steering_lines: list[str] = []
+    if direction is not None and direction.focus:
+        steering_lines.append(f"Focus on: {'; '.join(direction.focus)}")
+    if direction is not None and direction.constraints:
+        steering_lines.append(
+            f"Constraints to respect: {'; '.join(direction.constraints)}"
+        )
+    steering_block = ""
+    if steering_lines:
+        steering_text = _truncate_for_budget(
+            "\n".join(steering_lines), budget // 2 * _CHARS_PER_TOKEN
+        )
+        steering_block = f"{steering_text}\n\n"
+    steering_tokens = math.ceil(len(steering_block) / _CHARS_PER_TOKEN)
     per_extract_chars = max(
-        200, ((token_budget - 200) // max(len(extracts), 1)) * _CHARS_PER_TOKEN
+        200,
+        ((budget - steering_tokens) // max(len(extracts), 1)) * _CHARS_PER_TOKEN,
     )
 
     citation_blocks: list[str] = []
@@ -322,16 +392,6 @@ def build_cited_prompt(
         citation_blocks.append(f"[{idx}] {title}\nURL: {url}\n---\n{body}\n---")
 
     sources_block = "\n\n".join(citation_blocks)
-    steering_lines: list[str] = []
-    if direction is not None and direction.focus:
-        steering_lines.append(f"Focus on: {'; '.join(direction.focus)}")
-    if direction is not None and direction.constraints:
-        steering_lines.append(
-            f"Constraints to respect: {'; '.join(direction.constraints)}"
-        )
-    steering_block = "".join(f"{line}\n" for line in steering_lines)
-    if steering_block:
-        steering_block += "\n"
     return (
         "You are a research assistant. Synthesise a concise, factual "
         "Markdown answer to the user's question using ONLY the numbered "
@@ -452,6 +512,20 @@ def _next_topic(
     return None
 
 
+def _step_after(
+    direction: ResearchDirection,
+    *,
+    searched: set[str],
+    picked: int,
+    round_no: int,
+    stopped: bool,
+) -> tuple[str, int]:
+    """The step that follows round ``round_no`` when continuing with ``direction``."""
+    if not stopped and _next_topic(direction, searched, picked, round_no) is not None:
+        return STEP_SEARCH, round_no + 1
+    return STEP_SYNTHESIZE, round_no
+
+
 async def run_agent(
     query: str,
     max_urls: int = _DEFAULT_MAX_URLS,
@@ -467,13 +541,17 @@ async def run_agent(
     callers see the message instead of an exception trace, matching the
     rest of the wet tool surface.
 
-    ``direction`` seeds the steering state. ``on_step(step, round, direction)``
-    is awaited before each search round, before each extraction and before
-    synthesis, and returns the direction to continue with. Excluded sources
-    are dropped before extraction and again before synthesis. While
-    ``remaining_depth`` allows, each unsearched focus topic runs one follow-up
-    round (``"<query> <topic>"``) that skips URLs already extracted; all
-    rounds together extract at most 20 URLs.
+    ``direction`` seeds the steering state. ``on_step(step, round, direction,
+    decide)`` is awaited before the first search, before each extraction and
+    once after each round, and returns the direction to continue with. After
+    a round, ``step`` and ``round`` name the step the run would take next
+    (a follow-up search or synthesis) and ``decide(direction)`` gives the
+    step it takes with the returned direction, so steering applied there can
+    switch between the two. Excluded sources are dropped before extraction
+    and again before synthesis. While ``remaining_depth`` allows, each
+    unsearched focus topic runs one follow-up round (``"<query> <topic>"``)
+    that skips URLs already extracted; all rounds together extract at most
+    20 URLs.
     """
     if not query or not query.strip():
         return "Error: query is required for extract(action=agent)."
@@ -484,10 +562,12 @@ async def run_agent(
     max_urls = _clamp_max_urls(max_urls)
     current = direction or ResearchDirection()
 
-    async def checkpoint(step: str, round_no: int) -> None:
+    async def checkpoint(
+        step: str, round_no: int, decide: StepDecision | None = None
+    ) -> None:
         nonlocal current
         if on_step is not None:
-            current = await on_step(step, round_no, current)
+            current = await on_step(step, round_no, current, decide)
 
     # (search result, extract) per extracted URL, in citation order.
     pairs: list[tuple[dict[str, Any], dict[str, Any]]] = []
@@ -533,25 +613,19 @@ async def run_agent(
                     pairs.append((batch[i] if i < len(batch) else {}, extract))
 
         # 3. Next step: a follow-up round for an unsearched focus topic, or
-        # synthesis. Re-check after the checkpoint, since the steering it
-        # applied can switch between the two.
+        # synthesis. One checkpoint decides it: the steering it applies can
+        # switch between the two, and the step it reports is the one taken.
+        decide = functools.partial(
+            _step_after,
+            searched=searched,
+            picked=len(pairs),
+            round_no=round_no,
+            stopped=stopped,
+        )
+        await checkpoint(*decide(current), decide)
         topic = (
             None if stopped else _next_topic(current, searched, len(pairs), round_no)
         )
-        while True:
-            if topic is not None:
-                await checkpoint(STEP_SEARCH, round_no + 1)
-            else:
-                await checkpoint(STEP_SYNTHESIZE, round_no)
-            following = (
-                None
-                if stopped
-                else _next_topic(current, searched, len(pairs), round_no)
-            )
-            switched = (following is None) != (topic is None)
-            topic = following
-            if not switched:
-                break
         if topic is None:
             break
         searched.add(topic.casefold())

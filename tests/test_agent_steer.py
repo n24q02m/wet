@@ -9,6 +9,8 @@ from __future__ import annotations
 
 import asyncio
 import json
+import math
+import threading
 from pathlib import Path
 from unittest.mock import patch
 
@@ -16,9 +18,11 @@ import pytest
 
 from wet.db import DocsDB
 from wet.handlers.extract_handlers import handle_async_agent
+from wet.sources import agent_jobs
 from wet.sources import agent_orchestrator as ao
 from wet.sources.agent_jobs import (
     _JOB_TASKS,
+    MAX_STEERING_ENTRIES,
     get_research_job,
     resume_research_job,
     start_research_job,
@@ -193,6 +197,78 @@ def test_is_excluded_matches_host_and_subdomains(url, excluded):
     assert is_excluded(url, ["bad.example"]) is excluded
 
 
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://bad.example./a",
+        "https://BAD.Example/a",
+        "https://sub.bad.example./a",
+        "https://ｂａｄ.example/a",
+        "https://bad。example/a",
+        "https://user@bad.example:8443/a",
+    ],
+)
+def test_is_excluded_normalises_the_checked_host(url):
+    assert is_excluded(url, ["bad.example"]) is True
+
+
+def test_unicode_and_punycode_exclusions_match_each_other():
+    changes, error = validate_steering(
+        {"exclude_sources": ["https://BÜCHER.example./"]}
+    )
+    assert error is None
+    assert changes == {"exclude_sources": ["xn--bcher-kva.example"]}
+    stored = changes["exclude_sources"]
+    assert is_excluded("https://bücher.example/a", stored)
+    assert is_excluded("https://www.BÜCHER.example./a", stored)
+    # An exclusion stored in another spelling is normalised the same way.
+    assert is_excluded("https://xn--bcher-kva.example/a", ["Bücher.example."])
+    assert is_excluded("https://bücher.example/a", ["www.xn--bcher-kva.example"])
+    assert not is_excluded("https://buecher.example/a", stored)
+
+
+def test_validate_normalises_ipv6_and_trailing_dot_sources():
+    changes, error = validate_steering(
+        {"exclude_sources": ["http://[0:0::1]:8080/x", "Example.COM.", ".lead.example"]}
+    )
+    assert error is None
+    assert changes == {"exclude_sources": ["[::1]", "example.com", "lead.example"]}
+    assert is_excluded("http://[::1]/a", changes["exclude_sources"])
+
+
+def test_apply_steering_caps_and_dedupes_direction_lists():
+    cap = ao.MAX_DIRECTION_ITEMS
+    base = ResearchDirection(focus=[f"f{i}" for i in range(cap)])
+    out = apply_steering(
+        base,
+        {
+            "add_focus": ["F0", "extra"],
+            "add_constraints": ["c", "C"],
+            "exclude_sources": ["a.example", "a.example"],
+        },
+    )
+    assert out.focus == base.focus
+    assert out.constraints == ["c"]
+    assert out.exclude_sources == ["a.example"]
+
+
+def test_steering_limit_error_reports_lists_past_the_cap():
+    cap = ao.MAX_DIRECTION_ITEMS
+    full = ResearchDirection(constraints=[f"c{i}" for i in range(cap)])
+    assert ao.steering_limit_error(full, {"add_constraints": ["C0"]}) is None
+    error = ao.steering_limit_error(full, {"add_constraints": ["new"]})
+    assert error is not None
+    assert error.startswith("Error:")
+    assert "constraints" in error
+    assert str(cap) in error
+    # Removing a topic makes room in the same change set.
+    focus = ResearchDirection(focus=[f"f{i}" for i in range(cap)])
+    assert (
+        ao.steering_limit_error(focus, {"add_focus": ["x"], "remove_focus": ["f0"]})
+        is None
+    )
+
+
 def test_direction_round_trips_through_dict():
     d = ResearchDirection(
         focus=["a"], constraints=["b"], exclude_sources=["c.d"], remaining_depth=1
@@ -232,7 +308,7 @@ async def test_steer_is_applied_at_the_next_step():
     )
     steps: list[tuple[str, int]] = []
 
-    async def on_step(step, round_no, direction):
+    async def on_step(step, round_no, direction, decide):
         steps.append((step, round_no))
         if (step, round_no) == ("extract", 1):
             return apply_steering(
@@ -270,7 +346,7 @@ async def test_steer_is_applied_at_the_next_step():
 async def test_depth_zero_stops_follow_up_rounds():
     fake = FakeResearch({"q": ["https://a.example/1"]})
 
-    async def on_step(step, round_no, direction):
+    async def on_step(step, round_no, direction, decide):
         if step == "extract":
             return apply_steering(direction, {"add_focus": ["more"], "depth": 0})
         return direction
@@ -284,7 +360,7 @@ async def test_depth_zero_stops_follow_up_rounds():
 async def test_follow_up_rounds_are_bounded_by_remaining_depth():
     fake = FakeResearch({"q": ["https://a.example/1"]})
 
-    async def on_step(step, round_no, direction):
+    async def on_step(step, round_no, direction, decide):
         if (step, round_no) == ("extract", 1):
             return apply_steering(direction, {"add_focus": ["x", "y", "z"], "depth": 2})
         return direction
@@ -293,34 +369,40 @@ async def test_follow_up_rounds_are_bounded_by_remaining_depth():
     assert [q for q, _ in fake.searches] == ["q", "q x", "q y"]
 
 
-async def test_steer_at_synthesis_checkpoint_loops_back_to_search():
+async def test_steer_at_the_decision_checkpoint_adds_a_search_round():
     fake = FakeResearch(
         {"q": ["https://a.example/1"], "q late": ["https://b.example/2"]}
     )
-    steps: list[tuple[str, int]] = []
+    steps: list[tuple[str, int, bool]] = []
+    decided: list[tuple[str, int]] = []
 
-    async def on_step(step, round_no, direction):
-        steps.append((step, round_no))
+    async def on_step(step, round_no, direction, decide):
+        steps.append((step, round_no, decide is not None))
         if (step, round_no) == ("synthesize", 1):
-            return apply_steering(direction, {"add_focus": ["late"]})
+            direction = apply_steering(direction, {"add_focus": ["late"]})
+        if decide is not None:
+            decided.append(decide(direction))
         return direction
 
     result = await _run(fake, on_step=on_step)
+    # The decision after each round is one checkpoint; steering applied there
+    # switches the next step without a second checkpoint.
     assert steps == [
-        ("search", 1),
-        ("extract", 1),
-        ("synthesize", 1),
-        ("search", 2),
-        ("extract", 2),
-        ("synthesize", 2),
+        ("search", 1, False),
+        ("extract", 1, False),
+        ("synthesize", 1, True),
+        ("extract", 2, False),
+        ("synthesize", 2, True),
     ]
+    assert decided == [("search", 2), ("synthesize", 2)]
+    assert [q for q, _ in fake.searches] == ["q", "q late"]
     assert len(result["sources"]) == 2
 
 
 async def test_exclusion_after_extraction_drops_sources_from_synthesis():
     fake = FakeResearch({"q": ["https://a.example/1", "https://b.example/2"]})
 
-    async def on_step(step, round_no, direction):
+    async def on_step(step, round_no, direction, decide):
         if step == "synthesize":
             return apply_steering(direction, {"exclude_sources": ["b.example"]})
         return direction
@@ -333,7 +415,7 @@ async def test_exclusion_after_extraction_drops_sources_from_synthesis():
 async def test_excluding_every_source_returns_no_results_without_llm():
     fake = FakeResearch({"q": ["https://a.example/1"]})
 
-    async def on_step(step, round_no, direction):
+    async def on_step(step, round_no, direction, decide):
         if step == "synthesize":
             return apply_steering(direction, {"exclude_sources": ["a.example"]})
         return direction
@@ -359,7 +441,7 @@ async def test_follow_up_search_error_keeps_earlier_rounds():
             raise RuntimeError("provider down")
         return _search_payload(["https://a.example/1"])
 
-    async def on_step(step, round_no, direction):
+    async def on_step(step, round_no, direction, decide):
         if (step, round_no) == ("extract", 1):
             return apply_steering(direction, {"add_focus": ["x"]})
         return direction
@@ -381,7 +463,7 @@ async def test_follow_up_round_respects_total_url_cap():
     many = [f"https://h{i}.example/" for i in range(40)]
     fake = FakeResearch({"q": many[:20], "q more": many[20:]})
 
-    async def on_step(step, round_no, direction):
+    async def on_step(step, round_no, direction, decide):
         if (step, round_no) == ("extract", 1):
             return apply_steering(direction, {"add_focus": ["more"]})
         return direction
@@ -406,6 +488,48 @@ def test_build_cited_prompt_includes_direction_only_when_set():
     assert "pricing" in steered
     assert "USD only" in steered
     assert "pricing" not in plain
+
+
+def _excerpt(prompt: str) -> str:
+    """The first source body of a cited prompt, without the truncation marker."""
+    body = prompt.split("---\n", 1)[1]
+    return body.split("\n...[truncated for token budget]", 1)[0]
+
+
+def _steering_section(prompt: str) -> str:
+    return prompt.split("User question: q\n\n", 1)[1].split("Sources:", 1)[0]
+
+
+def test_steering_text_counts_against_the_token_budget():
+    extracts = [{"url": "https://a.example/", "markdown": "x" * 50_000}]
+    plain = ao.build_cited_prompt("q", extracts, 1200)
+    assert len(_excerpt(plain)) == (1200 - 200) * ao._CHARS_PER_TOKEN
+
+    focus = [f"topic {i} " + "y" * 180 for i in range(4)]
+    steered = ao.build_cited_prompt(
+        "q", extracts, 1200, ResearchDirection(focus=focus, constraints=["USD"])
+    )
+    section = _steering_section(steered)
+    assert section == f"Focus on: {'; '.join(focus)}\nConstraints to respect: USD\n\n"
+    steering_tokens = math.ceil(len(section) / ao._CHARS_PER_TOKEN)
+    assert len(_excerpt(steered)) == (1000 - steering_tokens) * ao._CHARS_PER_TOKEN
+
+
+def test_oversized_steering_is_truncated_to_half_the_budget():
+    extracts = [{"url": "https://a.example/", "markdown": "x" * 50_000}]
+    cap = ao.MAX_DIRECTION_ITEMS
+    direction = ResearchDirection(
+        focus=[f"f{i} " + "y" * 190 for i in range(cap)],
+        constraints=[f"c{i} " + "z" * 190 for i in range(cap)],
+    )
+    prompt = ao.build_cited_prompt("q", extracts, 1200, direction)
+    section = _steering_section(prompt)
+    marker = "\n...[truncated for token budget]"
+    half = (1200 - 200) // 2 * ao._CHARS_PER_TOKEN
+    assert section == section[:half] + marker + "\n\n"
+    steering_tokens = math.ceil(len(section) / ao._CHARS_PER_TOKEN)
+    assert len(_excerpt(prompt)) == (1000 - steering_tokens) * ao._CHARS_PER_TOKEN
+    assert len(_excerpt(prompt)) >= 200
 
 
 # ---------------------------------------------------------------------------
@@ -528,6 +652,153 @@ async def test_steer_sequence_numbers_increase(db):
     assert status["direction"]["focus"] == ["a", "b"]
 
 
+async def test_steer_log_is_capped(db):
+    db.create_job(job_id="job_p", query="q")
+    for i in range(MAX_STEERING_ENTRIES):
+        out = steer_research_job(db, job_id="job_p", changes={"depth": i % 6})
+        assert "error" not in out
+    out = steer_research_job(db, job_id="job_p", changes={"add_focus": ["x"]})
+    assert out["error"].startswith("Error:")
+    assert str(MAX_STEERING_ENTRIES) in out["error"]
+    assert "start a new job" in out["error"]
+    status = get_research_job(db, job_id="job_p")
+    assert len(status["steering"]) == MAX_STEERING_ENTRIES
+    assert status["direction"]["focus"] == []
+
+
+async def test_steer_refused_when_a_direction_list_would_pass_its_cap(db):
+    db.create_job(job_id="job_p", query="q")
+    for batch in range(2):
+        constraints = [f"c{batch}-{i}" for i in range(20)]
+        out = steer_research_job(
+            db, job_id="job_p", changes={"add_constraints": constraints}
+        )
+        assert "error" not in out
+    out = steer_research_job(
+        db, job_id="job_p", changes={"add_constraints": [f"c2-{i}" for i in range(20)]}
+    )
+    assert out["error"].startswith("Error:")
+    assert "constraints" in out["error"]
+    assert str(ao.MAX_DIRECTION_ITEMS) in out["error"]
+    status = get_research_job(db, job_id="job_p")
+    assert len(status["steering"]) == 2
+    assert len(status["direction"]["constraints"]) == 40
+
+
+async def test_steer_cannot_reach_another_subs_job(db):
+    db.create_job(job_id="job_a", query="q", sub="alice")
+    out = steer_research_job(
+        db, job_id="job_a", changes={"add_focus": ["x"]}, sub="bob"
+    )
+    assert out == {"error": "Error: Research job 'job_a' not found."}
+    out = await handle_async_agent(
+        docs_db=db,
+        job_op="steer",
+        job_id="job_a",
+        steering={"add_focus": ["x"]},
+        sub="bob",
+    )
+    assert "not found" in out["error"]
+    assert "steering" not in get_research_job(db, job_id="job_a", sub="alice")
+    assert "not found" in get_research_job(db, job_id="job_a", sub="bob")["error"]
+
+
+async def test_resume_clears_stale_synthesis_progress_before_returning(db):
+    params = {
+        "max_urls": 2,
+        "progress": {"step": "synthesize", "round": 1, "at": 2.0},
+        "direction": ResearchDirection().to_dict(),
+    }
+    db.create_job(job_id="job_r", query="q", params_json=json.dumps(params))
+    db.update_job("job_r", status="failed", error="boom")
+
+    fake = FakeResearch({"q": ["https://a.example/1"]})
+    fake.search_gate = asyncio.Event()
+    p1, p2, p3, p4 = fake.patches()
+    with p1, p2, p3, p4:
+        resumed = await resume_research_job(db, job_id="job_r")
+        assert resumed["resumed"] is True
+        # The restart is visible as soon as resume returns, before the task
+        # has run a step: the row is running and the old progress is gone.
+        status = get_research_job(db, job_id="job_r")
+        assert status["status"] == "running"
+        assert "progress" not in status
+        out = steer_research_job(db, job_id="job_r", changes={"add_focus": ["x"]})
+        assert "error" not in out
+        fake.search_gate.set()
+        await asyncio.wait_for(_JOB_TASKS["job_r"], 5)
+    entry = get_research_job(db, job_id="job_r")["steering"][0]
+    assert (entry["applied_step"], entry["applied_round"]) == ("search", 1)
+
+
+class _GatedFollowUp(FakeResearch):
+    """Holds the follow-up search ``q late`` until ``late_gate`` is set."""
+
+    def __init__(self, rounds: dict[str, list[str]]) -> None:
+        super().__init__(rounds)
+        self.late_gate = asyncio.Event()
+        self.in_late = asyncio.Event()
+
+    async def search(self, query: str, max_results: int = 10) -> str:
+        if query == "q late":
+            self.in_late.set()
+            await self.late_gate.wait()
+        return await super().search(query, max_results)
+
+
+async def test_steer_at_the_decision_point_records_the_search_it_starts(db):
+    fake = _GatedFollowUp({"q": [], "q late": ["https://late.example/1"]})
+    fake.search_gate = asyncio.Event()
+    p1, p2, p3, p4 = fake.patches()
+    with p1, p2, p3, p4:
+        job_id = (await start_research_job(db, query="q", max_urls=2))["job_id"]
+        await asyncio.wait_for(fake.in_search.wait(), 5)
+        steered = steer_research_job(db, job_id=job_id, changes={"add_focus": ["late"]})
+        assert "error" not in steered
+        fake.search_gate.set()
+        await asyncio.wait_for(fake.in_late.wait(), 5)
+
+        # The first round found nothing, so the steer applied where the run
+        # decided its next step, and that step is the follow-up search.
+        during = get_research_job(db, job_id=job_id)
+        entry = during["steering"][0]
+        assert (entry["applied_step"], entry["applied_round"]) == ("search", 2)
+        assert (during["progress"]["step"], during["progress"]["round"]) == (
+            "search",
+            2,
+        )
+        more = steer_research_job(db, job_id=job_id, changes={"add_constraints": "y"})
+        assert "error" not in more
+        fake.late_gate.set()
+        status = await _wait_status(db, job_id, {"completed", "failed"})
+
+    assert status["status"] == "completed"
+    assert [q for q, _ in fake.searches] == ["q", "q late"]
+    assert fake.extracted == [["https://late.example/1"]]
+    late = status["steering"][1]
+    assert (late["applied_step"], late["applied_round"]) == ("extract", 2)
+
+
+async def test_checkpoints_write_the_db_off_the_event_loop(db, monkeypatch):
+    loop_thread = threading.get_ident()
+    threads: list[int] = []
+    original = agent_jobs._checkpoint
+
+    def spy(*args, **kwargs):
+        threads.append(threading.get_ident())
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(agent_jobs, "_checkpoint", spy)
+    fake = FakeResearch({"q": ["https://a.example/1"]})
+    p1, p2, p3, p4 = fake.patches()
+    with p1, p2, p3, p4:
+        job_id = (await start_research_job(db, query="q"))["job_id"]
+        status = await _wait_status(db, job_id, {"completed", "failed"})
+    assert status["status"] == "completed"
+    assert len(threads) == 3  # search, extract and the decision checkpoint
+    assert loop_thread not in threads
+
+
 async def test_resume_carries_applied_and_pending_steering(db):
     params = {
         "max_urls": 2,
@@ -559,8 +830,8 @@ async def test_resume_carries_applied_and_pending_steering(db):
     with p1, p2, p3, p4:
         resumed = await resume_research_job(db, job_id="job_r")
         assert resumed["resumed"] is True
-        # The row still reads "failed" until the resumed task starts, so wait
-        # on the task itself rather than polling the status.
+        # The row reads "running" from the moment resume returns, so wait on
+        # the task itself rather than polling the status.
         await asyncio.wait_for(_JOB_TASKS["job_r"], 5)
         status = get_research_job(db, job_id="job_r")
 
@@ -758,16 +1029,18 @@ async def test_removing_the_focus_at_the_search_checkpoint_goes_to_synthesis():
     fake = FakeResearch({"q": ["https://a.example/1"]})
     steps: list[tuple[str, int]] = []
 
-    async def on_step(step, round_no, direction):
+    async def on_step(step, round_no, direction, decide):
         steps.append((step, round_no))
         if (step, round_no) == ("extract", 1):
             return apply_steering(direction, {"add_focus": ["x"]})
         if (step, round_no) == ("search", 2):
-            return apply_steering(direction, {"remove_focus": ["x"]})
+            steered = apply_steering(direction, {"remove_focus": ["x"]})
+            assert decide(steered) == ("synthesize", 1)
+            return steered
         return direction
 
     result = await _run(fake, on_step=on_step)
-    assert steps == [("search", 1), ("extract", 1), ("search", 2), ("synthesize", 1)]
+    assert steps == [("search", 1), ("extract", 1), ("search", 2)]
     assert [q for q, _ in fake.searches] == ["q"]
     assert len(result["sources"]) == 1
 
@@ -777,7 +1050,7 @@ async def test_round_with_only_excluded_results_extracts_nothing():
         {"q": ["https://a.example/1"], "q x": ["https://bad.example/9"]}
     )
 
-    async def on_step(step, round_no, direction):
+    async def on_step(step, round_no, direction, decide):
         if (step, round_no) == ("extract", 1):
             return apply_steering(
                 direction, {"add_focus": ["x"], "exclude_sources": ["bad.example"]}
@@ -794,7 +1067,7 @@ async def test_rounds_are_capped_even_when_depth_is_steered_up_again():
     topics = [f"t{i}" for i in range(10)]
     fake = FakeResearch({"q": ["https://a.example/1"]})
 
-    async def on_step(step, round_no, direction):
+    async def on_step(step, round_no, direction, decide):
         # Keep topping depth back up to the maximum at every step.
         return apply_steering(
             direction, {"add_focus": topics, "depth": ao.MAX_REMAINING_DEPTH}

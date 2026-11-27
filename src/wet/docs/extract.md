@@ -50,10 +50,18 @@ returning the legacy `{url, title, content, converter}` shape.
 **Retry and circuit breaker:** plain HTTP fetches (the `basic_http` leg and the
 markitdown download) retry GET/HEAD on connection errors, timeouts and HTTP
 429/502/503/504, with exponential backoff, jitter and `Retry-After` support,
-inside a total time budget. Other methods are never retried. Each host also has
-a circuit breaker: after `EXTRACT_BREAKER_THRESHOLD` URLs in a row fail on that
-host with transient errors, its URLs fail fast for `EXTRACT_BREAKER_COOLDOWN`
-seconds, then one probe request decides whether the circuit closes again. A
+inside a total time budget. Other methods are never retried. Cloudflare's
+origin-down statuses (HTTP 520-524) are not retried either, but they count as
+transient failures for the breaker. Each host also has a circuit breaker: after
+`EXTRACT_BREAKER_THRESHOLD` URLs in a row fail on that host with transient
+errors, its URLs fail fast for `EXTRACT_BREAKER_COOLDOWN` seconds, then one
+probe request decides whether the circuit closes again. Only one probe runs at
+a time, and only its result counts; URLs requested while it runs fail fast
+with "a recovery probe is already in flight". A probe has 300 seconds to
+finish: it keeps its slot that long even when it outlives the cooldown, and a
+probe still running at the deadline is stopped and counted as a failure. With
+`EXTRACT_BREAKER_COOLDOWN=0` there is no fast-fail window, so every request
+after the threshold is a probe (still one at a time) until one succeeds. A
 fast-failed URL returns:
 
 ```json
@@ -61,7 +69,9 @@ fast-failed URL returns:
 ```
 
 A definitive answer such as HTTP 404 never trips the breaker, and one host's
-failures never block another host.
+failures never block another host. Hosts are compared after normalisation
+(letter case, a trailing dot, Unicode versus punycode spellings and IPv6
+literal forms), so every spelling of one host shares its breaker.
 
 ---
 
@@ -176,7 +186,7 @@ Multi-step research orchestration -- search the web, extract the top results, th
 - `query` (required): Research question to answer
 - `max_urls`: Number of search hits to extract and cite (default: 5, hard cap: 20)
 - `synthesis_model`: Override the LLM model used for the synthesis step; falls back to the `[models.chat]` cell's model
-- `token_budget`: Soft cap on prompt tokens for the synthesis call (default: 10000). Each extract gets `(token_budget - 200) / N` tokens of room and is truncated above that.
+- `token_budget`: Soft cap on prompt tokens for the synthesis call (default: 10000). 200 tokens are reserved for the prompt framing. Steered focus topics and constraints count against the rest and are truncated at half of it; each extract then gets an equal share of what remains (`(token_budget - 200 - steering) / N` tokens) and is truncated above that.
 - `job_op`: Optional async job lifecycle operation (`start`, `status`, `resume`, `steer`, `cancel`)
 - `job_id`: Job ID for `status`, `resume`, `steer`, or `cancel`
 - `steering` (`steer` only): Changes for a pending or running job, any of:
@@ -197,8 +207,13 @@ Multi-step research orchestration -- search the web, extract the top results, th
 
 **Steering a running job:** a `steer` call is recorded with a timestamp and
 applied at the job's next step (before its next search round, before
-extraction, or before synthesis). It returns `{job_id, status, steer}`, where
-`steer` holds `seq`, `at` and the normalised `changes`. Each focus topic the
+extraction, or where a round ends and the job decides between a follow-up
+search and synthesis). It returns `{job_id, status, steer}`, where
+`steer` holds `seq`, `at` and the normalised `changes`. A job accepts at most
+50 `steer` calls, and its focus topics, constraints and excluded sources hold
+at most 50 entries each; a `steer` past either limit returns an error and
+changes nothing. Excluded hosts match whatever the spelling (letter case,
+trailing dot, Unicode or punycode). Each focus topic the
 job has not searched yet adds one follow-up search round (`"<query> <topic>"`)
 while depth remains; follow-up rounds skip URLs already extracted, and all
 rounds together extract at most 20 URLs. Excluded sources are dropped before
