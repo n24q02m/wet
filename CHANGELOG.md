@@ -2,6 +2,38 @@
 
 <!-- version list -->
 
+## v3.25.0-beta.1 (2026-11-27)
+
+### Bug Fixes
+
+- Assert stable fastretrieval floor in runtime migration test
+  ([#1996](https://github.com/n24q02m/wet/pull/1996),
+  [`3c2bbe6`](https://github.com/n24q02m/wet/commit/3c2bbe6514455f963bcfa89e8974c8ea433bcc26))
+
+- Remove beta classifiers and sync Wave 0 docs parity
+  ([#1996](https://github.com/n24q02m/wet/pull/1996),
+  [`3c2bbe6`](https://github.com/n24q02m/wet/commit/3c2bbe6514455f963bcfa89e8974c8ea433bcc26))
+
+- **deps**: Lock file maintenance ([#1991](https://github.com/n24q02m/wet/pull/1991),
+  [`af3341b`](https://github.com/n24q02m/wet/commit/af3341b1e8a93fb627d0ae3509359ee7eb52e78f))
+
+- **deps**: Update ghcr.io/astral-sh/uv:latest Docker digest to a3ea135
+  ([#1995](https://github.com/n24q02m/wet/pull/1995),
+  [`3a85a7e`](https://github.com/n24q02m/wet/commit/3a85a7e3136cf3b131f88614635f8544401caf6a))
+
+- **deps**: Update minor dependencies ([#1990](https://github.com/n24q02m/wet/pull/1990),
+  [`a93a8ba`](https://github.com/n24q02m/wet/commit/a93a8babf27ada879e9b658a11bf1395b696c99b))
+
+- **deps**: Update patch dependencies ([#1994](https://github.com/n24q02m/wet/pull/1994),
+  [`959b7ea`](https://github.com/n24q02m/wet/commit/959b7ea1dada2c5b713162d154dc5eeb2437124d))
+
+### Features
+
+- Upgrade to hull 0.12.0b1 and MCP 2026-07-28 extensions
+  ([#1997](https://github.com/n24q02m/wet/pull/1997),
+  [`0b0f750`](https://github.com/n24q02m/wet/commit/0b0f7503c4465d541b472ed6711e91acbed8f881))
+
+
 ## v3.24.0 (2026-11-25)
 
 
