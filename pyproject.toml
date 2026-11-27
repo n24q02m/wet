@@ -37,6 +37,8 @@ dependencies = [
     "fastmcp[tasks]>=4.2.2,<5",
     # HTTP Client
     "httpx",
+    # IDNA host normalisation (extract breaker keys, steering exclusions)
+    "idna>=3.7",
     # Config
     # Pydantic upper bound predates the litellm-passthrough migration: it was
     # required by the now-removed direct cohere SDK dep (cohere>=6.1.0 pinned

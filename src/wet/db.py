@@ -14,7 +14,7 @@ import sqlite3
 import struct
 import time
 import uuid
-from collections.abc import Generator
+from collections.abc import Callable, Generator
 from contextlib import contextmanager
 from functools import lru_cache
 from pathlib import Path
@@ -2247,6 +2247,52 @@ class DocsDB:
                 f"UPDATE jobs SET {', '.join(fields)} WHERE id = ? AND sub = ?",
                 values,
             )
+
+    def update_job_params(
+        self,
+        job_id: str,
+        *,
+        sub: str = "default",
+        mutate: Callable[[dict, dict], dict | None],
+    ) -> dict | None:
+        """Atomically read, change and write a job's ``params_json``.
+
+        ``mutate(row, params)`` gets the current row and its decoded params
+        (``{}`` when missing or not a JSON object) and returns the new params,
+        or ``None`` to leave the row untouched. The write lock is taken before
+        the read, so concurrent writers (another process steering the same
+        job) cannot lose each other's changes. Returns the resulting row, or
+        ``None`` when the job does not exist. An exception from ``mutate``
+        rolls back and propagates.
+        """
+        with self._lock, self._conn:
+            if not self._conn.in_transaction:
+                self._conn.execute("BEGIN IMMEDIATE")
+            row = self._conn.execute(
+                "SELECT * FROM jobs WHERE id = ? AND sub = ?",
+                (job_id, sub),
+            ).fetchone()
+            if row is None:
+                return None
+            current = dict(row)
+            try:
+                params = json.loads(current.get("params_json") or "{}")
+            except json.JSONDecodeError:
+                params = {}
+            if not isinstance(params, dict):
+                params = {}
+            updated = mutate(dict(current), params)
+            if updated is None:
+                return current
+            now = _now_ts()
+            params_json = json.dumps(updated, ensure_ascii=False)
+            self._conn.execute(
+                "UPDATE jobs SET params_json = ?, updated_at = ? "
+                "WHERE id = ? AND sub = ?",
+                (params_json, now, job_id, sub),
+            )
+            current.update(params_json=params_json, updated_at=now)
+            return current
 
     def list_jobs(
         self, *, sub: str = "default", status: str | None = None, limit: int = 20

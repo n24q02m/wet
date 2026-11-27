@@ -894,6 +894,10 @@ def _payload_is_error(payload: str) -> bool:
 
     Text that is simply not JSON is NOT classified as an error: helper results
     are cached verbatim and the tool boundary decides what they mean.
+
+    A per-URL result list counts as a failure when any entry carries a
+    ``retry_after`` (the host's circuit was open): that answer expires with
+    the cooldown, so caching it would keep reporting the host as down.
     """
     if payload.startswith("Error"):
         return True
@@ -901,6 +905,11 @@ def _payload_is_error(payload: str) -> bool:
         data = json.loads(payload)
     except json.JSONDecodeError:
         return False
+    if isinstance(data, list):
+        return any(
+            isinstance(item, dict) and item.get("retry_after") is not None
+            for item in data
+        )
     return isinstance(data, dict) and bool(data.get("error"))
 
 
@@ -1847,6 +1856,7 @@ async def extract(  # noqa: PLR0913
     job_id: str | None = None,
     monitor_op: str = "list",
     interval_seconds: int = 3600,
+    steering: dict | None = None,
 ) -> dict[str, Any]:
     """Read and return full page content from URLs or local files. Use this when you have a specific URL and need its content. For finding URLs first, use the `search` tool instead.
 
@@ -1857,7 +1867,7 @@ async def extract(  # noqa: PLR0913
     - map: Discover site URL structure without extracting content. Example: extract(action="map", urls=["https://example.com"])
     - convert: Convert local files (PDF, DOCX, PPTX, XLSX) to Markdown. Example: extract(action="convert", paths=["/home/user/report.pdf"])
     - extract_structured: Extract structured data (deterministic JSON-LD/OpenGraph/microdata first, BYO-LLM fallback). Example: extract(action="extract_structured", urls=["https://example.com/pricing"], schema={"type": "object", "properties": {"price": {"type": "string"}}})
-    - agent: Multi-step research orchestration -- synchronous one-shot or async lifecycle via `job_op` ("start"|"status"|"resume"|"cancel") + `job_id`. Example: extract(action="agent", query="latest pydantic 2 changes", max_urls=5)
+    - agent: Multi-step research orchestration -- synchronous one-shot or async lifecycle via `job_op` ("start"|"status"|"resume"|"steer"|"cancel") + `job_id`. Example: extract(action="agent", query="latest pydantic 2 changes", max_urls=5)
     - interact: Drive a page with click/fill/submit via patchright. Example: extract(action="interact", url="https://example.com/login", actions=[{"type": "fill", "selector": "#email", "value": "x@y.com"}, {"type": "submit", "selector": "form"}])
     - diff: Track content changes across fetches of the same URL(s) with semantic noise filtering. Example: extract(action="diff", urls=["https://example.com/pricing"])
     - monitor: Persistent URL change watches and alerts via `monitor_op` ("watch"|"list"|"unwatch"|"check"). Example: extract(action="monitor", monitor_op="watch", url="https://example.com/changelog")
@@ -1871,6 +1881,7 @@ async def extract(  # noqa: PLR0913
     - max_urls (agent): Default 5, hard cap 20
     - synthesis_model (agent): Override LLM model for the synthesis step
     - token_budget (agent): Max prompt tokens (default 10000)
+    - steering (agent, job_op="steer"): Changes for a running job, applied at its next step -- add_focus, remove_focus, add_constraints, exclude_sources (lists of strings), depth (follow-up search rounds left, 0-5). Example: extract(action="agent", job_op="steer", job_id="job_...", steering={"add_focus": ["pricing"], "exclude_sources": ["example.com"]})
     - session (interact): Persistent session id; reuses browser across calls
     - screenshot (interact): Capture post-interaction screenshot
     - format: Output format -- "markdown" (default), "text", "html"
@@ -2018,6 +2029,7 @@ async def extract(  # noqa: PLR0913
                         max_urls=max_urls,
                         synthesis_model=synthesis_model,
                         token_budget=token_budget,
+                        steering=steering,
                         sub=current_sub(),
                     )
                 )

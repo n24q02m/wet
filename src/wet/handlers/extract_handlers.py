@@ -13,6 +13,7 @@ from wet.sources.agent_jobs import (
     get_research_job,
     resume_research_job,
     start_research_job,
+    steer_research_job,
 )
 from wet.sources.monitor import classify_change, content_digest
 
@@ -210,9 +211,15 @@ async def handle_async_agent(
     max_urls: int = 5,
     synthesis_model: str | None = None,
     token_budget: int = 10000,
+    steering: dict[str, Any] | None = None,
     sub: str = "default",
 ) -> dict[str, Any]:
-    """Dispatch async research job lifecycle operations (`start|status|resume|cancel`)."""
+    """Dispatch async research job operations (`start|status|resume|steer|cancel`).
+
+    ``steer`` records ``steering`` changes (``add_focus``, ``remove_focus``,
+    ``add_constraints``, ``exclude_sources``, ``depth``) for a pending or
+    running job; they apply at the job's next orchestration step.
+    """
     if docs_db is None:
         return {"error": "Error: Docs database not initialized"}
 
@@ -236,6 +243,20 @@ async def handle_async_agent(
         if not job_id:
             return {"error": "Error: job_id is required for agent resume."}
         return await resume_research_job(docs_db, job_id=job_id, sub=sub)
+    if op == "steer":
+        if not job_id:
+            return {"error": "Error: job_id is required for agent steer."}
+        if not steering:
+            return {
+                "error": (
+                    "Error: steering is required for agent steer (any of: "
+                    "add_focus, remove_focus, add_constraints, exclude_sources, "
+                    "depth)."
+                )
+            }
+        return await asyncio.to_thread(
+            steer_research_job, docs_db, job_id=job_id, changes=steering, sub=sub
+        )
     if op == "cancel":
         if not job_id:
             return {"error": "Error: job_id is required for agent cancel."}
@@ -246,6 +267,6 @@ async def handle_async_agent(
     return {
         "error": (
             f"Error: Unknown async agent operation '{job_op}'. "
-            "Valid operations: start, status, resume, cancel."
+            "Valid operations: start, status, resume, steer, cancel."
         )
     }

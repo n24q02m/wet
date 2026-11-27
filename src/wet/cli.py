@@ -794,6 +794,18 @@ def _cmd_extract(args: argparse.Namespace) -> int:
     elif action in ("agent", "research"):
         extra_kwargs["job_op"] = getattr(args, "job_op", None)
         extra_kwargs["job_id"] = getattr(args, "job_id", None)
+        steering: dict[str, object] = {
+            key: value
+            for key, value in (
+                ("add_focus", getattr(args, "add_focus", None)),
+                ("remove_focus", getattr(args, "remove_focus", None)),
+                ("add_constraints", getattr(args, "add_constraint", None)),
+                ("exclude_sources", getattr(args, "exclude_source", None)),
+                ("depth", getattr(args, "remaining_depth", None)),
+            )
+            if value is not None
+        }
+        extra_kwargs["steering"] = steering or None
 
     result = _run_in_process(
         lambda: extract(
@@ -1292,10 +1304,45 @@ def build_parser() -> argparse.ArgumentParser:
     p_extract.add_argument(
         "--job-op",
         default=None,
-        choices=["start", "status", "resume", "cancel"],
+        choices=["start", "status", "resume", "steer", "cancel"],
         help="async research job operation (for --action agent)",
     )
     p_extract.add_argument("--job-id", default=None, help="async job ID")
+    p_extract.add_argument(
+        "--add-focus",
+        action="append",
+        default=None,
+        metavar="TOPIC",
+        help="steer: add a focus topic (repeatable)",
+    )
+    p_extract.add_argument(
+        "--remove-focus",
+        action="append",
+        default=None,
+        metavar="TOPIC",
+        help="steer: drop a focus topic (repeatable)",
+    )
+    p_extract.add_argument(
+        "--add-constraint",
+        action="append",
+        default=None,
+        metavar="TEXT",
+        help="steer: add a constraint for the answer (repeatable)",
+    )
+    p_extract.add_argument(
+        "--exclude-source",
+        action="append",
+        default=None,
+        metavar="HOST",
+        help="steer: exclude a host or URL from the sources (repeatable)",
+    )
+    p_extract.add_argument(
+        "--remaining-depth",
+        type=int,
+        default=None,
+        metavar="N",
+        help="steer: follow-up search rounds still allowed (0-5)",
+    )
     p_extract.set_defaults(func=_cmd_extract)
 
     p_doctor = sub.add_parser(

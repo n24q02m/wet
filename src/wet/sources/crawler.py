@@ -40,6 +40,14 @@ from wet.config import settings
 from wet.security import is_safe_url
 from wet.security import safe_httpx_client as _safe_httpx_client
 from wet.sources._smart_chunks import smart_chunks
+from wet.sources.resilience import (
+    CircuitOpenError,
+    RetryingHttpClient,
+    extract_breaker,
+    host_key,
+    observe_fetches,
+    request_with_retry,
+)
 
 # Document extensions that markitdown handles better than Crawl4AI
 _DOCUMENT_EXTENSIONS = {".pdf", ".docx", ".pptx", ".xlsx", ".doc", ".ppt", ".xls"}
@@ -329,7 +337,11 @@ def _build_scraping_agent(stealth: bool = True) -> ScrapingAgent:
     identity = _resolve_identity()
     strategies: dict[str, Any] = {
         "basic_http": BasicHTTPStrategy(
-            timeout=settings.crawler_timeout, identity=identity
+            timeout=settings.crawler_timeout,
+            identity=identity,
+            # Idempotent retry on transient failures; the factory keeps the
+            # SSRF-guarded client.
+            http_client=RetryingHttpClient(_safe_httpx_client),
         ),
         "tls_spoof": TLSSpoofStrategy(
             timeout=settings.crawler_timeout, identity=identity
@@ -399,7 +411,7 @@ async def _extract_with_markitdown(url: str) -> dict:
 
     try:
         async with _safe_httpx_client(timeout=60, follow_redirects=True) as client:
-            resp = await client.get(url)
+            resp = await request_with_retry(client, "GET", url)
             resp.raise_for_status()
 
         # Write to temp file (markitdown needs file path with extension)
@@ -521,6 +533,47 @@ async def extract(
 
     agent = await _get_scraping_agent(stealth=stealth)
     sem = _get_semaphore()
+    breaker = extract_breaker()
+
+    async def fetch_url(url: str) -> dict[str, Any]:
+        if _is_document_url(url):
+            logger.info(f"Document URL detected, using markitdown: {url}")
+            return await _extract_with_markitdown(url)
+
+        if _should_probe_llms_txt(url):
+            llms_body = await probe_llms_txt(url)
+            if llms_body is not None:
+                chunks = smart_chunks(
+                    llms_body,
+                    url=url,
+                    strategy_used="llms_txt_fastpath",
+                    latency_ms=0.0,
+                )
+                return {"url": url, **chunks}
+
+        try:
+            t0 = asyncio.get_event_loop().time()
+            content = await agent.scrape(url)
+            latency_ms = (asyncio.get_event_loop().time() - t0) * 1000.0
+        except Exception as e:
+            logger.error(f"Error extracting {url}: {e}")
+            return {"url": url, "error": str(e)}
+
+        strategy_used = ""
+        try:
+            cache_recs = await agent.strategy_cache.recommend(url)
+            if cache_recs:
+                strategy_used = cache_recs[0]
+        except Exception:
+            pass
+
+        chunks = smart_chunks(
+            content,
+            url=url,
+            strategy_used=strategy_used,
+            latency_ms=latency_ms,
+        )
+        return {"url": url, **chunks}
 
     async def process_url(url: str) -> dict[str, Any]:
         async with sem:
@@ -528,44 +581,48 @@ async def extract(
                 logger.warning(f"Skipping unsafe URL: {url}")
                 return {"url": url, "error": "Security Alert: Unsafe URL blocked"}
 
-            if _is_document_url(url):
-                logger.info(f"Document URL detected, using markitdown: {url}")
-                return await _extract_with_markitdown(url)
+            # Per-host circuit breaker: a host that keeps failing transiently
+            # is skipped without a request until its cooldown ends.
+            host = host_key(url)
+            try:
+                probe = breaker.before_request(host)
+            except CircuitOpenError as exc:
+                logger.warning(f"Skipping {url}: {exc}")
+                return {
+                    "url": url,
+                    "error": str(exc),
+                    "retry_after": exc.retry_seconds,
+                }
 
-            if _should_probe_llms_txt(url):
-                llms_body = await probe_llms_txt(url)
-                if llms_body is not None:
-                    chunks = smart_chunks(
-                        llms_body,
-                        url=url,
-                        strategy_used="llms_txt_fastpath",
-                        latency_ms=0.0,
+            # A half-open probe runs no longer than its slot is leased; one
+            # that hits the deadline counts as a transient failure.
+            limit = breaker.probe_timeout if probe is not None else None
+            deadline = asyncio.timeout(limit)
+            try:
+                with observe_fetches() as outcome:
+                    try:
+                        async with deadline:
+                            result = await fetch_url(url)
+                    except TimeoutError:
+                        if not deadline.expired():
+                            raise
+                        logger.warning(f"Recovery probe timed out for {url}")
+                        result = {
+                            "url": url,
+                            "error": f"Timed out after {limit:g}s probing {host}",
+                        }
+                        outcome.transient, outcome.retry_after = True, None
+                if "error" not in result or outcome.transient is False:
+                    breaker.record_success(host, probe)
+                elif outcome.transient:
+                    breaker.record_failure(
+                        host, retry_after=outcome.retry_after, token=probe
                     )
-                    return {"url": url, **chunks}
-
-            try:
-                t0 = asyncio.get_event_loop().time()
-                content = await agent.scrape(url)
-                latency_ms = (asyncio.get_event_loop().time() - t0) * 1000.0
-            except Exception as e:
-                logger.error(f"Error extracting {url}: {e}")
-                return {"url": url, "error": str(e)}
-
-            strategy_used = ""
-            try:
-                cache_recs = await agent.strategy_cache.recommend(url)
-                if cache_recs:
-                    strategy_used = cache_recs[0]
-            except Exception:
-                pass
-
-            chunks = smart_chunks(
-                content,
-                url=url,
-                strategy_used=strategy_used,
-                latency_ms=latency_ms,
-            )
-            return {"url": url, **chunks}
+                return result
+            finally:
+                # A no-op once the probe settled above.
+                if probe is not None:
+                    breaker.release(host, probe)
 
     tasks = [process_url(url) for url in urls]
     results = await asyncio.gather(*tasks)

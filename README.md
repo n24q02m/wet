@@ -265,6 +265,20 @@ across both the `extract` strategy chain and the Crawl4AI-backed `crawl`,
 deployment behaviour; configure this process-level policy explicitly when the
 operator requires robots enforcement.
 
+**Extract retry and circuit breaker** -- plain HTTP extract fetches retry
+GET/HEAD on connection errors, timeouts and HTTP 429/502/503/504 with
+exponential backoff, jitter and `Retry-After` support:
+`EXTRACT_RETRY_ATTEMPTS` (default 3, including the first try, max 10),
+`EXTRACT_RETRY_BASE_DELAY` (0.5 s), `EXTRACT_RETRY_MAX_DELAY` (10 s; a longer
+`Retry-After` ends retrying) and `EXTRACT_RETRY_BUDGET` (30 s total per fetch).
+A per-host circuit breaker makes a failing host fail fast:
+after `EXTRACT_BREAKER_THRESHOLD` (default 3; 0 disables) consecutive transient
+failures its URLs return an error naming the host and a `retry_after`, for
+`EXTRACT_BREAKER_COOLDOWN` seconds (default 60), then one probe decides whether
+it recovers (with a cooldown of 0, every request after the threshold is a probe,
+one at a time). Cloudflare's origin-down statuses (HTTP 520-524) are not
+retried but count as transient failures for the breaker.
+
 **Invisible tier + seeded identity** (opt-in) -- append `invisible` to
 `BROWSER_BACKENDS` to add a stealth-Firefox engine tier as the last escalation
 step (`n24q02m-hull[invisible]` extra: `pip install "n24q02m-wet[invisible]"`). One
@@ -333,7 +347,7 @@ In-repo references (Spec F single source of truth: setup docs live in
 | Tool | Description |
 |:-----|:------------|
 | `search` | Web (multi-backend metasearch), news, images, academic research (search chain with the `science` category), library docs (HyDE + FTS5), find similar pages. Includes `docs_resolve`, `docs_query` (version-aware + topic + 5000-token cap), `docs_lock_project` (manifests + all 12 ecosystem lockfiles), `docs_status`, `docs_audit`. |
-| `extract` | URL -> smart chunks dict (`clean_text` + `markdown` + `structured_data` + `code_blocks` + `metadata`) via `/llms.txt` fast-path + `hull_web` 5-strategy chain. Supports `batch`, `crawl`, `map`, `convert`, deterministic-first `extract_structured`, `agent` (sync or async `job_op`), `interact`, semantic `diff`, and `monitor` watches/alerts. |
+| `extract` | URL -> smart chunks dict (`clean_text` + `markdown` + `structured_data` + `code_blocks` + `metadata`) via `/llms.txt` fast-path + `hull_web` 5-strategy chain. Supports `batch`, `crawl`, `map`, `convert`, deterministic-first `extract_structured`, `agent` (sync or async `job_op`, with `steer` to redirect a running job), `interact`, semantic `diff`, and `monitor` watches/alerts. |
 | `media` | `list` (discover URLs from gallery pages), `download` (SSRF-safe). `analyze` was removed in v2.0.0 -- use `imagine-mcp.understand` instead |
 | `config` | `status`, `set`, `cache_clear`, `docs_reindex`, `warmup` |
 | `help` | Per-tool documentation: `search`, `extract`, `media`, `config` |
@@ -366,6 +380,8 @@ wet docs reindex <library>      # drop the cached docs index for <library>; the 
 wet doctor [--json]             # 12-point diagnostics check for runtime, SQLite, search providers, and browser fallback
 wet search "<query>"            # call the running server (or --local in-process); also accepts `docs-status` / `docs-audit`
 wet extract <url>               # extract/crawl/map/research/monitor URLs in-process
+wet extract --action agent --job-op steer --job-id <id> --add-focus pricing --exclude-source example.com
+                                # steer a running research job (also --remove-focus, --add-constraint, --remaining-depth)
 wet warmup                      # first-run setup (browser deps; SearXNG with WET_AUTO_SEARXNG), then check cloud model cells or pre-download local models
 ```
 

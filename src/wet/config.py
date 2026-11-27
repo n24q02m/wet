@@ -155,6 +155,21 @@ class Settings(BaseSettings):
     crawler_timeout: int = 60
     respect_robots_txt: bool = False  # env RESPECT_ROBOTS_TXT
 
+    # Extract resilience. Idempotent fetches (GET/HEAD) are retried on
+    # connection errors, timeouts and 429/502/503/504 with exponential backoff
+    # and jitter, honouring Retry-After; the budget caps the total time one
+    # fetch may spend across attempts. Cloudflare 520-524 are not retried but
+    # count as transient. A host that keeps failing that way opens a per-host
+    # circuit: extract then fails fast for the cooldown and lets a single
+    # probe through afterwards (cooldown 0: every request after the threshold
+    # is a probe, one at a time). Threshold 0 disables it.
+    extract_retry_attempts: int = 3  # env EXTRACT_RETRY_ATTEMPTS
+    extract_retry_base_delay: float = 0.5  # env EXTRACT_RETRY_BASE_DELAY
+    extract_retry_max_delay: float = 10.0  # env EXTRACT_RETRY_MAX_DELAY
+    extract_retry_budget: float = 30.0  # env EXTRACT_RETRY_BUDGET
+    extract_breaker_threshold: int = 3  # env EXTRACT_BREAKER_THRESHOLD
+    extract_breaker_cooldown: float = 60.0  # env EXTRACT_BREAKER_COOLDOWN
+
     # Browser backend chain for the headless (JS-render) leg. BROWSER_BACKENDS
     # CSV (order = agent escalation/fallback): native (in-process chromium) |
     # browserless (self-host REST). Empty -> native locally.
