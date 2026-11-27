@@ -97,7 +97,7 @@ search(action="docs_query",
 - Action surface: `src/wet/docs/search.md`
 - Server dispatcher: `src/wet/server.py` (`case "docs_resolve"` /
   `case "docs_query"` / `case "docs_lock_project"`)
-- Resolve / query: `src/wet/sources/docs.py::resolve_library` /
+- Resolve / query: `src/wet/sources/docs/search.py::resolve_library` /
   `query_docs` / `ingest_tier2`
 - Project lock: `src/wet/sources/project_lock.py`
 - Tier 1 fixture: `src/wet/data/tier1_libraries.json`

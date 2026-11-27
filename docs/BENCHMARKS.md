@@ -2,10 +2,35 @@
 
 > v2.0.0: `extract.agent` + `extract.interact` shipped (BREAKING).
 
-This document captures the v1.x baseline metrics. Full pre-release
-benchmark runs (latency p50 / p95, recall@10, freshness, success rate
-against the 200-URL tier-1 fixture) land in a pre-release benchmark
-session.
+This document captures the historical v1.x baseline and the live W11 baseline
+in `docs/benchmarks/v2_w11_baseline.json` (replacing all May 2026 `null`
+placeholders).
+
+## v2 W11 baseline (2026-11-27)
+
+Recorded in `docs/benchmarks/v2_w11_baseline.json` (superseding
+`docs/benchmarks/v1_phase2_baseline.json`) via real streamable-HTTP MCP protocol
+calls (`ClientSession` -> spawned `python -m wet.server`) against `v2` fixtures
+(`1916` corpus records, `200` docs recall cases, `50` web search queries on
+`tavily`, `50` extract URLs) plus the full `pytest --cov=wet` suite:
+
+| Pillar | Metric | Measured | Target | Method |
+|---|---|---|---|---|
+| Coverage | `pytest --cov=wet` | 95.50% | >= 95% | `uv run pytest --cov=wet --cov-fail-under=95` (2286 passed, 32 skipped, 94 deselected, 280.7s) |
+| Web Search | `search_p95_ms` | 614.94 ms | < 2000 ms | 50 queries (`tavily`), p50 = 409.45 ms, throughput = 4.35 qps, success = 98.0%, hits@10 = 9.42, nDCG@10 = 0.964 |
+| Extract | `extract_tier1_success_rate` | 0.98 (98.0%) | >= 0.95 | 50 URLs (`v2/extract_urls.jsonl`), p50 = 2643.30 ms, p95 = 7757.61 ms, 1.65 urls/s, mean clean ratio = 0.5213 |
+| Docs Query | `docs_query_p95_ms` | 41.74 ms | < 500 ms | 200 cases (`v2/docs_recall_cases.jsonl`), p50 = 29.11 ms, throughput = 125.46 qps |
+| Docs Quality | `docs_query_recall_at_10` | 1.00 | >= 0.85 | 200 cases seeded from `v2/docs_corpus.jsonl`, success = 100% |
+| Startup | `startup_time_ms` | 9254.15 ms | < 1000 ms warm | Cold Windows subprocess spawn -> `/mcp` HTTP up (`9135.4 ms`) + `initialize()` + `list_tools()` |
+| Memory | `rss_steady_mb` | 399.72 MB | < 400 MB | Process-tree RSS after workload (`rss_idle_mb` = 238.68 MB) |
+
+Reproduce end-to-end (with `0` `null` fields):
+
+```bash
+skret run -e prod -- uv run python scripts/run_w11_baseline.py
+```
+
+Pass `--extract-limit 200 --web-limit 500 --docs-limit 200` for the full 200/500/200 fixture sweep.
 
 ## W5 quality corpus and runner (2026-08-22)
 
@@ -146,9 +171,8 @@ can be computed deterministically.
 
 ### Coverage gate
 
-- Current baseline: 92% (CI gate `--cov-fail-under=92`).
-- Target: maintain >= 92%, climb back to >= 95% in a consolidated
-  coverage push.
+- Baseline: 95.50% measured in `docs/benchmarks/v2_w11_baseline.json`
+  (CI/local gate `--cov-fail-under=95` enforced in `pyproject.toml`).
 
 ## Cross-references
 
