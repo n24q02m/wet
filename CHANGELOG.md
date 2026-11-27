@@ -2,6 +2,14 @@
 
 <!-- version list -->
 
+## v3.25.0 (2026-11-27)
+
+### Bug Fixes
+
+- Unpin hull beta floor for stable release ([#1999](https://github.com/n24q02m/wet/pull/1999),
+  [`ea6b3b7`](https://github.com/n24q02m/wet/commit/ea6b3b70c404cb65a5ccdcaa405b270348f43bcd))
+
+
 ## v3.25.0-beta.2 (2026-11-27)
 
 ### Features
